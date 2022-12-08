@@ -19,6 +19,9 @@ categories:
      -
        - !conditional '"${group}" eq "dense"'
        - planarEnabled: '${enablePlanar}'
+     -
+       - !conditional '"${group}" =~ m{^cat2}'
+       - planarEnabled: '${enablePlanar}'
      - planarModeIdcmUse: 0
      -
        - !conditional '"${group}" eq "sparse" || "${group}" eq "scant"'
@@ -37,6 +40,9 @@ categories:
          r04: 0
      - trisoupFineRayTracingEnabled: 1
      - trisoupImprovedEncoderEnabled: 1
+     -
+       - !conditional '"${group}" =~ m{^cat2}'
+       - safeTrisoupPartionning: 0 # safeTrisoupPartitionning not working properly with cat2
 
      ####
      # attribute coding (common options -- relies on option ordering)
@@ -124,3 +130,11 @@ categories:
       staue_klimt_vox20:                 { enablePlanar: 1, Halo: 1, test-depth:  9 }
       ulb_unicorn_hires_vox20:           { enablePlanar: 1, Halo: 1, test-depth: 12 }
       ulb_unicorn_vox20:                 { enablePlanar: 1, Halo: 0, test-depth: 11 }
+      # cat2
+      8ivfbv2_longdress_vox10:           { enablePlanar: 0, test-depth: 10 }
+      8ivfbv2_loot_vox10:                { enablePlanar: 0, test-depth: 10 }
+      8ivfbv2_redandblack_vox10:         { enablePlanar: 0, test-depth: 10 }
+      8ivfbv2_soldier_vox10:             { enablePlanar: 0, test-depth: 10 }
+      basketball_player_vox11:           { enablePlanar: 0, test-depth: 11 }
+      dancer_player_vox11:               { enablePlanar: 0, test-depth: 11 }
+      queen:                             { enablePlanar: 0, test-depth: 10 }
