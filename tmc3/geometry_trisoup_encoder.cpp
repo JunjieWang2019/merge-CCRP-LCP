@@ -542,20 +542,27 @@ encodeTrisoupVertices(
 
   for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
     // reduced neighbour contexts
-    int ctxE = (!!(neighbNodes[i] & 1)) + (!!(neighbNodes[i] & 2)) + (!!(neighbNodes[i] & 4)) + (!!(neighbNodes[i] & 8)) - 1; // at least one node is occupied 
+    int ctxE = (!!(neighbNodes[i] & 1)) + (!!(neighbNodes[i] & 2)) + (!!(neighbNodes[i] & 4)) + (!!(neighbNodes[i] & 8)) - 1; // at least one node is occupied
     int ctx0 = (!!(neighbNodes[i] & 16)) + (!!(neighbNodes[i] & 32)) + (!!(neighbNodes[i] & 64)) + (!!(neighbNodes[i] & 128));
     int ctx1 = (!!(neighbNodes[i] & 256)) + (!!(neighbNodes[i] & 512)) + (!!(neighbNodes[i] & 1024)) + (!!(neighbNodes[i] & 2048));
-    int direction = neighbNodes[i] >> 13; // 0=x, 1=y, 2=z  
-   
-    // construct pattern 
+    int direction = neighbNodes[i] >> 13; // 0=x, 1=y, 2=z
+
+    // construct pattern
     auto patternIdx = edgePattern[i];
     int pattern = 0;
     int patternClose  = 0;
-    int patternClosest  = 0;    
+    int patternClosest  = 0;
     int nclosestPattern = 0;
 
-    int towardOrAway[18] = { 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // 0 = toward; 1= away
-    int mapping18to9[3][9] = { {0,1,2,3,4,15,14,5,7}, {0,1,2,3,9,15,14,7,12}, {0,1,2,9,10,15,14,7,12} };  
+    int towardOrAway[18] = { // 0 = toward; 1 = away
+      0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    int mapping18to9[3][9] = {
+      { 0, 1, 2, 3,  4, 15, 14, 5,  7},
+      { 0, 1, 2, 3,  9, 15, 14, 7, 12},
+      { 0, 1, 2, 9, 10, 15, 14, 7, 12}
+    };
 
     for (int v = 0; v < 9; v++) {
       int v18 = mapping18to9[direction][v];
@@ -566,7 +573,7 @@ encodeTrisoupVertices(
           pattern |= 1 << v;
           int vertexPos2bits = vertices[correspondanceSegment2V[idxEdge]] >> std::max(0, nbitsVertices - 2);
           if (towardOrAway[v18])
-            vertexPos2bits = max2bits - vertexPos2bits; // reverses for away 
+            vertexPos2bits = max2bits - vertexPos2bits; // reverses for away
           if (vertexPos2bits >= mid2bits)
             patternClose |= 1 << v;
           if (vertexPos2bits >= max2bits)
@@ -576,7 +583,7 @@ encodeTrisoupVertices(
       }
     }
 
-    int missedCloseStart = /*!(pattern & 1)*/ + !(pattern & 2) + !(pattern & 4); 
+    int missedCloseStart = /*!(pattern & 1)*/ + !(pattern & 2) + !(pattern & 4);
     int nclosestStart = !!(patternClosest & 1) + !!(patternClosest & 2) + !!(patternClosest & 4);
     if (direction == 0) {
       missedCloseStart +=  !(pattern & 8) + !(pattern & 16);
@@ -586,15 +593,15 @@ encodeTrisoupVertices(
       missedCloseStart +=  !(pattern & 8);
       nclosestStart +=  !!(patternClosest & 8) - !!(patternClosest & 16) ;
     }
-    if (direction == 2) {      
+    if (direction == 2) {
       nclosestStart +=  - !!(patternClosest & 8) - !!(patternClosest & 16) ;
     }
 
-    // reorganize neighbours of vertex /edge (endpoint) independently on xyz 
+    // reorganize neighbours of vertex /edge (endpoint) independently on xyz
     int neighbEdge = (neighbNodes[i] >> 0) & 15;
     int neighbEnd = (neighbNodes[i] >> 4) & 15;
     int neighbStart = (neighbNodes[i] >> 8) & 15;
-    if (direction == 2) {      
+    if (direction == 2) {
       neighbEdge = ((neighbNodes[i] >> 0 + 0) & 1);
       neighbEdge += ((neighbNodes[i] >> 0 + 3) & 1) << 1;
       neighbEdge += ((neighbNodes[i] >> 0 + 1) & 1) << 2;
@@ -613,7 +620,8 @@ encodeTrisoupVertices(
 
 
     // encode flag vertex
-    int ctxMap1 = std::min(nclosestPattern, 2) * 15 * 2 +  (neighbEdge-1) * 2 + ((ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits 
+    int ctxMap1 = std::min(nclosestPattern, 2) * 15 * 2 +  (neighbEdge-1) * 2 + ((ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits
+
     int ctxMap2 = neighbEnd << 11;
     ctxMap2 |= (patternClose & (0b00000110)) << 9 - 1 ; // perp that do not depend on direction = to start
     ctxMap2 |= direction << 7;
@@ -622,8 +630,8 @@ encodeTrisoupVertices(
     int orderedPclosePar = (((pattern >> 5) & 3) << 2) + (!!(pattern & 128) << 1) + !!(pattern & 256);
     ctxMap2 |= orderedPclosePar;
 
-    bool isInter = gbh.interPredictionEnabledFlag  ;  
-    int ctxInter =  isInter ? 1 + segindPred[i] : 0;    
+    bool isInter = gbh.interPredictionEnabledFlag  ;
+    int ctxInter =  isInter ? 1 + segindPred[i] : 0;
 
     arithmeticEncoder->encode((int)segind[i], ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(segind[i], ctxMap2, ctxMap1)]);
 
@@ -641,10 +649,10 @@ encodeTrisoupVertices(
       ctxMap2 = missedCloseStart << 8;
       ctxMap2 |= (patternClosest & 1) << 7;
       ctxMap2 |= direction << 5;
-      ctxMap2 |= patternClose & (0b00011111);      
+      ctxMap2 |= patternClose & (0b00011111);
       int orderedPclosePar = (((patternClose >> 5) & 3) << 2) + (!!(patternClose & 128) << 1) + !!(patternClose & 256);
 
-      ctxInter = 0;      
+      ctxInter = 0;
       if (isInter) {
         ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b-1) & 3) : 0;
       }
