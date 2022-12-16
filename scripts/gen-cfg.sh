@@ -120,4 +120,6 @@ else
 	do_one_cfgset "octree" "raht" "inter"
 	do_one_cfgset "predgeom" "predlift" "inter"
 	do_one_cfgset "predgeom" "raht" "inter"
+	do_one_cfgset "trisoup" "predlift" "inter"
+	do_one_cfgset "trisoup" "raht" "inter"
 fi
