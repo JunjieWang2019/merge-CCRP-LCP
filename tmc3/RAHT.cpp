@@ -405,7 +405,7 @@ intraDcPred(
 
     // apply weighted neighbour value to masked positions
     for (int k = 0; k < numAttrs; k++)
-      neighValue[k] *= predWeightParent[i] << pcc::FixedPoint::kFracBits;
+      neighValue[k] *= predWeightParent[i];
 
     int mask = predMasks[i] & occupancy;
     for (int j = 0; mask; j++, mask >>= 1) {
@@ -431,7 +431,7 @@ intraDcPred(
 
       // apply weighted neighbour value to masked positions
       for (int k = 0; k < numAttrs; k++)
-        neighValue[k] *= predWeightParent[7 + i] << pcc::FixedPoint::kFracBits;
+        neighValue[k] *= predWeightParent[7 + i];
 
       int mask = predMasks[7 + i] & occupancy;
       for (int j = 0; mask; j++, mask >>= 1) {
@@ -442,7 +442,7 @@ intraDcPred(
               std::next(firstChild, numAttrs * childNeighIdx[i][j]);
             for (int k = 0; k < numAttrs; k++)
               childNeighValue[k] = (*childNeighValueIt++)
-                * (predWeightChild[i] << pcc::FixedPoint::kFracBits);
+                * predWeightChild[i];
 
             for (int k = 0; k < numAttrs; k++)
               predBuf[k][j].val += childNeighValue[k];
@@ -743,11 +743,11 @@ uraht_process(
   assert(weightsLf[0].weight == numPoints);
 
   // reconstruction buffers
-  std::vector<int> attrRec, attrRecParent;
+  std::vector<int64_t> attrRec, attrRecParent;
   attrRec.resize(numPoints * numAttrs);
   attrRecParent.resize(numPoints * numAttrs);
 
-  std::vector<int> attrRecUs, attrRecParentUs;
+  std::vector<int64_t> attrRecUs, attrRecParentUs;
   attrRecUs.resize(numPoints * numAttrs);
   attrRecParentUs.resize(numPoints * numAttrs);
 
@@ -1044,11 +1044,7 @@ uraht_process(
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {
           attrRecParentIt++;
-          int64_t val = *attrRecParentUsIt++;
-          if (val > 0)
-            transformPredBuf[k][0].val = val << (15 - 2);
-          else
-            transformPredBuf[k][0].val = -((-val) << (15 - 2));
+          transformPredBuf[k][0].val = *attrRecParentUsIt++;
         }
       }
 
@@ -1058,11 +1054,8 @@ uraht_process(
         if (!weights[nodeIdx])
           continue;
 
-        for (int k = 0; k < numAttrs; k++) {
-          FixedPoint temp = transformPredBuf[k][nodeIdx];
-          temp.val <<= 2;
-          attrRecUs[j * numAttrs + k] = temp.round();
-        }
+        for (int k = 0; k < numAttrs; k++)
+          attrRecUs[j * numAttrs + k] = transformPredBuf[k][nodeIdx].val;
 
         // scale values for next level
         if (weights[nodeIdx] > 1) {
@@ -1077,7 +1070,7 @@ uraht_process(
         }
 
         for (int k = 0; k < numAttrs; k++)
-          attrRec[j * numAttrs + k] = transformPredBuf[k][nodeIdx].round();
+          attrRec[j * numAttrs + k] = transformPredBuf[k][nodeIdx].val;
         j++;
       }
     }
@@ -1114,7 +1107,7 @@ uraht_process(
     for (int k = 0; k < numAttrs; k++) {
       if (isEncoder)
         attrSum[k] = attrsLf[i * numAttrs + k];
-      attrRecDc[k] = *attrRecParentIt++;
+      attrRecDc[k].val = *attrRecParentIt++;
       attrRecDc[k] *= sqrtWeight;
     }
 
@@ -1167,9 +1160,9 @@ uraht_process(
           &transformBuf[1]);
 
         attrRecDc[k] = transformBuf[0];
-        attrRec[out + w * numAttrs + k] = transformBuf[1].round();
+        attrRec[out + w * numAttrs + k] = transformBuf[1].val;
         if (w == 1)
-          attrRec[out + k] = transformBuf[0].round();
+          attrRec[out + k] = transformBuf[0].val;
       }
 
       // Track RL for RDOQ
@@ -1188,7 +1181,10 @@ uraht_process(
 
   // write-back reconstructed attributes
   assert(attrRec.size() == numAttrs * numPoints);
-  std::copy(attrRec.begin(), attrRec.end(), attributes);
+  for (auto& attr : attrRec) {
+    attr += FixedPoint::kOneHalf;
+    *(attributes++) = attr >> FixedPoint::kFracBits;
+  }
 }
 
 //============================================================================
