@@ -287,30 +287,24 @@ struct CtxModelOctreeOccupancy {
 };
 
 //---------------------------------------------------------------------------
-static int coder_ini_pro[32] = {
-  65461, 65160, 64551, 63637, 62426, 60929, 59163, 57141, 54884, 52413, 49753,
-  46929, 43969, 40899, 37750, 34553, 31338, 28135, 24977, 21893, 18914, 16067,
-  13382, 10883, 8596,  6542,  4740,  3210,  1967,  1023,  388,   75 };
-
 
 struct CtxModelDynamicOBUF {
   static const int kCtxFactorShift = 3;
-  AdaptiveBitModelFast contexts[256 >> kCtxFactorShift];
+  static const int kNumContexts = 256 >> kCtxFactorShift;
+  AdaptiveBitModelFast contexts[kNumContexts];
+  static const int kContextsInitProbability[kNumContexts];
 
   CtxModelDynamicOBUF()
   {
-    for (int i = 0; i < 32; i++) {
-      contexts[i].probability = coder_ini_pro[i];
-    }
+    for (int i = 0; i < kNumContexts; i++)
+      contexts[i].probability = kContextsInitProbability[i];
   }
-
 
   AdaptiveBitModelFast& operator[](int idx)
   {
     return contexts[idx >> kCtxFactorShift];
   }
 };
-
 
 //============================================================================
 
