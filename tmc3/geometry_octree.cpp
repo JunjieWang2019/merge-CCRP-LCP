@@ -727,6 +727,13 @@ GeometryOctreeContexts::resetMap()
     MapOBUFTriSoup[i][2].reset(10 + 1 + 3 + 1, 6 + 1);  // second bit position
   }
 
+  const int bufferSize =
+    CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth);
+  std::fill_n(_BufferOBUFleaves, bufferSize, 0);
+  _OBUFleafNumber = 0;
+  std::fill_n(_BufferOBUFleavesTrisoup, bufferSize, 0);
+  _OBUFleafNumberTrisoup = 0;
+
   // octree intra
   const uint8_t initValueOcc0[64] = {  127, 17, 82, 38, 127, 105, 141, 81, 127, 15, 45, 43, 116, 105, 152, 115, 127, 53, 21, 20, 127, 127, 127, 37, 127, 127, 127, 127, 127, 127, 127, 127, 171, 186, 170, 240, 182, 209, 223, 240, 44, 101, 101, 74, 65, 66, 134, 199, 47, 27, 141, 113, 126, 61, 240, 151, 45, 68, 113, 101, 47, 84, 153, 234, };
   const uint8_t initValueOcc1[64] = {  240, 240, 222, 240, 175, 181, 127, 127, 120, 152, 132, 116, 57, 127, 127, 127, 105, 185, 127, 87, 105, 116, 65, 69, 66, 105, 58, 43, 44, 49, 18, 15, 228, 240, 138, 240, 178, 198, 114, 152, 173, 240, 204, 127, 70, 141, 127, 127, 184, 192, 105, 116, 121, 181, 35, 46, 58, 87, 114, 73, 51, 15, 101, 40, };
@@ -801,6 +808,8 @@ GeometryOctreeContexts::clearMap()
       _MapOccupancy[j][i].clear();
       _MapOccupancySparse[j][i].clear();
     }
+
+  std::cout << "Size used buffer OBUF LEAF = " << _OBUFleafNumber << "\n";
 
   for (int i = 0; i < 5; i++) {
     MapOBUFTriSoup[i][0].clear();

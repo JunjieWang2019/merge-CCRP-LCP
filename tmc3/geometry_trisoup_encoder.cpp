@@ -544,7 +544,11 @@ encodeTrisoupVertices(
     bool isInter = gbh.interPredictionEnabledFlag  ;
     int ctxInter =  isInter ? 1 + segindPred[i] : 0;
 
-    arithmeticEncoder->encode((int)segind[i], ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(segind[i], ctxMap2, ctxMap1)]);
+    int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(
+      segind[i], ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+      ctxtMemOctree._BufferOBUFleavesTrisoup);
+    arithmeticEncoder->encode(
+      (int)segind[i], ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxTrisoup]);
 
     // encode position vertex
     if (segind[i]) {
@@ -569,7 +573,12 @@ encodeTrisoupVertices(
       }
 
       int bit = (vertex >> b--) & 1;
-      arithmeticEncoder->encode(bit, ctxtMemOctree.ctxTriSoup[1][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].getEvolve(bit, ctxMap2, ctxMap1)]);
+
+      ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].getEvolve(
+        bit, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+        ctxtMemOctree._BufferOBUFleavesTrisoup);
+      arithmeticEncoder->encode(
+        bit, ctxtMemOctree.ctxTriSoup[1][ctxInter][ctxTrisoup]);
       v = bit;
 
       // second bit
@@ -588,7 +597,12 @@ encodeTrisoupVertices(
         }
 
         bit = (vertex >> b--) & 1;
-        arithmeticEncoder->encode(bit, ctxtMemOctree.ctxTriSoup[2][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].getEvolve(bit, ctxMap2, (ctxMap1 << 1) + v)]);
+        ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].getEvolve(
+          bit, ctxMap2, (ctxMap1 << 1) + v,
+          &ctxtMemOctree._OBUFleafNumberTrisoup,
+          ctxtMemOctree._BufferOBUFleavesTrisoup);
+        arithmeticEncoder->encode(
+          bit, ctxtMemOctree.ctxTriSoup[2][ctxInter][ctxTrisoup]);
         v = (v << 1) | bit;
       }
 

@@ -765,11 +765,13 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
     int bit;
     if (Sparse) {
       bit = _MapOccupancySparse[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, _CtxMapDynamicOBUF[isInter2], ctx2, ctx1);
+        _arithmeticDecoder, _CtxMapDynamicOBUF[isInter2], ctx2, ctx1,
+        &_OBUFleafNumber, _BufferOBUFleaves);
     }
     else {
       bit = _MapOccupancy[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, _CtxMapDynamicOBUF[2+ isInter2], ctx2, ctx1);
+        _arithmeticDecoder, _CtxMapDynamicOBUF[2+ isInter2], ctx2, ctx1,
+        &_OBUFleafNumber, _BufferOBUFleaves);
     }
 
     // update partial occupancy of current node

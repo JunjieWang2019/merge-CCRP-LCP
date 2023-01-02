@@ -1089,7 +1089,10 @@ void decodeTrisoupVertices(
     bool isInter = gbh.interPredictionEnabledFlag  ;
     int ctxInter =  isInter ? 1 + segindPred[i] : 0;
 
-    bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(&arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2, ctxMap1);
+    bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(
+      &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2,
+      ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+      ctxtMemOctree._BufferOBUFleavesTrisoup);
 
     segind.push_back(c);
     correspondanceSegment2V.push_back(-1);
@@ -1115,7 +1118,10 @@ void decodeTrisoupVertices(
         ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b-1) & 3) : 0;
       }
 
-      int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(&arithmeticDecoder, ctxtMemOctree.ctxTriSoup[1][ctxInter], ctxMap2, ctxMap1);
+      int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(
+        &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[1][ctxInter], ctxMap2,
+        ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+        ctxtMemOctree._BufferOBUFleavesTrisoup);
       v = (v << 1) | bit;
       b--;
 
@@ -1134,7 +1140,10 @@ void decodeTrisoupVertices(
           ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b) <= (v << 1)) : 0;
         }
 
-        bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(&arithmeticDecoder, ctxtMemOctree.ctxTriSoup[2][ctxInter], ctxMap2, (ctxMap1 << 1) + v);
+        bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(
+          &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[2][ctxInter], ctxMap2,
+          (ctxMap1 << 1) + v, &ctxtMemOctree._OBUFleafNumberTrisoup,
+          ctxtMemOctree._BufferOBUFleavesTrisoup);
         v = (v << 1) | bit;
         b--;
       }

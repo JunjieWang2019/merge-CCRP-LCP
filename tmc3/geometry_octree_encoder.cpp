@@ -800,11 +800,13 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgsNZ(
     int bit = (occupancy >> i) & 1;
     if (Sparse) {
       auto obufIdx =
-        _MapOccupancySparse[isInter2][i].getEvolve(bit, ctx2, ctx1);
+        _MapOccupancySparse[isInter2][i].getEvolve(
+          bit, ctx2, ctx1, &_OBUFleafNumber, _BufferOBUFleaves);
       _arithmeticEncoder->encode(bit, _CtxMapDynamicOBUF[isInter2][obufIdx]);
     }
     else {
-      auto obufIdx = _MapOccupancy[isInter2][i].getEvolve(bit, ctx2, ctx1);
+      auto obufIdx = _MapOccupancy[isInter2][i].getEvolve(
+        bit, ctx2, ctx1, &_OBUFleafNumber, _BufferOBUFleaves);
       _arithmeticEncoder->encode(bit, _CtxMapDynamicOBUF[2+ isInter2][obufIdx]);
     }
 

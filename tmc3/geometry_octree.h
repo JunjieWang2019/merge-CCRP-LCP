@@ -310,6 +310,9 @@ struct CtxModelDynamicOBUF {
 
 class CtxMapDynamicOBUF {
 public:
+  static constexpr int kLeafDepth = 4;
+  static constexpr int kLeafBufferSize = 20000;
+
   int S1 = 0; // 16;
   int S2 = 0; // 128 * 2 * 8;
 
@@ -333,44 +336,57 @@ public:
     EntropyDecoder* _arithmeticDecoder,
     CtxModelDynamicOBUF& _ctxMapOccupancy,
     int i,
-    int j);
+    int j,
+    int* OBUFleafNumber,
+    uint8_t* BufferOBUFleaves);
 
   //  get and update *ctxIdx according to bit
-  uint8_t getEvolve(bool bit, int i, int j);
+  uint8_t getEvolve(bool bit, int i, int j, int* OBUFleafNumber, uint8_t* BufferOBUFleaves);
 
 private:
-  int maxTreeDepth = 3;
+  int maxTreeDepth = 0;
   int minkTree = 0;
 
   //  update kDown
-  void  decreaseKdown(int iP, int j, int iTree, int kDown0, int  kTree);
+  void decreaseKdown(int idxTree, int kDownTree);
+  void createLeaf(int idxTree, int kDownTree, int* OBUFleafNumber, uint8_t * BufferOBUFleaves, int ctx, int i);
+  bool createLeafElement(int leafPos, uint8_t * BufferOBUFleaves, uint8_t ctx);
+  uint8_t getEvolveLeaf(int leafPos, uint8_t * BufferOBUFleaves, bool bit, int i);
+  int decodeEvolveLeaf(EntropyDecoder * _arithmeticDecoder, CtxModelDynamicOBUF & _ctxMapOccupancy, int leafPos, uint8_t * BufferOBUFleaves, int i);
   int idx(int i, int j);
 };
+
+//----------------------------------------------------------------------------
 
 inline void
 CtxMapDynamicOBUF::reset(int userBitS1, int userBitS2)
 {
   S1 = 1 << userBitS1;
   S2 = 1 << userBitS2;
-  maxTreeDepth = userBitS1 - 3;
 
-  minkTree = userBitS1 - maxTreeDepth;
-  kDown.resize((1 << maxTreeDepth) * S2);
-  std::fill_n(kDown.begin(), (1 << maxTreeDepth) * S2, userBitS1);
-  Nseen.resize((1 << maxTreeDepth) * S2);
-  std::fill_n(Nseen.begin(), (1 << maxTreeDepth) * S2, 0);
-  CtxIdxMap.resize(S1 * S2);
-  std::fill_n(CtxIdxMap.begin(), S1 * S2, 127);
+  maxTreeDepth = userBitS1 - kLeafDepth;
+  minkTree = kLeafDepth;
+
+  // tree of size (1 << maxTreeDepth) * S2
+  const int treeSize = (1 << maxTreeDepth) * S2;
+  kDown.resize(treeSize);
+  Nseen.resize(treeSize);
+  CtxIdxMap.resize(treeSize);
+
+  std::fill_n(kDown.begin(), treeSize, userBitS1);
+  std::fill_n(Nseen.begin(), S2, 0); // only needed for the S2 root nodes
+  std::fill_n(CtxIdxMap.begin(), S2, 127); // only needed for the S2 root nodes
 }
+
+//----------------------------------------------------------------------------
 
 inline void
 CtxMapDynamicOBUF::init(const uint8_t* initValue) {
-
-  for (int j = 0; j < S2; j++) {
-    for (int i = 0; i < S1; i++)
-      CtxIdxMap[idx(i, j)] = initValue[j];
-  }
+  for (int j = 0; j < S2; j++)
+    CtxIdxMap[j] = initValue[j];
 }
+
+//----------------------------------------------------------------------------
 
 inline void
 CtxMapDynamicOBUF::clear()
@@ -385,103 +401,199 @@ CtxMapDynamicOBUF::clear()
   S1 = S2 = 0;
 }
 
-inline int
-CtxMapDynamicOBUF::decodeEvolve(
-  EntropyDecoder* _arithmeticDecoder,
-  CtxModelDynamicOBUF& _ctxMapOccupancy,
-  int i,
-  int j)
+//----------------------------------------------------------------------------
+inline bool
+CtxMapDynamicOBUF::createLeafElement(int leafPos, uint8_t* BufferOBUFleaves, uint8_t ctx)
 {
-  int iTree = i >> minkTree;
-  int kDown0 = kDown[idx(iTree, j)];
-  int iP = (i >> kDown0) << kDown0;
-  uint8_t* ctxIdx = &(CtxIdxMap[idx(iP, j)]);
+  int firstCtxIdx = leafPos * (1 << kLeafDepth);
+  if (!BufferOBUFleaves[firstCtxIdx]) {
+    memset(&BufferOBUFleaves[firstCtxIdx], ctx, sizeof(uint8_t) * (1 << kLeafDepth));
+    return true;
 
-  int bit = _arithmeticDecoder->decode(_ctxMapOccupancy[*ctxIdx]);
+  }
+  return false;
+}
 
+//----------------------------------------------------------------------------
+inline uint8_t
+CtxMapDynamicOBUF::getEvolveLeaf(int leafPos, uint8_t* BufferOBUFleaves, bool bit, int i)
+{
+  int maskI = (1 << kLeafDepth) - 1;
+  uint8_t* ctxIdx = &BufferOBUFleaves[leafPos * (1 << kLeafDepth) + (i & maskI)];
+  uint8_t out = *ctxIdx;
+
+  // coder index evolves
   if (bit)
     *ctxIdx += kCtxMapDynamicOBUFDelta[(255 - *ctxIdx) >> 4];
   else
     *ctxIdx -= kCtxMapDynamicOBUFDelta[*ctxIdx >> 4];
 
-  if (kDown0) {
-    int kTree = std::max(0, kDown0 - minkTree);
-    iTree = (iTree >> kTree) << kTree;
+  return out;
+}
+
+
+//----------------------------------------------------------------------------
+inline int
+CtxMapDynamicOBUF::decodeEvolveLeaf(EntropyDecoder* _arithmeticDecoder, CtxModelDynamicOBUF& _ctxMapOccupancy, int leafPos, uint8_t* BufferOBUFleaves, int i) {
+  int maskI = (1 << kLeafDepth) - 1;
+  uint8_t* ctxIdx = &BufferOBUFleaves[leafPos * (1 << kLeafDepth) + (i & maskI)];
+  int bit = _arithmeticDecoder->decode(_ctxMapOccupancy[*ctxIdx]);
+
+  // coder index evolves
+  if (bit)
+    *ctxIdx += kCtxMapDynamicOBUFDelta[(255 - *ctxIdx) >> 4];
+  else
+    *ctxIdx -= kCtxMapDynamicOBUFDelta[*ctxIdx >> 4];
+
+  return bit;
+}
+
+
+//----------------------------------------------------------------------------
+inline int
+CtxMapDynamicOBUF::decodeEvolve(EntropyDecoder* _arithmeticDecoder, CtxModelDynamicOBUF& _ctxMapOccupancy, int i, int j, int* OBUFleafNumber, uint8_t* BufferOBUFleaves)
+{
+  int iTree = i >> kLeafDepth; // drop the bits that are in OBUF leaf
+  int kDown0 = kDown[idx(iTree, j)];
+  int bit;
+
+  // ------------------ in Tree ---------------------
+  if (kDown0 >= kLeafDepth) { // still in tree , not in OBUF leaf
+    int kDownTree = kDown0 - kLeafDepth; // kdown in the tree part >=0
+    int iP = (iTree >> kDownTree) << kDownTree; // erase bits
+    int idxTree = idx(iP, j);  // index ofelements in the tree tables
+
+    uint8_t* ctxIdx = &(CtxIdxMap[idxTree]); // get coder index
+    bit = _arithmeticDecoder->decode(_ctxMapOccupancy[*ctxIdx]);
+
+    // coder index evolves
+    if (bit)
+      *ctxIdx += kCtxMapDynamicOBUFDelta[(255 - *ctxIdx) >> 4];
+    else
+      *ctxIdx -= kCtxMapDynamicOBUFDelta[*ctxIdx >> 4];
+
+    // decrease number if erased bits if seens >= th
     int th = 3 + (std::abs(int(*ctxIdx) - 127) >> 4);
-    if (++Nseen[idx(iTree, j)]>= th)  // if more than th stats per pack
-      decreaseKdown(iP, j, iTree, kDown0, kTree);
+    if (++Nseen[idxTree] >= th) {
+      if (kDownTree > 0) // we'll stay in tree
+        decreaseKdown(idxTree, kDownTree); // kDownTree >0
+      else  // we'll go to a leaf to be created int othe buffer
+        createLeaf(idxTree, kDownTree, OBUFleafNumber, BufferOBUFleaves, *ctxIdx, i);
+
+    }
+  }
+  // ------------------ in Leaf  ---------------------
+  else { // in OBUF leaf
+    int leafIdx = (CtxIdxMap[idx(iTree, j)] << 8) + Nseen[idx(iTree, j)]; // 16bit pointer hidden in CtxIdx and Nseen
+    bit = decodeEvolveLeaf(_arithmeticDecoder, _ctxMapOccupancy, leafIdx, BufferOBUFleaves, i);
   }
 
   return bit;
 }
 
 
+//----------------------------------------------------------------------------
 inline uint8_t
-CtxMapDynamicOBUF::getEvolve(bool bit, int i, int j)
+CtxMapDynamicOBUF::getEvolve(bool bit, int i, int j, int* OBUFleafNumber, uint8_t* BufferOBUFleaves)
 {
-  int iTree = i >> minkTree;
+  int iTree = i >> kLeafDepth; // drop the bits that are in OBUF leaf
   int kDown0 = kDown[idx(iTree, j)];
-  int iP = (i >> kDown0) << kDown0;
+  uint8_t out;
 
-  uint8_t* ctxIdx = &(CtxIdxMap[idx(iP, j)]);
-  uint8_t out = *ctxIdx;
+  // ------------------ in Tree ---------------------
+  if (kDown0 >= kLeafDepth) { // still in tree , not in OBUF leaf
+    int kDownTree = kDown0 - kLeafDepth; // kdown in the tree part >=0
+    int iP = (iTree >> kDownTree) << kDownTree; // erase bits
+    int idxTree = idx(iP, j);  // index ofelements in the tree tables
 
-  if (bit)
-    *ctxIdx += kCtxMapDynamicOBUFDelta[(255 - *ctxIdx) >> 4];
-  else
-    *ctxIdx -= kCtxMapDynamicOBUFDelta[*ctxIdx >> 4];
+    uint8_t* ctxIdx = &(CtxIdxMap[idxTree]); // get coder index
+    out = *ctxIdx;
 
-  if (kDown0) {
-    int kTree = std::max(0, kDown0 - minkTree);
-    iTree = (iTree >> kTree) << kTree;
+    // coder index evolves
+    if (bit)
+      *ctxIdx += kCtxMapDynamicOBUFDelta[(255 - *ctxIdx) >> 4];
+    else
+      *ctxIdx -= kCtxMapDynamicOBUFDelta[*ctxIdx >> 4];
+
+    // decrease number if erased bits if seens >= th
     int th = 3 + (std::abs(int(*ctxIdx) - 127) >> 4);
-    if (++Nseen[idx(iTree, j)]>= th)  // if more than th stats per pack
-      decreaseKdown(iP, j, iTree, kDown0, kTree);
+    if (++Nseen[idxTree] >= th) {
+      if (kDownTree > 0) // we'll stay in tree
+        decreaseKdown(idxTree, kDownTree); // kDownTree >0
+      else  // we'll go to a leaf to be created int othe buffer
+        createLeaf(idxTree, kDownTree, OBUFleafNumber, BufferOBUFleaves, *ctxIdx, i);
+
+    }
+
+  }
+  // ------------------ in Leaf  ---------------------
+  else { // in OBUF leaf
+    int leafIdx = (CtxIdxMap[idx(iTree, j)] << 8) + Nseen[idx(iTree, j)]; // 16bit pointer hidden in CtxIdx and Nseen
+    out = getEvolveLeaf(leafIdx, BufferOBUFleaves, bit, i);
   }
 
   return out;
 }
 
+
+//----------------------------------------------------------------------------
 inline void
-CtxMapDynamicOBUF::decreaseKdown(
-  int iP,
-  int j,
-  int iTree,
-  int kDown0,
-  int kTree)
+CtxMapDynamicOBUF::decreaseKdown(int idxTree, int kDownTree)
 {
-  int idxTree = idx(iTree, j);
-  Nseen[idxTree] = 0; // setting other Nseen unneeded because initialized to 0
-  if (kTree) { // binary-tree based dynamic OBUF
-    int iEnd = S2 << kTree;
-    for (int ii = 0; ii < iEnd; ii += S2)
-      kDown[idxTree + ii]--;
+  Nseen[idxTree] = 0;  // reintitlaize number of seen
+  Nseen[idxTree + (S2 << kDownTree - 1)] = 0;
+  int iEnd = S2 << kDownTree;
+  for (int ii = 0; ii < iEnd; ii += S2)
+    kDown[idxTree + ii]--; // decrease number of erased bits for all possible i involved (there are 2^kDownTree)
 
-    auto *p = &CtxIdxMap[idx(iP, j)];
-    p[S2 << kDown0 - 1] = *p;
-  }
-  else {
-    // simple dynamic OBUF on a subblock of states attached to a leaf of
-    // binary-tree
-    kDown[idxTree]--;
-
-    int S1Simple = S1 >> maxTreeDepth;
-    int SS1 = (S1Simple >> kDown0) ;
-    int stride = S2 << kDown0;
-
-    auto *p = &CtxIdxMap[idx(iTree << minkTree, j)];
-    for (int iL = 0; iL < SS1; iL++, p += stride)  // pack
-      p[stride >> 1] = *p;
-  }
+  auto* p = &CtxIdxMap[idxTree]; // coder index of first leaf in tree is here
+  p[S2 << kDownTree - 1] = *p; // copy coder index to second leaf in tree
 }
 
+
+//----------------------------------------------------------------------------
+inline void
+CtxMapDynamicOBUF::createLeaf(int idxTree, int kDownTree, int* OBUFleafNumber, uint8_t* BufferOBUFleaves, int ctx, int i)
+{
+  bool  bufferAvailable = createLeafElement(*OBUFleafNumber, BufferOBUFleaves, ctx);
+  if (bufferAvailable) {
+    Nseen[idxTree] = (*OBUFleafNumber) & 255;// lower 8 bits
+    CtxIdxMap[idxTree] = (*OBUFleafNumber) >> 8; // upper 8 bits
+    *OBUFleafNumber += 1;
+  }
+  else {
+    int dmin = 256;
+    int bmin = *OBUFleafNumber;
+    const int maskI = (1 << kLeafDepth) - 1;
+
+    for (int b = *OBUFleafNumber; b < *OBUFleafNumber + 20 && b < kLeafBufferSize; b++) {
+      int d = std::abs(ctx - BufferOBUFleaves[b * (1 << kLeafDepth) + (i & maskI)]);
+      if (d < dmin) {
+        dmin = d;
+        bmin = b;
+      }
+    }
+    Nseen[idxTree] = bmin & 255;// lower 8 bits
+    CtxIdxMap[idxTree] = bmin >> 8; // upper 8 bits
+    *OBUFleafNumber = bmin + 1;
+
+  }
+
+  if (*OBUFleafNumber >= kLeafBufferSize) // buffer not full
+    *OBUFleafNumber = 0;
+  kDown[idxTree]--; // same as  kDown[idx(iTree, j)]--;  kdown should be equal to kLeafDepth - 1 now
+}
+
+
+//----------------------------------------------------------------------------
 inline int
 CtxMapDynamicOBUF::idx(int i, int j)
 {
   return i * S2 + j;
 }
 
-//---------------------------------------------------------------------------
+
+//============================================================================
 // generate an array of node sizes according to subsequent qtbt decisions
 
 std::vector<Vec3<int>> mkQtBtNodeSizeList(
@@ -717,6 +829,12 @@ public:
   CtxMapDynamicOBUF _MapOccupancy[2][8];
   CtxMapDynamicOBUF _MapOccupancySparse[2][8];
 
+  uint8_t _BufferOBUFleaves[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
+  int _OBUFleafNumber;
+
+  uint8_t _BufferOBUFleavesTrisoup[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
+  int _OBUFleafNumberTrisoup;
+
 protected:
   AdaptiveBitModel _ctxSingleChild;
   AdaptiveBitModel _ctxZ[8][7][4];
@@ -770,6 +888,7 @@ protected:
   DualLutCoder<true> _bytewiseOccupancyCoder[10];
   // OBUF somplified
   CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
+
 };
 
 //----------------------------------------------------------------------------
