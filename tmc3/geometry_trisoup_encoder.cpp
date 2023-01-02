@@ -52,18 +52,22 @@ encodeGeometryTrisoup(
   PCCPointSet3& pointCloud,
   GeometryOctreeContexts& ctxtMemOctree,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
-  PCCPointSet3& predPointCloud,
+  const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
   const InterGeomEncOpts& interParams)
 {
   // trisoup uses octree coding until reaching the triangulation level.
   pcc::ringbuf<PCCOctree3Node> nodes;
+  PCCPointSet3 compensatedPointCloud;  // set of points after motion compensation
   encodeGeometryOctree(
     optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
-    predPointCloud, sps, interParams);
+    refFrame, sps, interParams, compensatedPointCloud);
+
+  std::cout << "\nSize compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
+  bool isInter = gbh.interPredictionEnabledFlag;
 
   // resume encoding with the last encoder
-  pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.back().get();
+  pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.back().get();    
 
   int blockWidth = 1 << gbh.trisoupNodeSizeLog2(gps);
   const int maxVertexPrecisionLog2 = gbh.trisoup_vertex_quantization_bits
@@ -75,8 +79,8 @@ encodeGeometryTrisoup(
     gbh.trisoup_centroid_vertex_residual_flag;
 
   // Determine vertices
-  std::cout << "Number of points = " << pointCloud.getPointCount() << "\n";
-  std::cout << "Number of nodes = " << nodes.size() << "\n";
+  std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
+  std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
   int distanceSearchEncoder = 1;
   if (opt.improvedVertexDetermination) {
     float estimatedSampling = float(nodes.size());
@@ -96,24 +100,29 @@ encodeGeometryTrisoup(
   std::vector<uint8_t> vertices;
   determineTrisoupVertices(
     nodes, segind, vertices, pointCloud, blockWidth, bitDropped,
-    distanceSearchEncoder);
+    distanceSearchEncoder, false);
 
+  // determine vertices from compensated point cloud 
+  std::vector<bool> segindPred;
+  std::vector<uint8_t> verticesPred;
+  if (isInter) {
+    determineTrisoupVertices(
+      nodes, segindPred, verticesPred, compensatedPointCloud, blockWidth, bitDropped,
+      1 /*distanceSearchEncoder*/, true);    
+  }
+
+  
   // Determine neighbours
   std::vector<uint16_t> neighbNodes;
-  std::vector<int> indexBefore;
-  std::vector<std::vector<int>> perpVertexStart;
-  determineTrisoupNeighbours(
-    nodes, neighbNodes, indexBefore, perpVertexStart, blockWidth);
+  std::vector<std::array<int, 18>> edgePattern;
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth);
 
   gbh.num_unique_segments_minus1 = segind.size() - 1;
-  gbh.num_unique_segments_bits_minus1 =
-    numBits(gbh.num_unique_segments_minus1) - 1;
+  gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
   // Encode vertex presence and position into bitstream
   assert(segind.size() > 0);
-  encodeTrisoupVertices(
-    segind, vertices, neighbNodes, indexBefore, perpVertexStart, bitDropped,
-    gps, gbh, arithmeticEncoder);
+  encodeTrisoupVertices(segind, vertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped,gps, gbh, arithmeticEncoder, ctxtMemOctree);
 
   // Decode vertices with certain sampling value
   bool haloFlag = gbh.trisoup_halo_flag;
@@ -131,18 +140,19 @@ encodeGeometryTrisoup(
   if (gps.trisoup_sampling_value > 0) {
     subsample = gps.trisoup_sampling_value;
     decodeTrisoupCommon(
-      nodes, segind, vertices, drifts, pointCloud, recPointCloud, blockWidth,
+      nodes, segind, vertices, drifts, pointCloud, recPointCloud, compensatedPointCloud, blockWidth,
       maxval, subsample, bitDropped, isCentroidDriftActivated, false,
-      haloFlag, adaptiveHaloFlag, fineRayFlag, NULL);
+      haloFlag, adaptiveHaloFlag, fineRayFlag, NULL, ctxtMemOctree);
     std::cout << "Sub-sampling " << subsample << " gives "
               << recPointCloud.getPointCount() << " points \n";
   } else {
     int maxSubsample = 1 << gbh.trisoupNodeSizeLog2(gps);
     for (subsample = 1; subsample <= maxSubsample; subsample++) {
       decodeTrisoupCommon(
-        nodes, segind, vertices, drifts, pointCloud, recPointCloud, blockWidth,
+        nodes, segind, vertices, drifts, pointCloud, recPointCloud, compensatedPointCloud, blockWidth,
         maxval, subsample, bitDropped, isCentroidDriftActivated, false,
-        haloFlag, adaptiveHaloFlag, fineRayFlag, NULL);
+        haloFlag, adaptiveHaloFlag, fineRayFlag, NULL, ctxtMemOctree);
+
       std::cout << "Sub-sampling " << subsample << " gives "
                 << recPointCloud.getPointCount() << " points \n";
       if (recPointCloud.getPointCount() <= gbh.footer.geom_num_points_minus1 + 1)
@@ -157,7 +167,11 @@ encodeGeometryTrisoup(
 
   // encoder centroid residua into bitstream
   if (isCentroidDriftActivated)
-    encodeTrisoupCentroidResidue(drifts, arithmeticEncoder);
+    encodeTrisoupCentroidResidue(drifts, arithmeticEncoder, ctxtMemOctree);
+
+  if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
+    ctxtMemOctree.clearMap();
+  }
 }
 
 //---------------------------------------------------------------------------
@@ -177,7 +191,8 @@ determineTrisoupVertices(
   const PCCPointSet3& pointCloud,
   const int defaultBlockWidth,
   const int bitDropped,
-  int distanceSearchEncoder)
+  int distanceSearchEncoder,
+  bool isCompensated)
 {
   // Put all leaves' edges into a list.
   std::vector<TrisoupSegmentEnc> segments;
@@ -326,7 +341,16 @@ determineTrisoupVertices(
     const int tmax = blockWidth - tmin - 1;
     const int tmin2 = distanceSearchEncoder;
     const int tmax2 = blockWidth - tmin2 - 1;
-    for (int j = leaf.start; j < leaf.end; j++) {
+
+    int idxStart = leaf.start;
+    int idxEnd = leaf.end;
+    if (isCompensated) {
+      idxStart = leaf.predStart;
+      idxEnd = leaf.predEnd;
+    }
+
+
+    for (int j = idxStart; j < idxEnd; j++) {
       Vec3<int> voxel = pointCloud[j] - leaf.pos;
 
       // parameter indicating threshold of how close voxels must be to edge ----------- 1 -------------------
@@ -492,111 +516,110 @@ void
 encodeTrisoupVertices(
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,
+  std::vector<bool>& segindPred,
+  std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
-  std::vector<int>& indexBefore,
-  std::vector<std::vector<int>>& perpVertexStart,
+  std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
-  pcc::EntropyEncoder* arithmeticEncoder)
+  pcc::EntropyEncoder* arithmeticEncoder,
+  GeometryOctreeContexts& ctxtMemOctree)
 {
   const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
   const int max2bits = nbitsVertices > 1 ? 3 : 1;
+  const int mid2bits = nbitsVertices > 1 ? 2 : 1;
 
   int iV = 0;
+  int iVPred = 0;
   std::vector<int> correspondanceSegment2V(segind.size(), -1);
 
-  AdaptiveBitModel ctxTempV2[144];
-
-  CtxModelDynamicOBUF ctxTriSoup;
-  CtxMapDynamicOBUF MapOBUFTriSoup[3];
-  MapOBUFTriSoup[0].reset(10, 7);      // flag
-  MapOBUFTriSoup[1].reset(10, 6);      // first bit position
-  MapOBUFTriSoup[2].reset(10, 6 + 1);  // second bit position
   for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
     // reduced neighbour contexts
-    int ctxE = (!!(neighbNodes[i] & 1)) + (!!(neighbNodes[i] & 2))
-      + (!!(neighbNodes[i] & 4)) + (!!(neighbNodes[i] & 8))
-      - 1;  // at least one node is occupied
-    int ctx0 = (!!(neighbNodes[i] & 16)) + (!!(neighbNodes[i] & 32))
-      + (!!(neighbNodes[i] & 64)) + (!!(neighbNodes[i] & 128));
-    int ctx1 = (!!(neighbNodes[i] & 256)) + (!!(neighbNodes[i] & 512))
-      + (!!(neighbNodes[i] & 1024)) + (!!(neighbNodes[i] & 2048));
-    int direction = neighbNodes[i] >> 13;
+    int ctxE = (!!(neighbNodes[i] & 1)) + (!!(neighbNodes[i] & 2)) + (!!(neighbNodes[i] & 4)) + (!!(neighbNodes[i] & 8)) - 1; // at least one node is occupied 
+    int ctx0 = (!!(neighbNodes[i] & 16)) + (!!(neighbNodes[i] & 32)) + (!!(neighbNodes[i] & 64)) + (!!(neighbNodes[i] & 128));
+    int ctx1 = (!!(neighbNodes[i] & 256)) + (!!(neighbNodes[i] & 512)) + (!!(neighbNodes[i] & 1024)) + (!!(neighbNodes[i] & 2048));
+    int direction = neighbNodes[i] >> 13; // 0=x, 1=y, 2=z  
+   
+    // construct pattern 
+    auto patternIdx = edgePattern[i];
+    int pattern = 0;
+    int patternClose  = 0;
+    int patternClosest  = 0;    
+    int nclosestPattern = 0;
 
-    int beforeCtx = 0;
-    int Vbefore = 0;
-    int nclose = 0;
-    int nfar = 0;
+    int towardOrAway[18] = { 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // 0 = toward; 1= away
+    int mapping18to9[3][9] = { {0,1,2,3,4,15,14,5,7}, {0,1,2,3,9,15,14,7,12}, {0,1,2,9,10,15,14,7,12} };  
 
-    // compute data relative to preceding (before) vertex along edge direction (presence and position)
-    // vertoces are on gbh.trisoupNodeSizeLog2(gps) - bitDropped bits
-    if (indexBefore[i] != -1 && gbh.trisoupNodeSizeLog2(gps) <= 4) {
-      beforeCtx = segind[indexBefore[i]];
-      if (correspondanceSegment2V[indexBefore[i]] != -1) {
-        Vbefore = 1 + vertices[correspondanceSegment2V[indexBefore[i]]]
-          >> std::max(0, nbitsVertices - 2);  // on 2 bits
+    for (int v = 0; v < 9; v++) {
+      int v18 = mapping18to9[direction][v];
 
-        int v2bits = max2bits
-          - (vertices[correspondanceSegment2V[indexBefore[i]]]
-             >> std::max(0, nbitsVertices - 2));  // on 2 bits
-        if (v2bits <= 0)
-          nclose++;
-        if (v2bits >= max2bits)
-          nfar++;
-      }
-    }
-
-    // count number of perp vertices close to current edge; find their position
-    int occupPerp = 0;
-    auto perpVS = perpVertexStart[i];
-    int maxVal = (1 << nbitsVertices) - 1;
-
-    for (int k = 0; k < perpVS.size(); k++) {
-      const int maskIdx = (1 << 30) - 1;
-      int idxEdge = perpVS[k] & maskIdx;
-
-      if (segind[idxEdge]) {
-        occupPerp++;
-        int idxVertex = correspondanceSegment2V[idxEdge];
-        int vertexPos = vertices[idxVertex] >> std::max(0, nbitsVertices - 2);  // on 2 bits
-
-        int orientation = perpVS[k] >> 30;
-        if (orientation) {            // if toward then reverse to away
-          vertexPos = max2bits - vertexPos;  // 0 is closest, 3 is farthest
+      if (patternIdx[v18] != -1) {
+        int idxEdge = patternIdx[v18];
+        if (segind[idxEdge]) {
+          pattern |= 1 << v;
+          int vertexPos2bits = vertices[correspondanceSegment2V[idxEdge]] >> std::max(0, nbitsVertices - 2);
+          if (towardOrAway[v18])
+            vertexPos2bits = max2bits - vertexPos2bits; // reverses for away 
+          if (vertexPos2bits >= mid2bits)
+            patternClose |= 1 << v;
+          if (vertexPos2bits >= max2bits)
+            patternClosest |= 1 << v;
+          nclosestPattern += vertexPos2bits >= max2bits && v <= 4;
         }
-
-        if (vertexPos <= 0)
-          nclose++;
-        if (vertexPos >= max2bits)
-          nfar++;
       }
     }
 
-    int perpStartCtx =
-      (4 - direction) - occupPerp + 1 - beforeCtx;  // in [0,5]
-    int nmiddle = occupPerp + beforeCtx - nfar - nclose;
-    bool flagTouch = nclose > 0;
+    int missedCloseStart = /*!(pattern & 1)*/ + !(pattern & 2) + !(pattern & 4); 
+    int nclosestStart = !!(patternClosest & 1) + !!(patternClosest & 2) + !!(patternClosest & 4);
+    if (direction == 0) {
+      missedCloseStart +=  !(pattern & 8) + !(pattern & 16);
+      nclosestStart +=  !!(patternClosest & 8) + !!(patternClosest & 16);
+    }
+    if (direction == 1) {
+      missedCloseStart +=  !(pattern & 8);
+      nclosestStart +=  !!(patternClosest & 8) - !!(patternClosest & 16) ;
+    }
+    if (direction == 2) {      
+      nclosestStart +=  - !!(patternClosest & 8) - !!(patternClosest & 16) ;
+    }
+
+    // reorganize neighbours of vertex /edge (endpoint) independently on xyz 
+    int neighbEdge = (neighbNodes[i] >> 0) & 15;
+    int neighbEnd = (neighbNodes[i] >> 4) & 15;
+    int neighbStart = (neighbNodes[i] >> 8) & 15;
+    if (direction == 2) {      
+      neighbEdge = ((neighbNodes[i] >> 0 + 0) & 1);
+      neighbEdge += ((neighbNodes[i] >> 0 + 3) & 1) << 1;
+      neighbEdge += ((neighbNodes[i] >> 0 + 1) & 1) << 2;
+      neighbEdge += ((neighbNodes[i] >> 0 + 2) & 1) << 3;
+
+      neighbEnd = ((neighbNodes[i] >> 4 + 0) & 1);
+      neighbEnd += ((neighbNodes[i] >> 4 + 3) & 1) << 1;
+      neighbEnd += ((neighbNodes[i] >> 4 + 1) & 1) << 2;
+      neighbEnd += ((neighbNodes[i] >> 4 + 2) & 1) << 3;
+
+      neighbStart = ((neighbNodes[i] >> 8 + 0) & 1);
+      neighbStart += ((neighbNodes[i] >> 8 + 3) & 1) << 1;
+      neighbStart += ((neighbNodes[i] >> 8 + 1) & 1) << 2;
+      neighbStart += ((neighbNodes[i] >> 8 + 2) & 1) << 3;
+    }
+
 
     // encode flag vertex
-    int ctxMap1 = (Vbefore * 4 + ctxE) * 4 + std::min(nclose, 3);
-    bool full01 = ((ctx0 == 4) || (ctx1 == 4));
-    int ctxMap2 = full01 << 8;
-    if (!full01) {  // none is full
-      ctxMap2 |= (neighbNodes[i] >> 4) & 255;
-    } else {  // one is full, very rarely both
-      ctxMap2 |= (ctx0 == 4) << 7;
-      if (ctx0 == 4)
-        ctxMap2 |= ((neighbNodes[i] >> 8) & 15) << 3;
-      else
-        ctxMap2 |= ((neighbNodes[i] >> 4) & 15) << 3;
-      // three bits to spare
-      ctxMap2 |= perpStartCtx;
-    }
+    int ctxMap1 = std::min(nclosestPattern, 2) * 15 * 2 +  (neighbEdge-1) * 2 + ((ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits 
+    int ctxMap2 = neighbEnd << 11;
+    ctxMap2 |= (patternClose & (0b00000110)) << 9 - 1 ; // perp that do not depend on direction = to start
+    ctxMap2 |= direction << 7;
+    ctxMap2 |= (patternClose & (0b00011000))<< 5-3; // perp that  depend on direction = to start or to end
+    ctxMap2 |= (patternClose & (0b00000001))<< 4;  // before
+    int orderedPclosePar = (((pattern >> 5) & 3) << 2) + (!!(pattern & 128) << 1) + !!(pattern & 256);
+    ctxMap2 |= orderedPclosePar;
 
-    arithmeticEncoder->encode(
-      (int)segind[i],
-      ctxTriSoup[MapOBUFTriSoup[0].getEvolve(segind[i], ctxMap2, ctxMap1)]);
+    bool isInter = gbh.interPredictionEnabledFlag  ;  
+    int ctxInter =  isInter ? 1 + segindPred[i] : 0;    
+
+    arithmeticEncoder->encode((int)segind[i], ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(segind[i], ctxMap2, ctxMap1)]);
 
     // encode position vertex
     if (segind[i]) {
@@ -604,40 +627,52 @@ encodeTrisoupVertices(
       auto vertex = vertices[iV];
       correspondanceSegment2V[i] = iV;
 
-      int ctxFullNbounds =
-        (4 * (std::max(1, ctx0) - 1) + (std::max(1, ctx1) - 1)) * 2
-        + (ctxE == 3);
+      int ctxFullNbounds = (4 * (ctx0 <= 1 ? 0 : (ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctx1) - 1)) * 2 + (ctxE == 3);
       int b = nbitsVertices - 1;
 
       // first bit
-      ctxMap1 = ctxFullNbounds * 2 + flagTouch;
-      ctxMap2 = perpStartCtx << 7;
-      ctxMap2 |= beforeCtx << 6;
-      ctxMap2 |= std::min(3, nfar) << 4;
-      ctxMap2 |= std::min(3, nclose) << 2;
-      ctxMap2 |= std::min(3, nmiddle);
+      ctxMap1 = ctxFullNbounds * 2 + (nclosestStart > 0);
+      ctxMap2 = missedCloseStart << 8;
+      ctxMap2 |= (patternClosest & 1) << 7;
+      ctxMap2 |= direction << 5;
+      ctxMap2 |= patternClose & (0b00011111);      
+      int orderedPclosePar = (((patternClose >> 5) & 3) << 2) + (!!(patternClose & 128) << 1) + !!(patternClose & 256);
+
+      ctxInter = 0;      
+      if (isInter) {
+        ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b-1) & 3) : 0;
+      }
+
       int bit = (vertex >> b--) & 1;
-      arithmeticEncoder->encode(
-        bit, ctxTriSoup[MapOBUFTriSoup[1].getEvolve(bit, ctxMap2, ctxMap1)]);
+      arithmeticEncoder->encode(bit, ctxtMemOctree.ctxTriSoup[1][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].getEvolve(bit, ctxMap2, ctxMap1)]);
       v = bit;
 
       // second bit
       if (b >= 0) {
+        ctxMap1 = ctxFullNbounds * 2 + (nclosestStart > 0);
+        ctxMap2 = missedCloseStart << 8;
+        ctxMap2 |= (patternClose & 1) << 7;
+        ctxMap2 |= (patternClosest & 1) << 6;
+        ctxMap2 |= direction << 4;
+        ctxMap2 |= (patternClose & (0b00011111)) >> 1;
+        ctxMap2 = (ctxMap2 << 4) + orderedPclosePar;
+
+        ctxInter = 0;
+        if (isInter) {
+          ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b) <= (v << 1)) : 0;
+        }
+
         bit = (vertex >> b--) & 1;
-        arithmeticEncoder->encode(
-          bit,
-          ctxTriSoup[MapOBUFTriSoup[2].getEvolve(
-            bit, ctxMap2, (ctxMap1 << 1) + v)]);
+        arithmeticEncoder->encode(bit, ctxtMemOctree.ctxTriSoup[2][ctxInter][ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].getEvolve(bit, ctxMap2, (ctxMap1 << 1) + v)]);
         v = (v << 1) | bit;
       }
 
       // third bit
       if (b >= 0) {
-        int ctxFullNboundsReduced1 =
-          (6 * (ctx0 >> 1) + perpStartCtx) * 2 + (ctxE == 3);
+        int ctxFullNboundsReduced1 = (6 * (ctx0 >> 1) + missedCloseStart) * 2 + (ctxE == 3);
         bit = (vertex >> b--) & 1;
         arithmeticEncoder->encode(
-          bit, ctxTempV2[4 * ctxFullNboundsReduced1 + v]);
+          bit, ctxtMemOctree.ctxTempV2[4 * ctxFullNboundsReduced1 + v]);
         v = (v << 1) | bit;
       }
 
@@ -646,21 +681,31 @@ encodeTrisoupVertices(
         arithmeticEncoder->encode((vertex >> b) & 1);
       iV++;
     }
+
+    if (isInter && segindPred[i])
+      iVPred++;
   }
+
 }
 
 //-------------------------------------------------------------------------------------
 void
 encodeTrisoupCentroidResidue(
-  std::vector<CentroidDrift>& drifts, pcc::EntropyEncoder* arithmeticEncoder)
+  std::vector<CentroidDrift>& drifts, pcc::EntropyEncoder* arithmeticEncoder, GeometryOctreeContexts& ctxtMemOctree)
 {
-  AdaptiveBitModel ctxDrift0[9];
-  AdaptiveBitModel ctxDriftSign[3][8][8];
-  AdaptiveBitModel ctxDriftMag[4];
+  //AdaptiveBitModel ctxDrift0[9];
+  //AdaptiveBitModel ctxDriftSign[3][8][8];
+  //AdaptiveBitModel ctxDriftMag[4];
   for (int i = 0; i < drifts.size(); i++) {
     int driftQ = drifts[i].driftQ;
-    arithmeticEncoder->encode(driftQ == 0, ctxDrift0[drifts[i].ctxMinMax]);
-
+    int driftQPred = drifts[i].driftQPred;   
+   
+    if (driftQPred==-100) //intra 
+      arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[drifts[i].ctxMinMax][0]);
+    else //inter      
+      arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[drifts[i].ctxMinMax][1+std::min(3,std::abs(driftQPred))]);    
+    
+    
     // if not 0
     // drift in [-lowBound; highBound]
     if (driftQ) {
@@ -670,22 +715,21 @@ encodeTrisoupCentroidResidue(
       int lowS = std::min(7, drifts[i].lowBoundSurface);
       int highS = std::min(7, drifts[i].highBoundSurface);
       if (highBound && lowBound) {  // otherwise sign is known
-        arithmeticEncoder->encode(
-          driftQ > 0,
-          ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)]
-                      [lowS][highS]);
+        arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
       }
 
       // code remaining bits 1 to 7 at most
       int magBound = (driftQ > 0 ? highBound : lowBound) - 1;
+      bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && driftQ > 0) || (driftQPred < 0 && driftQ < 0);      
 
       int magDrift = std::abs(driftQ) - 1;
       int ctx = 0;
       while (magBound > 0 && magDrift >= 0) {
         if (ctx < 4)
-          arithmeticEncoder->encode(magDrift == 0, ctxDriftMag[ctx]);
+          arithmeticEncoder->encode(magDrift == 0, ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
         else
           arithmeticEncoder->encode(magDrift == 0);
+
         magDrift--;
         magBound--;
         ctx++;

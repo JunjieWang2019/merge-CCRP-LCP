@@ -422,6 +422,12 @@ struct SequenceParameterSet {
 
   // Indicates that context state may be propagated between slices.
   bool entropy_continuation_enabled_flag;
+
+  // Indicates that inter-frame prediction may be used in the sequence
+  bool inter_frame_prediction_enabled_flag;
+
+  // locam motion compensation 
+  int local_mc;
 };
 
 //============================================================================
@@ -584,9 +590,22 @@ struct GeometryParameterSet {
   bool interPredictionEnabledFlag;
   int interAzimScaleLog2;
   bool globalMotionEnabled;
+  bool localMotionEnabled;
 
   //Permits entropy continuation enabled in GoF for inter frame coding
   bool gof_geom_entropy_continuation_enabled_flag;
+
+  // inter
+  struct Motion {
+    int motion_block_size;
+    int motion_window_size;
+    int motion_min_pu_size;
+    int motion_max_prefix_bits;
+    int motion_max_suffix_bits;
+    int Amotion0;
+    double lambda;
+    int decimate;
+  } motion;
 };
 
 //============================================================================

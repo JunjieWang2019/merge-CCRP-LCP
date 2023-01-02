@@ -49,6 +49,7 @@ static const unsigned int motionParamPrec = 16;
 static const unsigned int motionParamScale = 1 << motionParamPrec;
 static const unsigned int motionParamOffset = 1 << (motionParamPrec - 1);
 int plus1log2shifted4(int x);
+struct PCCOctree3Node;
 
 //============================================================================
 
@@ -133,6 +134,66 @@ decodeCompensateWithCuboidPartition(
 	const Vec3<int> minimum_position,
   EntropyDecoder* arithmeticDecoder
 );
+
+//----------------------------------------- LOCAL MOTION -------------------
+struct PUtree {
+  std::vector<bool> popul_flags;
+  std::vector<bool> split_flags;
+  std::vector<Vec3<int>> MVs;
+};
+
+int deriveMotionMaxPrefixBits(const GeometryParameterSet::Motion& param);
+int deriveMotionMaxSuffixBits(const GeometryParameterSet::Motion& param);
+
+std::vector<std::vector<Vec3<int>>> buildActiveWindow(
+  const int LPUnumInAxis,
+  const PCCPointSet3& predPointCloud,
+  int th_dists,
+  const int log2MotionBlockSize);
+
+bool motionSearchForNode(
+  const PCCPointSet3& pointCloud,
+  const PCCOctree3Node* node0,
+  const GeometryParameterSet::Motion& param,
+  int nodeSizeLog2,
+  EntropyEncoder* arithmeticEncoder,
+  int8_t* bufferPoints,
+  PUtree* local_PU_tree,
+  const std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  int numLPUPerLine);
+
+
+void encode_splitPU_MV_MC(
+  PCCOctree3Node* node0,
+  PUtree* local_PU_tree,
+  const GeometryParameterSet::Motion& param,
+  Vec3<int> nodeSizeLog2,
+  EntropyEncoder* arithmeticEncoder,
+  PCCPointSet3* compensatedPointCloud,
+  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  int numLPUPerLine,
+  int log2MotionBlkSize);
+
+void extracPUsubtree(
+  const GeometryParameterSet::Motion& param,
+  PUtree* local_PU_tree,
+  int block_size,
+  int& pos_fs,
+  int& pos_fp,
+  int& pos_MV,
+  PUtree* destination_tree);
+
+// motion decoder
+
+void decode_splitPU_MV_MC(
+  PCCOctree3Node* node0,
+  const GeometryParameterSet::Motion& param,
+  Vec3<int> nodeSizeLog2,
+  EntropyDecoder* arithmeticDecoder,
+  PCCPointSet3* compensatedPointCloud,
+  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  int numLPUPerLine,
+  int log2MotionBlkSize);
 
   //============================================================================
 

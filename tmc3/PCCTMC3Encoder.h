@@ -151,6 +151,9 @@ struct EncoderParams {
 
   // Maximum translation threshold used to disable attr inter pred
   double attrInterPredTranslationThreshold;
+
+  // local motion
+  int motionPreset;
 };
 
 //============================================================================
@@ -256,9 +259,8 @@ private:
   bool movingState;
 
   pcc::point_t minPos_ref;
-  // Point cloud that acts as a predictor of @pointCloud's geometry
-  // occupancy.
-  PCCPointSet3 predPointCloud;
+
+  CloudFrame _refFrame;
 
 };
 

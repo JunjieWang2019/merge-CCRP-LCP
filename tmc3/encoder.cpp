@@ -152,6 +152,12 @@ PCCTMC3Encoder3::compress(
       _originInCodingCoords[k] /= double(gs);
     }
 
+    // derive local motion parameters
+    if (params->gps.localMotionEnabled)
+         deriveMotionParams(params);
+    params->gps.motion.motion_max_prefix_bits = deriveMotionMaxPrefixBits(params->gps.motion);
+    params->gps.motion.motion_max_suffix_bits = deriveMotionMaxSuffixBits(params->gps.motion);
+
     // Determine the number of bits to signal the bounding box
     params->sps.sps_bounding_box_offset_bits =
       numBits(params->sps.seqBoundingBoxOrigin.abs().max());
@@ -482,6 +488,11 @@ PCCTMC3Encoder3::compress(
     compressPartition(sliceCloud, sliceSrcCloud, params, callback, reconCloud);
   }
 
+  if (_sps->inter_frame_prediction_enabled_flag) {
+    // buffer the current frame for potential use in prediction
+    _refFrame = *reconCloud;
+  }
+
   // Apply global scaling to reconstructed point cloud
   if (reconCloud)
     scaleGeometry(
@@ -646,7 +657,11 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
 
 //---------------------------------------------------------------------------
 // motion parameter derivation
-// Setup the block sizes b
+// Global : Setup the block sizes b
+// local : Setup the block sizes based on a predefined mode:
+//  1 => Large scale sparse point clouds (eg cat3)
+//  2 => Small voxelised point clouds (eg cat2)
+//  3  => TriSoup
 void
 PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
 {
@@ -663,6 +678,75 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
   }
   params->interGeom.motion_window_size = std::max(
     2, int(std::round(params->interGeom.motion_window_size * scaleFactor)));
+
+
+  // local
+  auto& motion = params->gps.motion;
+  int presetMode = params->motionPreset;
+  int TriSoupSize = 1;
+  std::cout << "presetMode  " << params->motionPreset << "\n";
+  if (params->gps.localMotionEnabled) {
+    switch (presetMode) {
+    case 0:
+      motion = GeometryParameterSet::Motion();
+      params->randomAccessPeriod = 1;
+      break;
+
+    case 1:
+      motion.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
+      motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
+      motion.motion_min_pu_size = motion.motion_block_size >> MAX_PU_DEPTH;
+
+      // search parameters
+      motion.Amotion0 = motion.motion_window_size >> 2;
+      motion.lambda = 0.5;
+      motion.decimate = 6;
+      break;
+
+    case 2:
+      std::cout << "presetMode  for octree dense \n";
+      motion.motion_block_size = 32 ;
+      motion.motion_window_size = std::max(2, int(std::round(8 * scaleFactor)));
+      motion.motion_min_pu_size = motion.motion_block_size >> 1;
+
+      // search parameters
+      motion.Amotion0 = 1; // std::max(1, int(std::round(2 * scaleFactor)));
+      motion.lambda = 0.5/std::sqrt(4.*scaleFactor)*4.0;
+      motion.decimate = 7;
+      break;
+
+    case 3:
+      if (params->gps.trisoup_enabled_flag)
+        TriSoupSize = 1 << (params->trisoupNodeSizesLog2[0]);
+      std::cout << "presetMode for Trisoup dense of size " << TriSoupSize << " \n";
+
+
+      motion.motion_block_size = std::min(512, 32 * TriSoupSize);
+      motion.motion_window_size = 12;
+      motion.motion_min_pu_size = std::max(TriSoupSize, motion.motion_block_size >> 2);
+
+      // search parameters
+      motion.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
+      motion.lambda = 2.5*TriSoupSize*2;
+      motion.decimate = 7;
+      break;
+
+    default:
+      // NB: default parameters are large so that getting it wrong doesn't
+      //     run for ever.
+      motion.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
+      motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
+      motion.motion_min_pu_size = motion.motion_block_size >> (2 + MAX_PU_DEPTH);
+
+      // search parameters
+      motion.Amotion0 = motion.motion_window_size >> 2;
+      motion.lambda = 0.5;
+      motion.decimate = 6;
+    }
+
+    std::cout << "params->sps.geomPreScale  " << scaleFactor << "\n";
+    std::cout << "motion.motion_block_size  " << motion.motion_block_size << "\n";
+  }
 }
 
 //----------------------------------------------------------------------------
@@ -917,8 +1001,6 @@ PCCTMC3Encoder3::compressPartition(
     if (_gps->predgeom_enabled_flag){
       _refFrameSph.insert(_posSph);
     }
-    else
-      predPointCloud = pointCloud;
   }
 
   // Note the current slice id for loss detection with entropy continuation
@@ -931,11 +1013,6 @@ PCCTMC3Encoder3::compressPartition(
 
   if (reconCloud)
     appendSlice(reconCloud->cloud);
-  for (int count = 0; count < predPointCloud.getPointCount(); count++) {
-    // In decoder, the reconstructed is stored without a shift of _sliceOrigin. To avoide mismatch, encoder should do the same.
-    predPointCloud[count] += _sliceOrigin;
-  }
-
 }
 
 //----------------------------------------------------------------------------
@@ -1034,10 +1111,11 @@ PCCTMC3Encoder3::encodeGeometryBrick(
       params->predGeom, *_gps, gbh, pointCloud, &_posSph, _refFrameSph,
       *_ctxtMemPredGeom, arithmeticEncoders[0].get());
   } else if (!_gps->trisoup_enabled_flag) {
+    PCCPointSet3 compensatedPointCloud;
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
-      arithmeticEncoders, predPointCloud, *_sps,
-      params->interGeom);
+      arithmeticEncoders, _refFrame, *_sps,
+      params->interGeom, compensatedPointCloud);
   }
   else
   {
@@ -1046,7 +1124,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     gbh.footer.geom_num_points_minus1 = params->partition.sliceMaxPoints - 1;
     encodeGeometryTrisoup(
       params->trisoup, params->geom, *_gps, gbh, pointCloud,
-      *_ctxtMemOctreeGeom, arithmeticEncoders, predPointCloud,
+      *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
       *_sps, params->interGeom);
   }
 
@@ -1061,14 +1139,14 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   attrInterPredParams.frameDistance = 1;
   movingState = false;
 
-  if(gbh.interPredictionEnabledFlag){
-    const double scale = 65536.;  
+  if (gbh.interPredictionEnabledFlag && _gps->globalMotionEnabled) {
+    const double scale = 65536.;
     const double thr1_pre = 0.1 / attrInterPredParams.frameDistance;
     const double thr2_pre = params->attrInterPredTranslationThreshold;
 
     const double thr1_tan_pre = tan(M_PI * thr1_pre / 180);
     const double thr1_sin_pre = sin(M_PI * thr1_pre / 180);
-    
+
     double Rx,Ry,Rz,Sx,Sy,Sz;
 
     Rx = std::abs((gbh.gm_matrix[5] / scale) / (1. + gbh.gm_matrix[8] / scale));

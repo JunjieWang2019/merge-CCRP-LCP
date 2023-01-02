@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <memory>
 #include <vector>
+#include <cmath>
 
 namespace pcc {
 namespace dirac {
@@ -58,6 +59,14 @@ namespace dirac {
     {
       probability = 0x8000;
     }
+
+    void getEntropy(double h[2]) const
+    {
+       double p0 = probability / 65536.0;
+       h[0] = -std::log2(p0);
+       h[1] = -std::log2(1 - p0);
+    }
+
   };
 
   //--------------------------------------------------------------------------

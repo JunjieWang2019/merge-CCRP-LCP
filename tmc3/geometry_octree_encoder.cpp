@@ -44,6 +44,7 @@
 #include "quantization.h"
 #include "TMC3.h"
 #include "motionWip.h"
+#include <unordered_map>
 #include <set>
 #include <random>
 
@@ -75,8 +76,9 @@ public:
 
   void beginOctreeLevel(const Vec3<int>& planarDepth);
 
-  void resetMap();
-  void clearMap();
+  // dynamic OBUF
+  void resetMap() { GeometryOctreeContexts::resetMap(); }
+  void clearMap() { GeometryOctreeContexts::clearMap(); };
 
   void encodePositionLeafNumPoints(int count);
 
@@ -142,6 +144,7 @@ public:
     Vec3<int32_t> &pos,
     const int atlasShift,
     int predOcc,
+    bool isInter,
     bool flagNoSingle);
 
   void encodeOccupancyFullNeihbourgs(
@@ -158,7 +161,8 @@ public:
     const int atlasShift,
     bool flagWord4,
     bool adjacent_child_contextualization_enabled_flag,
-    int predOccupancy);
+    int predOccupancy,
+    bool isInter);
 
   void encodeOrdered2ptPrefix(
     const point_t points[2], Vec3<bool> directIdcm, Vec3<int>& nodeSizeLog2);
@@ -281,41 +285,6 @@ GeometryOctreeEncoder::beginOctreeLevel(const Vec3<int>& planarDepth)
   _planar.initPlanes(planarDepth);
 }
 
-void
-GeometryOctreeEncoder::resetMap()
-{
-  for (int i = 0; i < 4; i++) {
-    const int n2 = 6;
-    _MapOccupancy[i][0].reset(6 + n2 + 1, 18 - 6 - n2); //18
-    _MapOccupancy[i][1].reset(6 + n2 + 1, 18 - 6 - n2); //18
-    _MapOccupancy[i][2].reset(6 + n2 + 1, 18 - 6 - n2); //18
-    _MapOccupancy[i][3].reset(4 + n2 + 1, 18 - 6 - n2); //16
-    _MapOccupancy[i][4].reset(6 + n2 + 1, 18 - 6 - n2); //18
-    _MapOccupancy[i][5].reset(6 + n2 + 1, 18 - 6 - n2); //18
-    _MapOccupancy[i][6].reset(6 + n2 + 1, 18 - 6 - n2); //18
-    _MapOccupancy[i][7].reset(4 + n2 + 1, 18 - 6 - n2); //16
-
-    _MapOccupancySparse[i][0].reset(6 + 5 + 1, 9 - 5);
-    _MapOccupancySparse[i][1].reset(6 + 5 + 1, 12 - 5);
-    _MapOccupancySparse[i][2].reset(6 + 5 + 1, 12 - 5);
-    _MapOccupancySparse[i][3].reset(6 + 5 + 1, 11 - 5);
-    _MapOccupancySparse[i][4].reset(6 + 5 + 1, 9 - 5);
-    _MapOccupancySparse[i][5].reset(6 + 5 + 1, 12 - 5);
-    _MapOccupancySparse[i][6].reset(6 + 5 + 1, 12 - 5);
-    _MapOccupancySparse[i][7].reset(6 + 5 + 1, 11 - 5);
-  }
-}
-
-//============================================================================
-void
-GeometryOctreeEncoder::clearMap()
-{
-  for (int j = 0; j < 4; j++)
-    for (int i = 0; i < 8; i++) {
-      _MapOccupancy[j][i].clear();
-      _MapOccupancySparse[j][i].clear();
-    }
-}
 
 //============================================================================
 // Encode the number of points in a leaf node of the octree.
@@ -757,6 +726,7 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgsNZ(
   Vec3<int32_t> &pos,
   const int atlasShift,
   int predOcc,
+  bool isInter,
   bool flagNoSingle)
 {
   bool sure_planarityX = planarMaskX || !planarPossibleX;
@@ -817,19 +787,25 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgsNZ(
     // OBUF contexts
     int ctx1, ctx2;
     bool Sparse;
-    (*pointer2FunctionContext[i])(
-      octreeNeighours, occupancy,  ctx1, ctx2, Sparse);
+    (*pointer2FunctionContext[i])(octreeNeighours, occupancy, ctx1, ctx2, Sparse);
+
+    bool isInter2 = isInter && predOcc;
+    if (isInter2) {
+      int bitPred = (predOcc >> i) & 1;
+      int bitPred2 = (predOcc >> i + 8) & 1;
+      ctx1 = (ctx1 << 2) | bitPred | (bitPred2 << 1);
+    }
 
     // encode
     int bit = (occupancy >> i) & 1;
     if (Sparse) {
       auto obufIdx =
-        _MapOccupancySparse[interCtx][i].getEvolve(bit, ctx2, ctx1);
-      _arithmeticEncoder->encode(bit, _CtxMapDynamicOBUF[obufIdx]);
+        _MapOccupancySparse[isInter2][i].getEvolve(bit, ctx2, ctx1);
+      _arithmeticEncoder->encode(bit, _CtxMapDynamicOBUF[isInter2][obufIdx]);
     }
     else {
-      auto obufIdx = _MapOccupancy[interCtx][i].getEvolve(bit, ctx2, ctx1);
-      _arithmeticEncoder->encode(bit, _CtxMapDynamicOBUF[obufIdx]);
+      auto obufIdx = _MapOccupancy[isInter2][i].getEvolve(bit, ctx2, ctx1);
+      _arithmeticEncoder->encode(bit, _CtxMapDynamicOBUF[2+ isInter2][obufIdx]);
     }
 
     // update partial occupancy of current node
@@ -859,7 +835,7 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
   const int atlasShift,
   bool flagWord4,
   bool adjacent_child_contextualization_enabled_flag,
-  int predOcc)
+  int predOcc, bool isInter)
 {
   // 3 planars => single child and we know its position
   if (planarMaskX && planarMaskY && planarMaskZ)
@@ -901,7 +877,7 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
   encodeOccupancyFullNeihbourgsNZ(
     gnp, occupancy, planarMaskX, planarMaskY, planarMaskZ,
     planarPossibleX, planarPossibleY, planarPossibleZ,
-    occupancyAtlas, pos, atlasShift, predOcc, flagNoSingle);
+    occupancyAtlas, pos, atlasShift, predOcc, isInter, flagNoSingle);
 }
 
 //-------------------------------------------------------------------------
@@ -1715,10 +1691,14 @@ encodeGeometryOctree(
   GeometryOctreeContexts& ctxtMem,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
-  PCCPointSet3& predPointCloud,
+  const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams)
+  const InterGeomEncOpts& interParams,
+  PCCPointSet3& compensatedPointCloud)
 {
+  // TODO: we don't need to keep points never visible is prediction search window
+  PCCPointSet3 predPointCloud(refFrame.cloud);
+
   auto arithmeticEncoderIt = arithmeticEncoders.begin();
   GeometryOctreeEncoder encoder(gps, gbh, ctxtMem, arithmeticEncoderIt->get());
 
@@ -1729,19 +1709,72 @@ encodeGeometryOctree(
    bool isInter = gbh.interPredictionEnabledFlag;
 
   // for inter prediction
+  // the globally compensated reference point cloud is in pointPredictorWorld
+  // for local motion, it's just a copy of predPointCloud with origin shift
   PCCPointSet3 pointPredictorWorld;
-  if (isInter) {
+  if (isInter && gps.globalMotionEnabled) {
     pointPredictorWorld = predPointCloud;
 
-    if (gps.globalMotionEnabled) {
-      applyGlobalMotion(
-        interParams, sps, gps, gbh, pointCloud, predPointCloud,
-        pointPredictorWorld, arithmeticEncoderIt->get());
-    }
+    applyGlobalMotion(
+      interParams, sps, gps, gbh, pointCloud, predPointCloud,
+      pointPredictorWorld, arithmeticEncoderIt->get());
 
     for (int i = 0; i < pointPredictorWorld.getPointCount(); i++) {
       pointPredictorWorld[i] -= gbh.geomBoxOrigin;
     }
+  }
+
+
+  // generate the list of the node size for each level in the tree
+  auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
+
+  // variables for local motion
+  std::unique_ptr<int8_t[]> bufferPoints;
+
+  int LPUnumInAxis = 0;
+  int log2MotionBlockSize = 0;
+
+  // local motion prediction structure -> LPUs from predPointCloud
+  std::vector<std::vector<Vec3<int>>> firstLpuActiveWindow;
+  if (isInter && gps.localMotionEnabled) {
+    bufferPoints.reset(new int8_t[3 * 128 * 10000]);
+
+    for (int i = 0; i < predPointCloud.getPointCount(); i++) {
+      predPointCloud[i] -= gbh.geomBoxOrigin;
+    }
+    const int extended_window = gps.motion.motion_window_size;
+
+    log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
+    const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
+
+    if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
+      int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size));
+      if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
+        log2MotionBlockSize = gbh.maxRootNodeDimLog2;
+    }
+    std::cout << "rootNodeSize for brick = " << (1 << gbh.rootNodeSizeLog2) << "\n";
+    std::cout << "LPU size = " << (1 << log2MotionBlockSize) << "\n";
+
+
+    LPUnumInAxis = (maxBB) >> log2MotionBlockSize;
+    if ((LPUnumInAxis << log2MotionBlockSize) != maxBB)
+      LPUnumInAxis++;
+
+    // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
+    firstLpuActiveWindow = buildActiveWindow(LPUnumInAxis, predPointCloud, extended_window, log2MotionBlockSize);
+
+    // Remove all points outside boundaries
+    Box3<int> sliceBox(0, 1 << lvlNodeSizeLog2[0]);
+    int numPoints = 0;
+    for (int i = 0; i < predPointCloud.getPointCount(); i++) {
+      const auto & point = predPointCloud[i];
+      if (sliceBox.contains(point)) {
+        predPointCloud[numPoints++] = point;
+      }
+    }
+    predPointCloud.resize(numPoints);
+
+    std::cout << "Predictor size = " << predPointCloud.getPointCount() << std::endl;
   }
 
   // init main fifo
@@ -1757,7 +1790,7 @@ encodeGeometryOctree(
   node00.pos = int32_t(0);
 
   node00.numSiblingsMispredicted = 0;
-  node00.predEnd = uint32_t(pointPredictorWorld.getPointCount());
+  node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : pointPredictorWorld.getPointCount();
   node00.predStart = uint32_t(0);
 
   node00.numSiblingsPlus1 = 8;
@@ -1765,13 +1798,14 @@ encodeGeometryOctree(
   node00.qp = 0;
   node00.idcmEligible = 0;
 
+  // local motion
+  node00.hasMotion = 0;
+  node00.isCompensated = 0;
+
   // map of pointCloud idx to DM idx, used to reorder the points
   // after coding.
   std::vector<int> pointIdxToDmIdx(int(pointCloud.getPointCount()), -1);
   int nextDmIdx = 0;
-
-  // generate the list of the node size for each level in the tree
-  auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
 
   // rotating mask used to enable idcm
   uint32_t idcmEnableMaskInit = mkIdcmEnableMask(gps);
@@ -1867,7 +1901,10 @@ encodeGeometryOctree(
   if (gps.octree_point_count_list_present_flag)
     gbh.footer.octree_lvl_num_points_minus1.reserve(maxDepth);
 
-  encoder.resetMap();
+  if (!(isInter && gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
+    encoder.clearMap();
+    encoder.resetMap();
+  }
 
   bool planarEligibleKOctreeDepth = 0;
   int numPointsCodedByIdcm = 0;
@@ -2009,6 +2046,44 @@ encodeGeometryOctree(
           neighPatternFromOccupancy(posInParent, node0.siblingOccupancy);
       }
 
+      //local motion : determine PU tree by motion search and RDO
+      if (isInter && nodeSizeLog2[0] == log2MotionBlockSize && gps.localMotionEnabled) {
+        const Vec3<int32_t> pos = node0.pos << nodeSizeLog2;
+        const int lpuX = pos[0] >> log2MotionBlockSize;
+        const int lpuY = pos[1] >> log2MotionBlockSize;
+        const int lpuZ = pos[2] >> log2MotionBlockSize;
+        const int lpuIdx = (lpuX * LPUnumInAxis + lpuY) * LPUnumInAxis + lpuZ;
+
+        // no local motion if not enough points
+        const bool isLocalEnabled = firstLpuActiveWindow[lpuIdx].size() > 50;
+        std::unique_ptr<PUtree> PU_tree(new PUtree);
+
+        if (isLocalEnabled) {
+          node0.hasMotion = motionSearchForNode(pointCloud, &node0, gps.motion, nodeSizeLog2[0],
+            encoder._arithmeticEncoder, bufferPoints.get(),
+            PU_tree.get(), firstLpuActiveWindow, lpuIdx);
+        }
+        else {
+          node0.hasMotion = false;
+        }
+
+        if (node0.hasMotion) {
+          node0.PU_tree = std::move(PU_tree);
+        }
+        else {
+          node0.PU_tree = nullptr;
+        }
+      }
+
+      // code split PU flag. If not split, code  MV and apply MC
+      // results of MC are stacked in compensatedPointCloud that starts empty
+      if (node0.PU_tree != nullptr) {
+        encode_splitPU_MV_MC(
+          &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
+          encoder._arithmeticEncoder, &compensatedPointCloud,
+          firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize);
+      }
+
       // split the current node into 8 children
       //  - perform an 8-way counting sort of the current node's points
       //  - (later) map to child nodes
@@ -2023,26 +2098,53 @@ encodeGeometryOctree(
             | (!!(int(point[0]) & pointSortMask[0]) << 2);
         });
 
-      // sort and partition the predictor
+      /// sort and partition the predictor...
       std::array<int, 8> predCounts = {};
-      if (isInter) {
+
+      // ...for global motion
+      if (isInter && gps.globalMotionEnabled) {
         countingSort(
-          PCCPointSet3::iterator(
-            &pointPredictorWorld,
-            node0.predStart),  // Need to update the predStar
+          PCCPointSet3::iterator(&pointPredictorWorld, node0.predStart),  // Need to update the predStar
           PCCPointSet3::iterator(&pointPredictorWorld, node0.predEnd),
           predCounts, [=](const PCCPointSet3::Proxy& proxy) {
-            const auto& point = *proxy;
+          const auto& point = *proxy;
+          return !!(int(point[2]) & pointSortMask[2])
+            | (!!(int(point[1]) & pointSortMask[1]) << 1)
+            | (!!(int(point[0]) & pointSortMask[0]) << 2);
+        });
+      }
+
+      // ...for local motion
+      if (isInter && gps.localMotionEnabled) {
+        if (node0.isCompensated) {
+          countingSort(
+            PCCPointSet3::iterator(&compensatedPointCloud, node0.predStart),  // Need to update the predStar
+            PCCPointSet3::iterator(&compensatedPointCloud, node0.predEnd),
+            predCounts, [=](const PCCPointSet3::Proxy& proxy) {
+            const auto & point = *proxy;
             return !!(int(point[2]) & pointSortMask[2])
               | (!!(int(point[1]) & pointSortMask[1]) << 1)
               | (!!(int(point[0]) & pointSortMask[0]) << 2);
           });
+        }
+        else {
+          countingSort(
+            PCCPointSet3::iterator(&predPointCloud, node0.predStart),
+            PCCPointSet3::iterator(&predPointCloud, node0.predEnd),
+            predCounts, [=](const PCCPointSet3::Proxy& proxy) {
+            const auto & point = *proxy;
+            return !!(int(point[2]) & pointSortMask[2])
+              | (!!(int(point[1]) & pointSortMask[1]) << 1)
+              | (!!(int(point[0]) & pointSortMask[0]) << 2);
+          });
+        }
       }
 
       // generate the bitmap of child occupancy and count
       // the number of occupied children in node0.
 
       int predOccupancy = 0;
+      int predOccupancyStrong = 0;
       int predFailureCount = 0;
 
       int occupancy = 0;
@@ -2058,14 +2160,15 @@ encodeGeometryOctree(
         if (childPredicted) {
           predOccupancy |= 1 << i;
         }
+        if (predCounts[i] > 2) {
+          predOccupancyStrong |= 1 << i;
+        }
         predFailureCount += childOccupiedTmp != childPredicted;
       }
 
       bool occupancyIsPredictable =
         predOccupancy && node0.numSiblingsMispredicted <= 5;
-      if (!occupancyIsPredictable) {
-        predOccupancy = 0;
-      }
+
       OctreeNodePlanar planarRef;
       if (isInter)
         setPlanesFromOccupancy(predOccupancy, planarRef);
@@ -2228,7 +2331,7 @@ encodeGeometryOctree(
           planarMask[2], planar.planarPossible & 1, planar.planarPossible & 2,
           planar.planarPossible & 4, occupancyAtlas, node0.pos,
           codedAxesPrevLvl, flagWord4,
-          gps.adjacent_child_contextualization_enabled_flag, predOccupancy);
+          gps.adjacent_child_contextualization_enabled_flag, predOccupancy | (predOccupancyStrong << 8), isInter);
       }
 
       // update atlas for child neighbours
@@ -2289,6 +2392,9 @@ encodeGeometryOctree(
       int pos_MV = 0;
 
       for (int i = 0; i < 8; i++) {
+        if (node0.hasMotion && !node0.isCompensated)
+          pos_fp++;  // pop occupancy flag from PU_tree
+
         if (!childCounts[i]) {
           // child is empty: skip
           predPointsStartIdx += predCounts[i];
@@ -2320,6 +2426,19 @@ encodeGeometryOctree(
         predPointsStartIdx += predCounts[i];
         child.predEnd = predPointsStartIdx;
         child.numSiblingsMispredicted = predFailureCount;
+
+        //local motion PU inheritance
+        child.hasMotion = node0.hasMotion;
+        child.isCompensated = node0.isCompensated;
+        if (node0.hasMotion && !node0.isCompensated) {
+          std::unique_ptr<PUtree> child_PU_tree(new PUtree);
+
+          extracPUsubtree(
+            gps.motion, node0.PU_tree.get(), 1 << childSizeLog2[0], pos_fs,
+            pos_fp, pos_MV, child_PU_tree.get());
+
+          child.PU_tree = std::move(child_PU_tree);
+        }
 
         child.laserIndex = node0.laserIndex;
         if (isInter && !gps.geom_angular_mode_enabled_flag)
@@ -2353,7 +2472,9 @@ encodeGeometryOctree(
     }
   }
 
-  encoder.clearMap();
+  if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !(gps.trisoup_enabled_flag || gbh.entropy_continuation_flag)) {
+    encoder.clearMap();
+  }
 
   // the last element is the number of decoded points
   if (!gbh.footer.octree_lvl_num_points_minus1.empty())
@@ -2415,13 +2536,14 @@ encodeGeometryOctree(
   PCCPointSet3& pointCloud,
   GeometryOctreeContexts& ctxtMem,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
-  PCCPointSet3& predPointCloud,
+  const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams)
+  const InterGeomEncOpts& interParams,
+  PCCPointSet3& compensatedPointCloud)
 {
   encodeGeometryOctree(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr,
-    predPointCloud, sps, interParams);
+    refFrame, sps, interParams, compensatedPointCloud);
 }
 
 //============================================================================

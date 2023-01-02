@@ -47,6 +47,9 @@
 #include "ringbuf.h"
 #include "tables.h"
 #include "TMC3.h"
+#include "motionWip.h"
+#include <memory>
+
 namespace pcc {
 
 //============================================================================
@@ -56,6 +59,22 @@ const int MAX_NUM_DM_LEAF_POINTS = 2;
 //============================================================================
 
 struct PCCOctree3Node {
+  PCCOctree3Node() = default;
+  PCCOctree3Node(const PCCOctree3Node& cp)
+  : PU_tree(cp.PU_tree ? new PUtree(*cp.PU_tree.get()) : nullptr)
+  , pos(cp.pos)
+  , start(cp.start), end(cp.end)
+  , numSiblingsPlus1(cp.numSiblingsPlus1)
+  , predStart(cp.predStart), predEnd(cp.predEnd)
+  , numSiblingsMispredicted(cp.numSiblingsMispredicted)
+  , isCompensated(cp.isCompensated)
+  , hasMotion(cp.hasMotion)
+  , siblingOccupancy(cp.siblingOccupancy)
+  , idcmEligible(cp.idcmEligible)
+  , qp(cp.qp)
+  , laserIndex(cp.laserIndex)
+  {
+  }
   // 3D position of the current node's origin (local x,y,z = 0).
   Vec3<int32_t> pos;
 
@@ -74,6 +93,12 @@ struct PCCOctree3Node {
   // The number of mispredictions in determining the occupancy
   // map of the child nodes in this node's parent.
   int8_t numSiblingsMispredicted;
+
+  // local motion
+  std::unique_ptr<PUtree> PU_tree;
+  //PUtree* PU_tree = nullptr; // Prediction Unit tree (encoder only) attached to node
+  bool isCompensated : 1; // prediction ranges refer to compensated reference
+  bool hasMotion : 1;
 
   // The occupancy map used describing the current node and its siblings.
   uint8_t siblingOccupancy;
@@ -251,7 +276,6 @@ CtxMapOctreeOccupancy::evolve(bool bit, uint8_t* ctxIdx)
 
 //============================================================================
 
-
 struct CtxModelOctreeOccupancy {
   static const int kCtxFactorShift = 4;
   AdaptiveBitModelFast contexts[256 >> kCtxFactorShift];
@@ -263,10 +287,23 @@ struct CtxModelOctreeOccupancy {
 };
 
 //---------------------------------------------------------------------------
+static int coder_ini_pro[32] = {
+  65461, 65160, 64551, 63637, 62426, 60929, 59163, 57141, 54884, 52413, 49753,
+  46929, 43969, 40899, 37750, 34553, 31338, 28135, 24977, 21893, 18914, 16067,
+  13382, 10883, 8596,  6542,  4740,  3210,  1967,  1023,  388,   75 };
+
 
 struct CtxModelDynamicOBUF {
   static const int kCtxFactorShift = 3;
   AdaptiveBitModelFast contexts[256 >> kCtxFactorShift];
+
+  CtxModelDynamicOBUF()
+  {
+    for (int i = 0; i < 32; i++) {
+      contexts[i].probability = coder_ini_pro[i];
+    }
+  }
+
 
   AdaptiveBitModelFast& operator[](int idx)
   {
@@ -282,12 +319,17 @@ public:
   int S1 = 0; // 16;
   int S2 = 0; // 128 * 2 * 8;
 
-  uint8_t* CtxIdxMap; // S1*S2
-  uint8_t* kDown; // S2
-  uint8_t* Nseen; // S2
+  std::vector<uint8_t> CtxIdxMap; // S1*S2
+  std::vector<uint8_t> kDown; //  S1*S2
+  std::vector<uint8_t> Nseen; //  S1*S2
+
+  ~CtxMapDynamicOBUF() { clear(); }
 
   //  allocate and reset CtxIdxMap to 127
   void reset(int userBitS1, int userBitS2);
+
+  // initialize coder LUT
+  void init(const uint8_t* initValue);
 
   //  deallocate CtxIdxMap
   void clear();
@@ -319,13 +361,21 @@ CtxMapDynamicOBUF::reset(int userBitS1, int userBitS2)
   maxTreeDepth = userBitS1 - 3;
 
   minkTree = userBitS1 - maxTreeDepth;
+  kDown.resize((1 << maxTreeDepth) * S2);
+  std::fill_n(kDown.begin(), (1 << maxTreeDepth) * S2, userBitS1);
+  Nseen.resize((1 << maxTreeDepth) * S2);
+  std::fill_n(Nseen.begin(), (1 << maxTreeDepth) * S2, 0);
+  CtxIdxMap.resize(S1 * S2);
+  std::fill_n(CtxIdxMap.begin(), S1 * S2, 127);
+}
 
-  kDown = new uint8_t[(1 << maxTreeDepth) * S2];
-  std::memset(kDown, userBitS1, sizeof * kDown * (1 << maxTreeDepth) * S2);
-  Nseen = new uint8_t[(1 << maxTreeDepth) * S2];
-  std::memset(Nseen, 0, sizeof * Nseen * (1 << maxTreeDepth) * S2);
-  CtxIdxMap = new uint8_t[S1 * S2];
-  std::memset(CtxIdxMap, 127, sizeof * CtxIdxMap * S1 * S2);
+inline void
+CtxMapDynamicOBUF::init(const uint8_t* initValue) {
+
+  for (int j = 0; j < S2; j++) {
+    for (int i = 0; i < S1; i++)
+      CtxIdxMap[idx(i, j)] = initValue[j];
+  }
 }
 
 inline void
@@ -334,9 +384,11 @@ CtxMapDynamicOBUF::clear()
   if (!S1 || !S2)
     return;
 
-  delete[] kDown ;
-  delete[] Nseen;
-  delete[] CtxIdxMap;
+  kDown.resize(0);
+  Nseen.resize(0);
+  CtxIdxMap.resize(0);
+
+  S1 = S2 = 0;
 }
 
 inline int
@@ -434,9 +486,6 @@ CtxMapDynamicOBUF::idx(int i, int j)
 {
   return i * S2 + j;
 }
-
-
-
 
 //---------------------------------------------------------------------------
 // generate an array of node sizes according to subsequent qtbt decisions
@@ -658,6 +707,22 @@ class GeometryOctreeContexts {
 public:
   void reset();
 
+  // dynamic OBUF
+  void resetMap();
+  void clearMap();
+
+  AdaptiveBitModel ctxTempV2[144];
+  CtxModelDynamicOBUF ctxTriSoup[3][5];
+  CtxMapDynamicOBUF MapOBUFTriSoup[5][3];
+
+  AdaptiveBitModel ctxDrift0[8*8][5];
+  AdaptiveBitModel ctxDriftSign[3][8][8][3];
+  AdaptiveBitModel ctxDriftMag[4][10];
+
+
+  CtxMapDynamicOBUF _MapOccupancy[2][8];
+  CtxMapDynamicOBUF _MapOccupancySparse[2][8];
+
 protected:
   AdaptiveBitModel _ctxSingleChild;
   AdaptiveBitModel _ctxZ[8][7][4];
@@ -710,9 +775,7 @@ protected:
   // For bytewise occupancy coding
   DualLutCoder<true> _bytewiseOccupancyCoder[10];
   // OBUF somplified
-  CtxMapDynamicOBUF _MapOccupancy[4][8];
-  CtxMapDynamicOBUF _MapOccupancySparse[4][8];
-  CtxModelDynamicOBUF _CtxMapDynamicOBUF;
+  CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
 };
 
 //----------------------------------------------------------------------------
@@ -735,9 +798,10 @@ void encodeGeometryOctree(
   GeometryOctreeContexts& ctxtMem,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
-  PCCPointSet3& predPointCloud,
+  const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams);
+  const InterGeomEncOpts& interParams,
+  PCCPointSet3& compensatedPointCloud);
 
 void decodeGeometryOctree(
   const GeometryParameterSet& gps,
@@ -747,10 +811,10 @@ void decodeGeometryOctree(
   GeometryOctreeContexts& ctxtMem,
   EntropyDecoder& arithmeticDecoder,
   pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
-  PCCPointSet3& predPointCloud,
-  const Vec3<int> minimum_position
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  PCCPointSet3& compensatedPointCloud);
 
-);
 //============================================================================
 
 }  // namespace pcc

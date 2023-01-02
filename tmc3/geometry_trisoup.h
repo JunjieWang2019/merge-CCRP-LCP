@@ -48,6 +48,7 @@ namespace pcc {
 
   struct CentroidDrift {
     int driftQ;
+    int driftQPred;
     int lowBound;
     int highBound;
     int ctxMinMax;
@@ -92,41 +93,46 @@ void determineTrisoupVertices(
   const PCCPointSet3& pointCloud,
   const int defaultBlockWidth,
   const int bitDropped,
-  int distanceSearchEncoder);
+  int distanceSearchEncoder,
+  bool isCompensated);
 
 void determineTrisoupNeighbours(
   const ringbuf<PCCOctree3Node>& leaves, 
   std::vector<uint16_t>& neighbNodes, 
-  std::vector<int>& indexBefore,
-  std::vector<std::vector<int>>& perpVertexStart,
+  std::vector<std::array<int, 18>>& edgePattern,
   const int defaultBlockWidth);
 
 void encodeTrisoupVertices(  
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,
+  std::vector<bool>& segindPred,
+  std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
-  std::vector<int>& indexBefore,
-  std::vector<std::vector<int>>& perpVertexStart,
+  std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
-  pcc::EntropyEncoder* arithmeticEncoder);
+  pcc::EntropyEncoder* arithmeticEncoder,
+  GeometryOctreeContexts& ctxtMemOctree);
 
 void decodeTrisoupVertices(  
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,
+  std::vector<bool>& segindPred,
+  std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
-  std::vector<int>& indexBefore,
-  std::vector<std::vector<int>>& perpVertexStart,
+  std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
-  pcc::EntropyDecoder& arithmeticDecoder);
+  pcc::EntropyDecoder& arithmeticDecoder,
+  GeometryOctreeContexts& ctxtMemOctree);
 
 
 void encodeTrisoupCentroidResidue(
   std::vector<CentroidDrift>& drifts,
-  pcc::EntropyEncoder* arithmeticEncoder);
+  pcc::EntropyEncoder* arithmeticEncoder,
+  GeometryOctreeContexts& ctxtMemOctree);
 
 void decodeTrisoupCommon(
   const ringbuf<PCCOctree3Node>& leaves,
@@ -135,6 +141,7 @@ void decodeTrisoupCommon(
   std::vector<CentroidDrift>& drifts,
   PCCPointSet3& pointCloud,
   PCCPointSet3& recPointCloud,
+  PCCPointSet3& compensatedPointCloud,
   int defaultBlockWidth,
   int poistionClipValue,
   uint32_t samplingValue,
@@ -144,7 +151,8 @@ void decodeTrisoupCommon(
   bool haloFlag,
   bool adaptiveHaloFlag,
   bool fineRayflag,
-  pcc::EntropyDecoder* arithmeticDecoder);
+  pcc::EntropyDecoder* arithmeticDecoder,
+  GeometryOctreeContexts& ctxtMemOctree);
 
 int findDominantAxis(
   std::vector<Vertex>& leafVertices,

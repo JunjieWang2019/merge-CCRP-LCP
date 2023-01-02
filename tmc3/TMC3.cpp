@@ -1125,6 +1125,16 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "0: Use cubic regions"
     "1: Use cuboidal regions")
 
+   ("localMotionEnabled",
+     params.encoder.gps.localMotionEnabled, false,
+     "Enable global motion compensation for inter prediction")
+
+   ("motionParamPreset",
+     params.encoder.motionPreset, 0,
+    "Genaralised derivation of motion compensation parameters:"
+    "  1: Large scale point clouds\n"
+    "  2: Small voxelised point clouds")
+
   ("predGeomSort",
     params.encoder.predGeom.sortMode, PredGeomEncOpts::kSortMorton,
     "Predictive geometry tree construction order")
@@ -1635,8 +1645,11 @@ sanitizeEncoderOpts(
     params.encoder.interGeom.deriveGMThreshold = true;
   }
 
-  if (params.encoder.gps.interPredictionEnabledFlag)
+  if (params.encoder.gps.interPredictionEnabledFlag) {
     params.encoder.gps.geom_multiple_planar_mode_enable_flag = false;
+
+    params.encoder.sps.inter_frame_prediction_enabled_flag = true;
+  }
 
   // support disabling attribute coding (simplifies configuration)
   if (params.disableAttributeCoding) {
@@ -2069,7 +2082,10 @@ SequenceEncoder::compressOneFrame(Stopwatch* clock)
 
   // The reconstructed point cloud
   CloudFrame recon;
-  auto* reconPtr = params->reconstructedDataPath.empty() ? nullptr : &recon;
+  auto* reconPtr =
+    params->reconstructedDataPath.empty()
+    && !params->encoder.sps.inter_frame_prediction_enabled_flag
+    ? nullptr : &recon;
 
   auto bytestreamLenFrameStart = bytestreamFile.tellp();
 
@@ -2085,7 +2101,7 @@ SequenceEncoder::compressOneFrame(Stopwatch* clock)
 
   clock->stop();
 
-  if (reconPtr)
+  if (!params->reconstructedDataPath.empty())
     writeOutputFrame(params->reconstructedDataPath, {}, recon, recon.cloud);
 
   return 0;

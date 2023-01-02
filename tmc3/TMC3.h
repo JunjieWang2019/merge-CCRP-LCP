@@ -41,6 +41,8 @@
 #include "TMC3Config.h"
 #include "pcc_chrono.h"
 
+#define MAX_PU_DEPTH 0
+
 struct Parameters;
 
 typedef pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>
