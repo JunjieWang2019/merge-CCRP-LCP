@@ -25,7 +25,6 @@ categories:
      -
        - !conditional '"${group}" =~ m{^cat2}'
        - localMotionEnabled: 1
-       - randomAccessPeriod: 8
        - motionParamPreset: 2
        - entropyContinuationEnabled: 1
        - GoFGeometryEntropyContinuationEnabled: 1
