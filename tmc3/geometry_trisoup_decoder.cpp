@@ -158,7 +158,7 @@ decodeGeometryTrisoup(
   std::vector<uint8_t> verticesPred;
   if (isInter) {
     determineTrisoupVertices(
-      nodes, segindPred, verticesPred, compensatedPointCloud, blockWidth, bitDropped,
+      nodes, segindPred, verticesPred, refFrame->cloud, compensatedPointCloud, blockWidth, bitDropped,
       1 /*distanceSearchEncoder*/, true);    
   }
 

@@ -91,6 +91,7 @@ void determineTrisoupVertices(
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,  
   const PCCPointSet3& pointCloud,
+  const PCCPointSet3& compensatedPointCloud,
   const int defaultBlockWidth,
   const int bitDropped,
   int distanceSearchEncoder,

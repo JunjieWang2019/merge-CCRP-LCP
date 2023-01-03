@@ -99,7 +99,7 @@ encodeGeometryTrisoup(
   std::vector<bool> segind;
   std::vector<uint8_t> vertices;
   determineTrisoupVertices(
-    nodes, segind, vertices, pointCloud, blockWidth, bitDropped,
+    nodes, segind, vertices, pointCloud, pointCloud, blockWidth, bitDropped,
     distanceSearchEncoder, false);
 
   // determine vertices from compensated point cloud 
@@ -107,7 +107,7 @@ encodeGeometryTrisoup(
   std::vector<uint8_t> verticesPred;
   if (isInter) {
     determineTrisoupVertices(
-      nodes, segindPred, verticesPred, compensatedPointCloud, blockWidth, bitDropped,
+      nodes, segindPred, verticesPred, refFrame.cloud, compensatedPointCloud, blockWidth, bitDropped,
       1 /*distanceSearchEncoder*/, true);    
   }
 
@@ -189,6 +189,7 @@ determineTrisoupVertices(
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,
   const PCCPointSet3& pointCloud,
+  const PCCPointSet3& compensatedPointCloud,
   const int defaultBlockWidth,
   const int bitDropped,
   int distanceSearchEncoder,
@@ -351,7 +352,12 @@ determineTrisoupVertices(
 
 
     for (int j = idxStart; j < idxEnd; j++) {
-      Vec3<int> voxel = pointCloud[j] - leaf.pos;
+      Vec3<int> voxel;
+
+      if (isCompensated && leaf.isCompensated)
+        voxel = compensatedPointCloud[j] - leaf.pos;
+      else
+        voxel = pointCloud[j] - leaf.pos;
 
       // parameter indicating threshold of how close voxels must be to edge ----------- 1 -------------------
       // to be relevant
