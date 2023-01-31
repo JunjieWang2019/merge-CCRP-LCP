@@ -749,8 +749,8 @@ struct AttributeParameterSet {
 
   bool lodParametersPresent() const
   {
-    return attr_encoding == AttributeEncoding::kLiftingTransform
-      || attr_encoding == AttributeEncoding::kPredictingTransform;
+    return /*attr_encoding == AttributeEncoding::kLiftingTransform
+      || attr_encoding == AttributeEncoding::kPredictingTransform*/ false;
   }
 
   //--- lifting/predicting transform parameters

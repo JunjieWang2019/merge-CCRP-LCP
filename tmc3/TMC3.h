@@ -49,7 +49,7 @@ typedef pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>
   Stopwatch;
 
 bool ParseParameters(int argc, char* argv[], Parameters& params);
-int Compress(Parameters& params, Stopwatch&);
-int Decompress(Parameters& params, Stopwatch&);
+//int Compress(Parameters& params, Stopwatch&);
+//int Decompress(Parameters& params, Stopwatch&);
 
 #endif /* TMC3_h */

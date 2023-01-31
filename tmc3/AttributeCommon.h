@@ -75,14 +75,14 @@ struct AttributeLods {
 
   bool empty() const { return numPointsInLod.empty(); };
 
-  void generate(
+  /*void generate(
     const AttributeParameterSet& aps,
     const AttributeBrickHeader& abh,
     int geom_num_points_minus1,
     int minGeomNodeSizeLog2,
     const PCCPointSet3& cloud
     , const AttributeInterPredParams& attrInterPredParams    
-    );
+    );*/
 
   std::vector<PCCPredictor> predictors;
   std::vector<uint32_t> numPointsInLod;
@@ -103,20 +103,20 @@ private:
 
 //============================================================================
 
-bool predModeEligibleColor(
-  const AttributeDescription& desc,
-  const AttributeParameterSet& aps,
-  const PCCPointSet3& pointCloud,
-  const std::vector<uint32_t>& indexes,
-  const PCCPredictor& predictor);
+//bool predModeEligibleColor(
+//  const AttributeDescription& desc,
+//  const AttributeParameterSet& aps,
+//  const PCCPointSet3& pointCloud,
+//  const std::vector<uint32_t>& indexes,
+//  const PCCPredictor& predictor);
 
-bool predModeEligibleRefl(
-  const AttributeDescription& desc,
-  const AttributeParameterSet& aps,
-  const PCCPointSet3& pointCloud,
-  const std::vector<uint32_t>& indexes,
-  const PCCPredictor& predictor
-  , const AttributeInterPredParams& attrInterPredParams);
+//bool predModeEligibleRefl(
+//  const AttributeDescription& desc,
+//  const AttributeParameterSet& aps,
+//  const PCCPointSet3& pointCloud,
+//  const std::vector<uint32_t>& indexes,
+//  const PCCPredictor& predictor
+//  , const AttributeInterPredParams& attrInterPredParams);
 
 //============================================================================
 

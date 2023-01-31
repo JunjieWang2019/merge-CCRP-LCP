@@ -75,37 +75,37 @@ public:
 protected:
   // todo(df): consider alternative encapsulation
 
-  void encodeReflectancesLift(
+  /*void encodeReflectancesLift(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
     PCCResidualsEncoder& encoder
     ,
-    const AttributeInterPredParams& attrInterPredParams);
+    const AttributeInterPredParams& attrInterPredParams);*/
 
-  void encodeColorsLift(
+  /*void encodeColorsLift(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder);
+    PCCResidualsEncoder& encoder);*/
 
-  void encodeReflectancesPred(
+  /*void encodeReflectancesPred(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
     PCCResidualsEncoder& encoder
     ,
-    const AttributeInterPredParams& attrInterPredParams);
+    const AttributeInterPredParams& attrInterPredParams);*/
 
-  void encodeColorsPred(
+  /*void encodeColorsPred(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder);
+    PCCResidualsEncoder& encoder);*/
 
   void encodeReflectancesTransformRaht(
     const AttributeDescription& desc,
@@ -134,7 +134,7 @@ protected:
     const Vec3<attr_t> predictedColor,
     const Quantizers& quant);
 
-  static void decidePredModeColor(
+ /* static void decidePredModeColor(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const PCCPointSet3& pointCloud,
@@ -144,17 +144,17 @@ protected:
     PCCResidualsEncoder& encoder,
     PCCResidualsEntropyEstimator& context,
     const Vec3<int8_t>& icpCoeff,
-    const Quantizers& quant);
+    const Quantizers& quant);*/
 
-  static void encodePredModeColor(
-    const AttributeParameterSet& aps, int predMode, Vec3<int32_t>& coeff);
+  /*static void encodePredModeColor(
+    const AttributeParameterSet& aps, int predMode, Vec3<int32_t>& coeff);*/
 
   static int64_t computeReflectanceResidual(
     const uint64_t reflectance,
     const uint64_t predictedReflectance,
     const Quantizer& quant);
 
-  static void decidePredModeRefl(
+ /* static void decidePredModeRefl(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const PCCPointSet3& pointCloud,
@@ -164,10 +164,10 @@ protected:
     PCCResidualsEncoder& encoder,
     PCCResidualsEntropyEstimator& context,
     const Quantizer& quant,
-    const AttributeInterPredParams& attrInterPredParams);
+    const AttributeInterPredParams& attrInterPredParams);*/
 
-  static void encodePredModeRefl(
-    const AttributeParameterSet& aps, int predMode, int32_t& coeff);
+ /* static void encodePredModeRefl(
+    const AttributeParameterSet& aps, int predMode, int32_t& coeff);*/
 
 private:
   std::vector<int8_t> computeLastComponentPredictionCoeff(

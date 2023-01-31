@@ -38,7 +38,7 @@
 #include "DualLutCoder.h"
 #include "OctreeNeighMap.h"
 #include "geometry_octree.h"
-#include "geometry_intra_pred.h"
+//#include "geometry_intra_pred.h"
 #include "io_hls.h"
 #include "tables.h"
 #include "quantization.h"
@@ -170,7 +170,7 @@ public:
   void encodePointPosition(
     const Vec3<int>& nodeSizeLog2AfterPlanar, const Vec3<int32_t>& pos);
 
-  void encodePointPositionAngular(
+ /* void encodePointPositionAngular(
     const OctreeAngPosScaler& quant,
     const OctreeNodePlanar& planar,
     const Vec3<int>& nodeSizeLog2Rem,
@@ -180,25 +180,25 @@ public:
     const Vec3<int>& angularOrigin,
     const int* zLaser,
     const int* thetaLaser,
-    int numLasers);
+    int numLasers);*/
 
-  inline void encodePointPositionZAngular(
+  /*inline void encodePointPositionZAngular(
     const OctreeAngPosScaler& quant,
     const Vec3<int>& nodeSizeLog2Rem,
     const int* zLaser,
     const int* thetaLaser,
     int laserIdx,
     Vec3<int>& posXyz,
-    const int& posZ);
+    const int& posZ);*/
 
-  inline void encodePointPositionZAngularExtension(
+ /* inline void encodePointPositionZAngularExtension(
     const Vec3<int>& angularOrigin,
     const Vec3<int>& nodePos,
     const int* zLaser,
     const int* thetaLaser,
     int laserIdx,
     int maskz,
-    Vec3<int>& posXyz);
+    Vec3<int>& posXyz);*/
 
   void encodeNodeQpOffetsPresent(bool);
   void encodeQpOffset(int dqp);
@@ -221,8 +221,8 @@ public:
     const int* thetaLaser,
     int numLasers);
 
-  void encodeThetaRes(int ThetaRes, int prevThetaRes);
-  void encodeZRes(int zRes);
+  //void encodeThetaRes(int ThetaRes, int prevThetaRes);
+  //void encodeZRes(int zRes);
 
   const GeometryOctreeContexts& getCtx() const { return *this; }
 
@@ -964,249 +964,249 @@ GeometryOctreeEncoder::encodePointPosition(
 // posXyz is initially the node position relative to the angular origin,
 // and updated as bits are coded.
 
-void
-GeometryOctreeEncoder::encodePointPositionAngular(
-  const OctreeAngPosScaler& quant,
-  const OctreeNodePlanar& planar,
-  const Vec3<int>& nodeSizeLog2Rem,
-  Vec3<int> posXyz,
-  const Vec3<int>& pos,
-  int nodeLaserIdx,
-  const Vec3<int>& angularOrigin,
-  const int* zLaser,
-  const int* thetaLaser,
-  int numLasers)
-{
-  // -- PHI --
-  // code x or y directly and compute phi of node
-  bool directAxis = std::abs(posXyz[0]) <= std::abs(posXyz[1]);
-
-  for (int mask = (1 << nodeSizeLog2Rem[directAxis]) >> 1; mask; mask >>= 1)
-    _arithmeticEncoder->encode(!!(pos[directAxis] & mask));
-
-  // update the known position to take into account all coded bits
-  for (int k = 0; k < 3; k++)
-    if (k != directAxis)
-      if (planar.planePosBits & (1 << k))
-        posXyz[k] += quant.scaleEns(k, 1 << nodeSizeLog2Rem[k]);
-
-  posXyz[directAxis] =
-    quant.scaleEns(directAxis, pos[directAxis]) - angularOrigin[directAxis];
-
-  // Laser
-  int laserIdx;
-
-  if (_angularExtension)
-    laserIdx = findLaserPrecise(
-      quant.scaleEns(pos) - angularOrigin, thetaLaser, zLaser, numLasers);
-  else
-    laserIdx =
-      findLaser(quant.scaleEns(pos) - angularOrigin, thetaLaser, numLasers);
-
-  int resLaser = laserIdx - nodeLaserIdx;
-  encodeThetaRes(resLaser, _prevLaserIndexResidual[nodeLaserIdx]);
-
-  if (_angularExtension)
-    _prevLaserIndexResidual[nodeLaserIdx] = resLaser;
-
-  // find predictor
-  const int thInterp = 1 << 13;
-
-  int phiNode = iatan2(posXyz[1], posXyz[0]);
-  int phiTop = directAxis
-    ? iatan2(posXyz[1], posXyz[0] + (1 << nodeSizeLog2Rem[!directAxis]))
-    : iatan2(posXyz[1] + (1 << nodeSizeLog2Rem[!directAxis]), posXyz[0]);
-  int phiMiddle = (phiNode + phiTop) >> 1;
-  if (_angularExtension && !(std::abs(phiNode - phiTop) < thInterp))
-    phiMiddle = directAxis
-      ? iatan2(
-          posXyz[1], posXyz[0] + ((1 << nodeSizeLog2Rem[!directAxis]) >> 1))
-      : iatan2(
-          posXyz[1] + ((1 << nodeSizeLog2Rem[!directAxis]) >> 1), posXyz[0]);
-
-  int predPhi = _phiBuffer[laserIdx];
-  int phiRef = _angularExtension ? phiMiddle : phiNode;
-  if (predPhi == 0x80000000)
-    predPhi = phiRef;
-
-  // elementary shift predictor
-  int nShift =
-    ((predPhi - phiRef) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
-  predPhi -= _phiZi.delta(laserIdx) * nShift;
-
-  // azimuthal code x or y
-  const int phiAxis = !directAxis;
-  for (int mask = (1 << nodeSizeLog2Rem[phiAxis]) >> 1,
-           shiftBits = nodeSizeLog2Rem[phiAxis];
-       mask; mask >>= 1, shiftBits--) {
-    // angles left and right
-    int scaledMask = quant.scaleEns(phiAxis, mask);
-    int phiL, phiR;
-
-    if (_angularExtension) {
-      const int offset = scaledMask - 1;
-      const int offset2 = shiftBits > 1 ? (shiftBits > 2 ? 0 : 1) : 2;
-
-      phiL =
-        phiNode + ((offset - offset2) * (phiMiddle - phiNode) >> (shiftBits));
-      phiR = phiMiddle
-        + ((offset + offset2) * (phiMiddle - phiNode) >> (shiftBits));
-    } else {
-      phiL = phiNode;
-      phiR = directAxis ? iatan2(posXyz[1], posXyz[0] + scaledMask)
-                        : iatan2(posXyz[1] + scaledMask, posXyz[0]);
-    }
-
-    // ctx azimutal
-    int angleL = phiL - predPhi;
-    int angleR = phiR - predPhi;
-    int contextAnglePhi =
-      (angleL >= 0 && angleR >= 0) || (angleL < 0 && angleR < 0) ? 2 : 0;
-    angleL = std::abs(angleL);
-    angleR = std::abs(angleR);
-    if (angleL > angleR) {
-      contextAnglePhi++;
-      std::swap(angleL, angleR);
-    }
-    if (angleR > (angleL << 1))
-      contextAnglePhi += 4;
-
-    // entropy coding
-    int bit = !!(pos[phiAxis] & mask);
-    int ctxIndex = 0;
-    if (_angularExtension)
-      ctxIndex = determineContextIndexForAngularPhiIDCM(
-        _phiZi.delta(laserIdx), std::abs(phiL - phiR));
-    auto& ctx =
-      _ctxPlanarPlaneLastIndexAngularPhiIDCM[contextAnglePhi][ctxIndex];
-    _arithmeticEncoder->encode(bit, ctx);
-    if (bit) {
-      posXyz[phiAxis] += scaledMask;
-      if (_angularExtension)
-        phiNode = phiMiddle;
-      else {
-        phiNode = phiR;
-        predPhi = _phiBuffer[laserIdx];
-        if (predPhi == 0x80000000)
-          predPhi = phiNode;
-
-        // elementary shift predictor
-        int nShift =
-          ((predPhi - phiNode) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
-        predPhi -= _phiZi.delta(laserIdx) * nShift;
-      }
-    } else if (_angularExtension)
-      phiTop = phiMiddle;
-
-    if (_angularExtension) {
-      // update Phi middle
-      if (std::abs(phiNode - phiTop) < thInterp)
-        phiMiddle = (phiNode + phiTop) >> 1;
-      else
-        phiMiddle = directAxis
-          ? iatan2(posXyz[1], posXyz[0] + (scaledMask >> 1))
-          : iatan2(posXyz[1] + (scaledMask >> 1), posXyz[0]);
-
-      // update elementary shift predictor
-      int nShift =
-        ((predPhi - phiMiddle) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
-      predPhi -= _phiZi.delta(laserIdx) * nShift;
-    }
-  }
-
-  _phiBuffer[laserIdx] = phiNode;
-
-  // -- THETA --
-  int maskz = (1 << nodeSizeLog2Rem[2]) >> 1;
-  if (!maskz)
-    return;
-
-  // Since x and y are known,
-  // r is known too and does not depend on the bit for z
-  if (_angularExtension)
-    encodePointPositionZAngularExtension(
-      angularOrigin, pos, zLaser, thetaLaser, laserIdx, maskz, posXyz);
-  else
-    encodePointPositionZAngular(
-      quant, nodeSizeLog2Rem, zLaser, thetaLaser, laserIdx, posXyz, pos[2]);
-}
-
-//-------------------------------------------------------------------------
-
-void
-GeometryOctreeEncoder::encodePointPositionZAngular(
-  const OctreeAngPosScaler& quant,
-  const Vec3<int>& nodeSizeLog2Rem,
-  const int* zLaser,
-  const int* thetaLaser,
-  int laserIdx,
-  Vec3<int>& posXyz,
-  const int& posZ)
-{
-  uint64_t xLidar = (int64_t(posXyz[0]) << 8) - 128;
-  uint64_t yLidar = (int64_t(posXyz[1]) << 8) - 128;
-  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
-  int64_t rInv = irsqrt(r2);
-
-  // code z
-  int64_t hr = zLaser[laserIdx] * rInv;
-  int fixedThetaLaser =
-    thetaLaser[laserIdx] + int(hr >= 0 ? -(hr >> 17) : ((-hr) >> 17));
-
-  int maskz = (1 << nodeSizeLog2Rem[2]) >> 1;
-  int zShift = rInv * quant.scaleEns(2, 1 << nodeSizeLog2Rem[2]) >> 18;
-  for (; maskz; maskz >>= 1, zShift >>= 1) {
-    // determine non-corrected theta
-    int scaledMaskZ = quant.scaleEns(2, maskz);
-    int64_t zLidar = ((posXyz[2] + scaledMaskZ) << 1) - 1;
-    int64_t theta = zLidar * rInv;
-    int theta32 = theta >= 0 ? theta >> 15 : -((-theta) >> 15);
-    int thetaLaserDelta = fixedThetaLaser - theta32;
-
-    int thetaLaserDeltaBot = thetaLaserDelta + zShift;
-    int thetaLaserDeltaTop = thetaLaserDelta - zShift;
-    int contextAngle = thetaLaserDelta >= 0 ? 0 : 1;
-    if (thetaLaserDeltaTop >= 0)
-      contextAngle += 2;
-    else if (thetaLaserDeltaBot < 0)
-      contextAngle += 2;
-
-    int bit = !!(posZ & maskz);
-    auto& ctx = _ctxPlanarPlaneLastIndexAngularIdcm[contextAngle];
-    _arithmeticEncoder->encode(bit, ctx);
-    if (bit)
-      posXyz[2] += scaledMaskZ;
-  }
-}
+//void
+//GeometryOctreeEncoder::encodePointPositionAngular(
+//  const OctreeAngPosScaler& quant,
+//  const OctreeNodePlanar& planar,
+//  const Vec3<int>& nodeSizeLog2Rem,
+//  Vec3<int> posXyz,
+//  const Vec3<int>& pos,
+//  int nodeLaserIdx,
+//  const Vec3<int>& angularOrigin,
+//  const int* zLaser,
+//  const int* thetaLaser,
+//  int numLasers)
+//{
+//  // -- PHI --
+//  // code x or y directly and compute phi of node
+//  bool directAxis = std::abs(posXyz[0]) <= std::abs(posXyz[1]);
+//
+//  for (int mask = (1 << nodeSizeLog2Rem[directAxis]) >> 1; mask; mask >>= 1)
+//    _arithmeticEncoder->encode(!!(pos[directAxis] & mask));
+//
+//  // update the known position to take into account all coded bits
+//  for (int k = 0; k < 3; k++)
+//    if (k != directAxis)
+//      if (planar.planePosBits & (1 << k))
+//        posXyz[k] += quant.scaleEns(k, 1 << nodeSizeLog2Rem[k]);
+//
+//  posXyz[directAxis] =
+//    quant.scaleEns(directAxis, pos[directAxis]) - angularOrigin[directAxis];
+//
+//  // Laser
+//  int laserIdx;
+//
+//  if (_angularExtension)
+//    laserIdx = findLaserPrecise(
+//      quant.scaleEns(pos) - angularOrigin, thetaLaser, zLaser, numLasers);
+//  else
+//    laserIdx =
+//      findLaser(quant.scaleEns(pos) - angularOrigin, thetaLaser, numLasers);
+//
+//  int resLaser = laserIdx - nodeLaserIdx;
+//  encodeThetaRes(resLaser, _prevLaserIndexResidual[nodeLaserIdx]);
+//
+//  if (_angularExtension)
+//    _prevLaserIndexResidual[nodeLaserIdx] = resLaser;
+//
+//  // find predictor
+//  const int thInterp = 1 << 13;
+//
+//  int phiNode = iatan2(posXyz[1], posXyz[0]);
+//  int phiTop = directAxis
+//    ? iatan2(posXyz[1], posXyz[0] + (1 << nodeSizeLog2Rem[!directAxis]))
+//    : iatan2(posXyz[1] + (1 << nodeSizeLog2Rem[!directAxis]), posXyz[0]);
+//  int phiMiddle = (phiNode + phiTop) >> 1;
+//  if (_angularExtension && !(std::abs(phiNode - phiTop) < thInterp))
+//    phiMiddle = directAxis
+//      ? iatan2(
+//          posXyz[1], posXyz[0] + ((1 << nodeSizeLog2Rem[!directAxis]) >> 1))
+//      : iatan2(
+//          posXyz[1] + ((1 << nodeSizeLog2Rem[!directAxis]) >> 1), posXyz[0]);
+//
+//  int predPhi = _phiBuffer[laserIdx];
+//  int phiRef = _angularExtension ? phiMiddle : phiNode;
+//  if (predPhi == 0x80000000)
+//    predPhi = phiRef;
+//
+//  // elementary shift predictor
+//  int nShift =
+//    ((predPhi - phiRef) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
+//  predPhi -= _phiZi.delta(laserIdx) * nShift;
+//
+//  // azimuthal code x or y
+//  const int phiAxis = !directAxis;
+//  for (int mask = (1 << nodeSizeLog2Rem[phiAxis]) >> 1,
+//           shiftBits = nodeSizeLog2Rem[phiAxis];
+//       mask; mask >>= 1, shiftBits--) {
+//    // angles left and right
+//    int scaledMask = quant.scaleEns(phiAxis, mask);
+//    int phiL, phiR;
+//
+//    if (_angularExtension) {
+//      const int offset = scaledMask - 1;
+//      const int offset2 = shiftBits > 1 ? (shiftBits > 2 ? 0 : 1) : 2;
+//
+//      phiL =
+//        phiNode + ((offset - offset2) * (phiMiddle - phiNode) >> (shiftBits));
+//      phiR = phiMiddle
+//        + ((offset + offset2) * (phiMiddle - phiNode) >> (shiftBits));
+//    } else {
+//      phiL = phiNode;
+//      phiR = directAxis ? iatan2(posXyz[1], posXyz[0] + scaledMask)
+//                        : iatan2(posXyz[1] + scaledMask, posXyz[0]);
+//    }
+//
+//    // ctx azimutal
+//    int angleL = phiL - predPhi;
+//    int angleR = phiR - predPhi;
+//    int contextAnglePhi =
+//      (angleL >= 0 && angleR >= 0) || (angleL < 0 && angleR < 0) ? 2 : 0;
+//    angleL = std::abs(angleL);
+//    angleR = std::abs(angleR);
+//    if (angleL > angleR) {
+//      contextAnglePhi++;
+//      std::swap(angleL, angleR);
+//    }
+//    if (angleR > (angleL << 1))
+//      contextAnglePhi += 4;
+//
+//    // entropy coding
+//    int bit = !!(pos[phiAxis] & mask);
+//    int ctxIndex = 0;
+//    if (_angularExtension)
+//      ctxIndex = determineContextIndexForAngularPhiIDCM(
+//        _phiZi.delta(laserIdx), std::abs(phiL - phiR));
+//    auto& ctx =
+//      _ctxPlanarPlaneLastIndexAngularPhiIDCM[contextAnglePhi][ctxIndex];
+//    _arithmeticEncoder->encode(bit, ctx);
+//    if (bit) {
+//      posXyz[phiAxis] += scaledMask;
+//      if (_angularExtension)
+//        phiNode = phiMiddle;
+//      else {
+//        phiNode = phiR;
+//        predPhi = _phiBuffer[laserIdx];
+//        if (predPhi == 0x80000000)
+//          predPhi = phiNode;
+//
+//        // elementary shift predictor
+//        int nShift =
+//          ((predPhi - phiNode) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
+//        predPhi -= _phiZi.delta(laserIdx) * nShift;
+//      }
+//    } else if (_angularExtension)
+//      phiTop = phiMiddle;
+//
+//    if (_angularExtension) {
+//      // update Phi middle
+//      if (std::abs(phiNode - phiTop) < thInterp)
+//        phiMiddle = (phiNode + phiTop) >> 1;
+//      else
+//        phiMiddle = directAxis
+//          ? iatan2(posXyz[1], posXyz[0] + (scaledMask >> 1))
+//          : iatan2(posXyz[1] + (scaledMask >> 1), posXyz[0]);
+//
+//      // update elementary shift predictor
+//      int nShift =
+//        ((predPhi - phiMiddle) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
+//      predPhi -= _phiZi.delta(laserIdx) * nShift;
+//    }
+//  }
+//
+//  _phiBuffer[laserIdx] = phiNode;
+//
+//  // -- THETA --
+//  int maskz = (1 << nodeSizeLog2Rem[2]) >> 1;
+//  if (!maskz)
+//    return;
+//
+//  // Since x and y are known,
+//  // r is known too and does not depend on the bit for z
+//  if (_angularExtension)
+//    encodePointPositionZAngularExtension(
+//      angularOrigin, pos, zLaser, thetaLaser, laserIdx, maskz, posXyz);
+//  else
+//    encodePointPositionZAngular(
+//      quant, nodeSizeLog2Rem, zLaser, thetaLaser, laserIdx, posXyz, pos[2]);
+//}
 
 //-------------------------------------------------------------------------
 
-void
-GeometryOctreeEncoder::encodePointPositionZAngularExtension(
-  const Vec3<int>& angularOrigin,
-  const Vec3<int>& nodePos,
-  const int* zLaser,
-  const int* thetaLaser,
-  int laserIdx,
-  int maskz,
-  Vec3<int>& posXyz)
-{
-  uint64_t xLidar = (int64_t(posXyz[0]) << 8);
-  uint64_t yLidar = (int64_t(posXyz[1]) << 8);
-  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
-  int64_t r = isqrt(r2);
+//void
+//GeometryOctreeEncoder::encodePointPositionZAngular(
+//  const OctreeAngPosScaler& quant,
+//  const Vec3<int>& nodeSizeLog2Rem,
+//  const int* zLaser,
+//  const int* thetaLaser,
+//  int laserIdx,
+//  Vec3<int>& posXyz,
+//  const int& posZ)
+//{
+//  uint64_t xLidar = (int64_t(posXyz[0]) << 8) - 128;
+//  uint64_t yLidar = (int64_t(posXyz[1]) << 8) - 128;
+//  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
+//  int64_t rInv = irsqrt(r2);
+//
+//  // code z
+//  int64_t hr = zLaser[laserIdx] * rInv;
+//  int fixedThetaLaser =
+//    thetaLaser[laserIdx] + int(hr >= 0 ? -(hr >> 17) : ((-hr) >> 17));
+//
+//  int maskz = (1 << nodeSizeLog2Rem[2]) >> 1;
+//  int zShift = rInv * quant.scaleEns(2, 1 << nodeSizeLog2Rem[2]) >> 18;
+//  for (; maskz; maskz >>= 1, zShift >>= 1) {
+//    // determine non-corrected theta
+//    int scaledMaskZ = quant.scaleEns(2, maskz);
+//    int64_t zLidar = ((posXyz[2] + scaledMaskZ) << 1) - 1;
+//    int64_t theta = zLidar * rInv;
+//    int theta32 = theta >= 0 ? theta >> 15 : -((-theta) >> 15);
+//    int thetaLaserDelta = fixedThetaLaser - theta32;
+//
+//    int thetaLaserDeltaBot = thetaLaserDelta + zShift;
+//    int thetaLaserDeltaTop = thetaLaserDelta - zShift;
+//    int contextAngle = thetaLaserDelta >= 0 ? 0 : 1;
+//    if (thetaLaserDeltaTop >= 0)
+//      contextAngle += 2;
+//    else if (thetaLaserDeltaBot < 0)
+//      contextAngle += 2;
+//
+//    int bit = !!(posZ & maskz);
+//    auto& ctx = _ctxPlanarPlaneLastIndexAngularIdcm[contextAngle];
+//    _arithmeticEncoder->encode(bit, ctx);
+//    if (bit)
+//      posXyz[2] += scaledMaskZ;
+//  }
+//}
 
-  // encode z
-  int64_t zRec26 = thetaLaser[laserIdx] * r;
-  zRec26 -= int64_t(zLaser[laserIdx]) << 23;
-  int32_t zRec = divExp2RoundHalfInf(zRec26, 26);
+//-------------------------------------------------------------------------
 
-  zRec = std::max(zRec, posXyz[2]);
-  zRec = std::min(zRec, posXyz[2] + (2 * maskz - 1));
-
-  int32_t zRes = (nodePos[2] - angularOrigin[2]) - zRec;
-  encodeZRes(zRes);
-}
+//void
+//GeometryOctreeEncoder::encodePointPositionZAngularExtension(
+//  const Vec3<int>& angularOrigin,
+//  const Vec3<int>& nodePos,
+//  const int* zLaser,
+//  const int* thetaLaser,
+//  int laserIdx,
+//  int maskz,
+//  Vec3<int>& posXyz)
+//{
+//  uint64_t xLidar = (int64_t(posXyz[0]) << 8);
+//  uint64_t yLidar = (int64_t(posXyz[1]) << 8);
+//  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
+//  int64_t r = isqrt(r2);
+//
+//  // encode z
+//  int64_t zRec26 = thetaLaser[laserIdx] * r;
+//  zRec26 -= int64_t(zLaser[laserIdx]) << 23;
+//  int32_t zRec = divExp2RoundHalfInf(zRec26, 26);
+//
+//  zRec = std::max(zRec, posXyz[2]);
+//  zRec = std::min(zRec, posXyz[2] + (2 * maskz - 1));
+//
+//  int32_t zRes = (nodePos[2] - angularOrigin[2]) - zRec;
+//  encodeZRes(zRes);
+//}
 
 //-------------------------------------------------------------------------
 
@@ -1535,15 +1535,15 @@ GeometryOctreeEncoder::encodeDirectPosition(
   Vec3<bool> directIdcm = true;
 
   // Position of the node relative to the angular origin
-  point_t posNodeLidar;
-  if (geom_angular_mode_enabled_flag) {
+  //point_t posNodeLidar;
+  /*if (geom_angular_mode_enabled_flag) {
     posNodeLidar = quant.scaleEns(node.pos << effectiveNodeSizeLog2);
     posNodeLidar -= angularOrigin;
 
     bool directAxis = std::abs(posNodeLidar[0]) <= std::abs(posNodeLidar[1]);
     directIdcm = false;
     directIdcm[directAxis] = true;
-  }
+  }*/
 
   // Jointly code two points
   if (numPoints == 2 && joint_2pt_idcm_enabled_flag) {
@@ -1557,8 +1557,8 @@ GeometryOctreeEncoder::encodeDirectPosition(
     encodeOrdered2ptPrefix(points, directIdcm, nodeSizeLog2Rem);
   }
 
-  int laserIdx;
-  if (geom_angular_mode_enabled_flag) {
+  //int laserIdx;
+  /*if (geom_angular_mode_enabled_flag) {
     auto delta = points[0] - (node.pos << effectiveNodeSizeLog2);
     delta = (delta >> nodeSizeLog2Rem) << nodeSizeLog2Rem;
     delta += (1 << nodeSizeLog2Rem) >> 1;
@@ -1568,58 +1568,58 @@ GeometryOctreeEncoder::encodeDirectPosition(
         findLaserPrecise(posNodeLidar + delta, thetaLaser, zLaser, numLasers);
     else
       laserIdx = findLaser(posNodeLidar + delta, thetaLaser, numLasers);
-  }
+  }*/
 
   // code points after planar
   for (auto idx = 0; idx < numPoints; idx++) {
-    if (geom_angular_mode_enabled_flag)
+    /*if (geom_angular_mode_enabled_flag)
       encodePointPositionAngular(
         quant, planar, nodeSizeLog2Rem, posNodeLidar, points[idx], laserIdx,
         angularOrigin, zLaser, thetaLaser, numLasers);
-    else
+    else*/
       encodePointPosition(nodeSizeLog2Rem, points[idx]);
   }
 }
 
 //-------------------------------------------------------------------------
 
-void
-GeometryOctreeEncoder::encodeThetaRes(int thetaRes, int prevThetaRes)
-{
-  int ctx = prevThetaRes != 0;
-  _arithmeticEncoder->encode(thetaRes != 0, _ctxThetaRes[ctx][0]);
-  if (!thetaRes)
-    return;
-
-  int absVal = std::abs(thetaRes);
-  _arithmeticEncoder->encode(--absVal > 0, _ctxThetaRes[ctx][1]);
-  if (absVal)
-    _arithmeticEncoder->encode(--absVal > 0, _ctxThetaRes[ctx][2]);
-  if (absVal)
-    _arithmeticEncoder->encodeExpGolomb(--absVal, 1, _ctxThetaResExp);
-
-  int ctxSign = (prevThetaRes > 0) + 2 * (prevThetaRes < 0);
-  _arithmeticEncoder->encode(thetaRes < 0, _ctxThetaResSign[ctxSign]);
-}
+//void
+//GeometryOctreeEncoder::encodeThetaRes(int thetaRes, int prevThetaRes)
+//{
+//  int ctx = prevThetaRes != 0;
+//  _arithmeticEncoder->encode(thetaRes != 0, _ctxThetaRes[ctx][0]);
+//  if (!thetaRes)
+//    return;
+//
+//  int absVal = std::abs(thetaRes);
+//  _arithmeticEncoder->encode(--absVal > 0, _ctxThetaRes[ctx][1]);
+//  if (absVal)
+//    _arithmeticEncoder->encode(--absVal > 0, _ctxThetaRes[ctx][2]);
+//  if (absVal)
+//    _arithmeticEncoder->encodeExpGolomb(--absVal, 1, _ctxThetaResExp);
+//
+//  int ctxSign = (prevThetaRes > 0) + 2 * (prevThetaRes < 0);
+//  _arithmeticEncoder->encode(thetaRes < 0, _ctxThetaResSign[ctxSign]);
+//}
 
 //-------------------------------------------------------------------------
 
-void
-GeometryOctreeEncoder::encodeZRes(int zRes)
-{
-  _arithmeticEncoder->encode(zRes != 0, _ctxZRes[0]);
-  if (!zRes)
-    return;
-
-  int absVal = std::abs(zRes);
-  _arithmeticEncoder->encode(--absVal > 0, _ctxZRes[1]);
-  if (absVal)
-    _arithmeticEncoder->encode(--absVal > 0, _ctxZRes[2]);
-  if (absVal)
-    _arithmeticEncoder->encodeExpGolomb(--absVal, 1, _ctxZResExp);
-
-  _arithmeticEncoder->encode(zRes < 0, _ctxZResSign);
-}
+//void
+//GeometryOctreeEncoder::encodeZRes(int zRes)
+//{
+//  _arithmeticEncoder->encode(zRes != 0, _ctxZRes[0]);
+//  if (!zRes)
+//    return;
+//
+//  int absVal = std::abs(zRes);
+//  _arithmeticEncoder->encode(--absVal > 0, _ctxZRes[1]);
+//  if (absVal)
+//    _arithmeticEncoder->encode(--absVal > 0, _ctxZRes[2]);
+//  if (absVal)
+//    _arithmeticEncoder->encodeExpGolomb(--absVal, 1, _ctxZResExp);
+//
+//  _arithmeticEncoder->encode(zRes < 0, _ctxZResSign);
+//}
 
 //-------------------------------------------------------------------------
 void
@@ -1911,7 +1911,7 @@ encodeGeometryOctree(
   const bool checkPlanarEligibilityBasedOnOctreeDepth =
     gps.geom_planar_mode_enabled_flag
     && gps.geom_octree_depth_planar_eligibiity_enabled_flag
-    && !gps.geom_angular_mode_enabled_flag;
+    && /*!gps.geom_angular_mode_enabled_flag*/ true;
 
   for (int depth = 0; depth < maxDepth; depth++) {
     int numSubnodes = 0;
@@ -2188,24 +2188,24 @@ encodeGeometryOctree(
           gps.geom_unique_points_flag, node0, pointCloud);
         if (gps.geom_planar_disabled_idcm_angular_flag) {
           encoder.encodeIsIdcm(mode);
-          if (
+          /*if (
             mode != DirectMode::kUnavailable
             && gps.geom_angular_mode_enabled_flag)
-            planar_eligibility_idcm_angular = false;
+            planar_eligibility_idcm_angular = false;*/
         }
       }
 
       int contextAngle = -1;
       int contextAnglePhiX = -1;
       int contextAnglePhiY = -1;
-      if (
+      /*if (
         gps.geom_angular_mode_enabled_flag
         && planar_eligibility_idcm_angular) {
         contextAngle = determineContextAngleForPlanar(
           node0, nodeSizeLog2, angularOrigin, zLaser, thetaLaser, numLasers,
           deltaAngle, encoder._phiZi, encoder._phiBuffer.data(),
           &contextAnglePhiX, &contextAnglePhiY, posQuantBitMasks);
-      }
+      }*/
 
       if (
         gps.geom_planar_mode_enabled_flag && planar_eligibility_idcm_angular) {
@@ -2226,12 +2226,12 @@ encodeGeometryOctree(
           gps.geom_planar_mode_enabled_flag
           && planar_eligibility_idcm_angular) {
           if (gps.geom_octree_depth_planar_eligibiity_enabled_flag) {
-            if (gps.geom_angular_mode_enabled_flag) {
+            /*if (gps.geom_angular_mode_enabled_flag) {
               if (contextAngle != -1)
                 planarEligible[2] = true;
               planarEligible[0] = (contextAnglePhiX != -1);
               planarEligible[1] = (contextAnglePhiY != -1);
-            } else if (planarEligibleKOctreeDepth) {
+            } else*/ if (planarEligibleKOctreeDepth) {
               planarEligible[0] = true;
               planarEligible[1] = true;
               planarEligible[2] = true;
@@ -2239,12 +2239,12 @@ encodeGeometryOctree(
           } else
           {
             encoder._planar.isEligible(planarEligible);
-            if (gps.geom_angular_mode_enabled_flag) {
+            /*if (gps.geom_angular_mode_enabled_flag) {
               if (contextAngle != -1)
                 planarEligible[2] = true;
               planarEligible[0] = (contextAnglePhiX != -1);
               planarEligible[1] = (contextAnglePhiY != -1);
-            }
+            }*/
           }
 
           for (int k = 0; k < 3; k++)
@@ -2441,7 +2441,7 @@ encodeGeometryOctree(
         }
 
         child.laserIndex = node0.laserIndex;
-        if (isInter && !gps.geom_angular_mode_enabled_flag)
+        if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)
           child.idcmEligible = isDirectModeEligible_Inter(
             gps.inferred_direct_coding_mode, nodeMaxDimLog2, gnp.neighPattern,
             node0, child, occupancyIsPredictable);

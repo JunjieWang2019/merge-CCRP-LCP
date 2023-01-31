@@ -98,12 +98,12 @@ PCCTMC3Encoder3::compress(
     //  - sequence scaling is replaced by decimation of the input
     //  - any user-specified global scaling is honoured
     _inputDecimationScale = 1.;
-    if (params->gps.predgeom_enabled_flag
+    /*if (params->gps.predgeom_enabled_flag
         && params->gps.geom_angular_mode_enabled_flag) {
       _inputDecimationScale = params->codedGeomScale;
       params->codedGeomScale /= params->seqGeomScale;
       params->seqGeomScale = 1.;
-    }
+    }*/
 
     deriveParameterSets(params);
     fixupParameterSets(params);
@@ -172,40 +172,40 @@ PCCTMC3Encoder3::compress(
 
     // determine the scale factors based on a characteristic of the
     // acquisition system
-    if (params->gps.geom_angular_mode_enabled_flag) {
-      auto gs = Rational(params->sps.globalScale);
-      int maxX = (params->sps.seqBoundingBoxSize[0] - 1) / double(gs);
-      int maxY = (params->sps.seqBoundingBoxSize[1] - 1) / double(gs);
-      auto& origin = params->gps.gpsAngularOrigin;
-      int rx = std::max(std::abs(origin[0]), std::abs(maxX - origin[0]));
-      int ry = std::max(std::abs(origin[1]), std::abs(maxY - origin[1]));
-      int r = std::max(rx, ry);
-      int twoPi = 25735;
-      int maxLaserIdx = params->gps.numLasers() - 1;
-
-      if (params->gps.predgeom_enabled_flag) {
-        auto& gps = params->gps;
-        twoPi = 1 << (gps.geom_angular_azimuth_scale_log2_minus11 + 12);
-        r >>= params->gps.geom_angular_radius_inv_scale_log2;
-      }
-
-      // todo(df): handle the single laser case better
-      Box3<int> sphBox{0, {r, twoPi, maxLaserIdx}};
-      int refScale = params->gps.azimuth_scaling_enabled_flag
-        ? params->attrSphericalMaxLog2
-        : 0;
-      auto attr_coord_scale = normalisedAxesWeights(sphBox, refScale);
-      for (auto& aps : params->aps)
-        if (aps.spherical_coord_flag)
-          aps.attr_coord_scale = attr_coord_scale;
-    }
+    //if (params->gps.geom_angular_mode_enabled_flag) {
+    //  auto gs = Rational(params->sps.globalScale);
+    //  int maxX = (params->sps.seqBoundingBoxSize[0] - 1) / double(gs);
+    //  int maxY = (params->sps.seqBoundingBoxSize[1] - 1) / double(gs);
+    //  auto& origin = params->gps.gpsAngularOrigin;
+    //  int rx = std::max(std::abs(origin[0]), std::abs(maxX - origin[0]));
+    //  int ry = std::max(std::abs(origin[1]), std::abs(maxY - origin[1]));
+    //  int r = std::max(rx, ry);
+    //  int twoPi = 25735;
+    //  int maxLaserIdx = params->gps.numLasers() - 1;
+    //
+    //  if (params->gps.predgeom_enabled_flag) {
+    //    auto& gps = params->gps;
+    //    twoPi = 1 << (gps.geom_angular_azimuth_scale_log2_minus11 + 12);
+    //    r >>= params->gps.geom_angular_radius_inv_scale_log2;
+    //  }
+    //
+    //  // todo(df): handle the single laser case better
+    //  Box3<int> sphBox{0, {r, twoPi, maxLaserIdx}};
+    //  int refScale = params->gps.azimuth_scaling_enabled_flag
+    //    ? params->attrSphericalMaxLog2
+    //    : 0;
+    //  auto attr_coord_scale = normalisedAxesWeights(sphBox, refScale);
+    //  for (auto& aps : params->aps)
+    //    if (aps.spherical_coord_flag)
+    //      aps.attr_coord_scale = attr_coord_scale;
+    //}
 
     // Allocate storage for attribute contexts
     _ctxtMemAttrs.resize(params->sps.attributeSets.size());
     
     if (params->gps.globalMotionEnabled) {
       if (params->gps.predgeom_enabled_flag) {
-        _refFrameSph.parseMotionParams(motionVectorFileName, 1.0);
+        /*_refFrameSph.parseMotionParams(motionVectorFileName, 1.0);*/
       } else if (!params->gps.trisoup_enabled_flag) {
         params->interGeom.motionParams.parseFile(
           motionVectorFileName, params->codedGeomScale);
@@ -258,9 +258,9 @@ PCCTMC3Encoder3::compress(
       std::max(minZ, top - deltaLeft) * params->codedGeomScale;
     const int rightOffset =
       std::min(maxZ, top + deltaRight) * params->codedGeomScale;
-    if (params->gps.predgeom_enabled_flag)
+    /*if (params->gps.predgeom_enabled_flag)
       _refFrameSph.updateThresholds(_frameCounter, leftOffset, rightOffset);
-    else if (!params->gps.trisoup_enabled_flag)
+    else */if (!params->gps.trisoup_enabled_flag)
       params->interGeom.motionParams.updateThresholds(
         _frameCounter, leftOffset, rightOffset);
   }
@@ -454,12 +454,12 @@ PCCTMC3Encoder3::compress(
  
   if (_frameCounter){
     if (params->gps.predgeom_enabled_flag) {
-      _refFrameSph.updateFrame(*_gps);
+      /*_refFrameSph.updateFrame(*_gps);*/
     } else if (!params->gps.trisoup_enabled_flag) {
       params->interGeom.motionParams.AdvanceFrame();
     }
   } else {
-    _refFrameSph.setGlobalMotionEnabled(_gps->globalMotionEnabled);
+    /*_refFrameSph.setGlobalMotionEnabled(_gps->globalMotionEnabled);*/
   }
 
   // Encode each partition:
@@ -608,10 +608,10 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
     // dist2 is refined in the slice header
     //  - the encoder always writes them unless syntatically prohibited:
     attr_aps.aps_slice_dist2_deltas_present_flag =
-      attr_aps.lodParametersPresent()
+      /*attr_aps.lodParametersPresent()
       && !attr_aps.scalable_lifting_enabled_flag
       && attr_aps.num_detail_levels_minus1
-      && attr_aps.lod_decimation_type != LodDecimationMethod::kPeriodic;
+      && attr_aps.lod_decimation_type != LodDecimationMethod::kPeriodic*/ false; //NOTE[FT] : lodParametersPresent=false
 
     // disable dist2 estimation when decimating with centroid sampler
     if (attr_aps.lod_decimation_type == LodDecimationMethod::kCentroid)
@@ -999,7 +999,7 @@ PCCTMC3Encoder3::compressPartition(
 
   if (_gps->interPredictionEnabledFlag) {
     if (_gps->predgeom_enabled_flag){
-      _refFrameSph.insert(_posSph);
+      /*_refFrameSph.insert(_posSph);*/
     }
   }
 
@@ -1106,10 +1106,10 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   }
 
   if (_gps->predgeom_enabled_flag) {
-    _refFrameSph.setInterEnabled(gbh.interPredictionEnabledFlag);
+    /*  _refFrameSph.setInterEnabled(gbh.interPredictionEnabledFlag);
     encodePredictiveGeometry(
       params->predGeom, *_gps, gbh, pointCloud, &_posSph, _refFrameSph,
-      *_ctxtMemPredGeom, arithmeticEncoders[0].get());
+      *_ctxtMemPredGeom, arithmeticEncoders[0].get());*/
   } else if (!_gps->trisoup_enabled_flag) {
     PCCPointSet3 compensatedPointCloud;
     encodeGeometryOctree(
@@ -1131,10 +1131,10 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   // signal the actual number of points coded
   gbh.footer.geom_num_points_minus1 = pointCloud.getPointCount() - 1;
 
-  if (
+  /*if (
     _gps->predgeom_enabled_flag && gbh.interPredictionEnabledFlag
     && _gps->globalMotionEnabled)
-    _refFrameSph.getMotionParams(gbh.gm_thresh, gbh.gm_matrix, gbh.gm_trans);
+    _refFrameSph.getMotionParams(gbh.gm_thresh, gbh.gm_matrix, gbh.gm_trans);*/
 
   attrInterPredParams.frameDistance = 1;
   movingState = false;

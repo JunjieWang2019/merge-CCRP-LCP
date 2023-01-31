@@ -411,115 +411,115 @@ struct PCCPredictor {
 
 //---------------------------------------------------------------------------
 
-template<typename T>
-void
-PCCLiftPredict(
-  const std::vector<PCCPredictor>& predictors,
-  const size_t startIndex,
-  const size_t endIndex,
-  const bool direct,
-  std::vector<T>& attributes
-  , bool interRef
-  , std::vector<T>& attributesRef
-  )
-{
-  const size_t predictorCount = endIndex - startIndex;
-  for (size_t index = 0; index < predictorCount; ++index) {
-    const size_t predictorIndex = predictorCount - index - 1 + startIndex;
-    const auto& predictor = predictors[predictorIndex];
-    auto& attribute = attributes[predictorIndex];
-    T predicted(T(0));
-    for (size_t i = 0; i < predictor.neighborCount; ++i) {
-      if (interRef && predictor.neighbors[i].interFrameRef) {
-        const size_t neighborPointIndexRef = predictor.neighbors[i].pointIndex;
-        const uint32_t weight = predictor.neighbors[i].weight;
-        predicted += weight * attributesRef[neighborPointIndexRef];
-        continue;
-      }
-      const size_t neighborPredIndex = predictor.neighbors[i].predictorIndex;
-      const uint32_t weight = predictor.neighbors[i].weight;
-      assert(neighborPredIndex < startIndex);
-      predicted += weight * attributes[neighborPredIndex];
-    }
-    predicted = divExp2RoundHalfInf(predicted, kFixedPointWeightShift);
-    if (direct) {
-      attribute -= predicted;
-    } else {
-      attribute += predicted;
-    }
-  }
-}
+//template<typename T>
+//void
+//PCCLiftPredict(
+//  const std::vector<PCCPredictor>& predictors,
+//  const size_t startIndex,
+//  const size_t endIndex,
+//  const bool direct,
+//  std::vector<T>& attributes
+//  , bool interRef
+//  , std::vector<T>& attributesRef
+//  )
+//{
+//  const size_t predictorCount = endIndex - startIndex;
+//  for (size_t index = 0; index < predictorCount; ++index) {
+//    const size_t predictorIndex = predictorCount - index - 1 + startIndex;
+//    const auto& predictor = predictors[predictorIndex];
+//    auto& attribute = attributes[predictorIndex];
+//    T predicted(T(0));
+//    for (size_t i = 0; i < predictor.neighborCount; ++i) {
+//      if (interRef && predictor.neighbors[i].interFrameRef) {
+//        const size_t neighborPointIndexRef = predictor.neighbors[i].pointIndex;
+//        const uint32_t weight = predictor.neighbors[i].weight;
+//        predicted += weight * attributesRef[neighborPointIndexRef];
+//        continue;
+//      }
+//      const size_t neighborPredIndex = predictor.neighbors[i].predictorIndex;
+//      const uint32_t weight = predictor.neighbors[i].weight;
+//      assert(neighborPredIndex < startIndex);
+//      predicted += weight * attributes[neighborPredIndex];
+//    }
+//    predicted = divExp2RoundHalfInf(predicted, kFixedPointWeightShift);
+//    if (direct) {
+//      attribute -= predicted;
+//    } else {
+//      attribute += predicted;
+//    }
+//  }
+//}
 
 //---------------------------------------------------------------------------
 
-template<typename T>
-void
-PCCLiftPredict(
-  const std::vector<PCCPredictor>& predictors,
-  const size_t startIndex,
-  const size_t endIndex,
-  const bool direct,
-  std::vector<T>& attributes)
-{
-  std::vector<T> attributesRef;
-  PCCLiftPredict(
-    predictors, startIndex, endIndex, direct, attributes, false,
-    attributesRef);
-}
+//template<typename T>
+//void
+//PCCLiftPredict(
+//  const std::vector<PCCPredictor>& predictors,
+//  const size_t startIndex,
+//  const size_t endIndex,
+//  const bool direct,
+//  std::vector<T>& attributes)
+//{
+//  std::vector<T> attributesRef;
+//  PCCLiftPredict(
+//    predictors, startIndex, endIndex, direct, attributes, false,
+//    attributesRef);
+//}
 
 //---------------------------------------------------------------------------
 
-template<typename T>
-void
-PCCLiftUpdate(
-  const std::vector<PCCPredictor>& predictors,
-  const std::vector<uint64_t>& quantizationWeights,
-  const size_t startIndex,
-  const size_t endIndex,
-  const bool direct,
-  std::vector<T>& attributes
-  , bool interRef = false
-  )
-{
-  std::vector<uint64_t> updateWeights;
-  updateWeights.resize(startIndex, uint64_t(0));
-  std::vector<T> updates;
-  updates.resize(startIndex);
-  for (size_t index = 0; index < startIndex; ++index) {
-    updates[index] = int64_t(0);
-  }
-  const size_t predictorCount = endIndex - startIndex;
-  for (size_t index = 0; index < predictorCount; ++index) {
-    const size_t predictorIndex = predictorCount - index - 1 + startIndex;
-    const auto& predictor = predictors[predictorIndex];
-    const auto currentQuantWeight = quantizationWeights[predictorIndex];
-    for (size_t i = 0; i < predictor.neighborCount; ++i) {
-      if (interRef && predictor.neighbors[i].interFrameRef)
-        continue;
-      const size_t neighborPredIndex = predictor.neighbors[i].predictorIndex;
-      const auto weight = divExp2RoundHalfInf(
-        predictor.neighbors[i].weight * currentQuantWeight,
-        kFixedPointWeightShift);
-      assert(neighborPredIndex < startIndex);
-      updateWeights[neighborPredIndex] += weight;
-      updates[neighborPredIndex] += weight * attributes[predictorIndex];
-    }
-  }
-  for (size_t predictorIndex = 0; predictorIndex < startIndex;
-       ++predictorIndex) {
-    const uint32_t sumWeights = updateWeights[predictorIndex];
-    if (sumWeights) {
-      auto& update = updates[predictorIndex];
-      update = divApprox(update, sumWeights, 0);
-      auto& attribute = attributes[predictorIndex];
-      if (direct) {
-        attribute += update;
-      } else {
-        attribute -= update;
-      }
-    }
-  }
-}
+//template<typename T>
+//void
+//PCCLiftUpdate(
+//  const std::vector<PCCPredictor>& predictors,
+//  const std::vector<uint64_t>& quantizationWeights,
+//  const size_t startIndex,
+//  const size_t endIndex,
+//  const bool direct,
+//  std::vector<T>& attributes
+//  , bool interRef = false
+//  )
+//{
+//  std::vector<uint64_t> updateWeights;
+//  updateWeights.resize(startIndex, uint64_t(0));
+//  std::vector<T> updates;
+//  updates.resize(startIndex);
+//  for (size_t index = 0; index < startIndex; ++index) {
+//    updates[index] = int64_t(0);
+//  }
+//  const size_t predictorCount = endIndex - startIndex;
+//  for (size_t index = 0; index < predictorCount; ++index) {
+//    const size_t predictorIndex = predictorCount - index - 1 + startIndex;
+//    const auto& predictor = predictors[predictorIndex];
+//    const auto currentQuantWeight = quantizationWeights[predictorIndex];
+//    for (size_t i = 0; i < predictor.neighborCount; ++i) {
+//      if (interRef && predictor.neighbors[i].interFrameRef)
+//        continue;
+//      const size_t neighborPredIndex = predictor.neighbors[i].predictorIndex;
+//      const auto weight = divExp2RoundHalfInf(
+//        predictor.neighbors[i].weight * currentQuantWeight,
+//        kFixedPointWeightShift);
+//      assert(neighborPredIndex < startIndex);
+//      updateWeights[neighborPredIndex] += weight;
+//      updates[neighborPredIndex] += weight * attributes[predictorIndex];
+//    }
+//  }
+//  for (size_t predictorIndex = 0; predictorIndex < startIndex;
+//       ++predictorIndex) {
+//    const uint32_t sumWeights = updateWeights[predictorIndex];
+//    if (sumWeights) {
+//      auto& update = updates[predictorIndex];
+//      update = divApprox(update, sumWeights, 0);
+//      auto& attribute = attributes[predictorIndex];
+//      if (direct) {
+//        attribute += update;
+//      } else {
+//        attribute -= update;
+//      }
+//    }
+//  }
+//}
 
 //---------------------------------------------------------------------------
 
@@ -1916,205 +1916,205 @@ computeMortonCodesUnsorted(
 
 //---------------------------------------------------------------------------
 
-inline void
-updatePredictors(
-  const std::vector<uint32_t>& pointIndexToPredictorIndex,
-  std::vector<PCCPredictor>& predictors, 
-  const int frameDistance)
-{
-  for (auto& predictor : predictors) {
-    if (predictor.neighborCount < 2) {
-      predictor.neighbors[0].weight = 1;
-    } else if (predictor.neighbors[0].weight == 0) {
-      predictor.neighborCount = 1;
-      predictor.neighbors[0].weight = 1;
-    }
-    for (int32_t k = 0; k < predictor.neighborCount; ++k) {
-      auto& neighbor = predictor.neighbors[k];
-      neighbor.pointIndex = neighbor.predictorIndex;
-      if (neighbor.interFrameRef)
-        neighbor.weight += frameDistance;
-      else
-        neighbor.predictorIndex =
-          pointIndexToPredictorIndex[neighbor.predictorIndex];
-    }
-  }
-}
+//inline void
+//updatePredictors(
+//  const std::vector<uint32_t>& pointIndexToPredictorIndex,
+//  std::vector<PCCPredictor>& predictors, 
+//  const int frameDistance)
+//{
+//  for (auto& predictor : predictors) {
+//    if (predictor.neighborCount < 2) {
+//      predictor.neighbors[0].weight = 1;
+//    } else if (predictor.neighbors[0].weight == 0) {
+//      predictor.neighborCount = 1;
+//      predictor.neighbors[0].weight = 1;
+//    }
+//    for (int32_t k = 0; k < predictor.neighborCount; ++k) {
+//      auto& neighbor = predictor.neighbors[k];
+//      neighbor.pointIndex = neighbor.predictorIndex;
+//      if (neighbor.interFrameRef)
+//        neighbor.weight += frameDistance;
+//      else
+//        neighbor.predictorIndex =
+//          pointIndexToPredictorIndex[neighbor.predictorIndex];
+//    }
+//  }
+//}
 
 //---------------------------------------------------------------------------
 
-inline void
-buildPredictorsFast(
-  const AttributeParameterSet& aps,
-  const AttributeBrickHeader& abh,
-  const PCCPointSet3& pointCloud,
-  int32_t minGeomNodeSizeLog2,
-  int geom_num_points_minus1,
-  std::vector<PCCPredictor>& predictors,
-  std::vector<uint32_t>& numberOfPointsPerLevelOfDetail,
-  std::vector<uint32_t>& indexes
-  ,bool interRef,
-  const AttributeInterPredParams& attrInterPredParams,
-  std::vector<uint32_t>& numberOfPointsPerLevelOfDetailRef,
-  std::vector<uint32_t>& indexesRef
-  )
-{
-  const int32_t pointCount = int32_t(pointCloud.getPointCount());
-  assert(pointCount);
-
-  std::vector<MortonCodeWithIndex> packedVoxel;
-  computeMortonCodesUnsorted(pointCloud, aps.lodNeighBias, packedVoxel);
-
-  if (!aps.canonical_point_order_flag && !aps.max_points_per_sort_log2_plus1) {
-    std::sort(packedVoxel.begin(), packedVoxel.end());
-  } else if (aps.max_points_per_sort_log2_plus1 > 1) {
-    int maxPtsPerSort = 1 << (aps.max_points_per_sort_log2_plus1 - 1);
-    for (int i = 0; i < pointCount; i += maxPtsPerSort) {
-      int iEnd = std::min(i + maxPtsPerSort, int(pointCount));
-      std::sort(packedVoxel.begin() + i, packedVoxel.begin() + iEnd);
-    }
-  }
-
-  std::vector<uint32_t> retained, input, pointIndexToPredictorIndex;
-  pointIndexToPredictorIndex.resize(pointCount);
-  retained.reserve(pointCount);
-  input.resize(pointCount);
-  for (uint32_t i = 0; i < pointCount; ++i) {
-    input[i] = i;
-  }
-
-  // prepare output buffers
-  predictors.resize(pointCount);
-  numberOfPointsPerLevelOfDetail.resize(0);
-  indexes.resize(0);
-  indexes.reserve(pointCount);
-  numberOfPointsPerLevelOfDetail.reserve(21);
-  numberOfPointsPerLevelOfDetail.push_back(pointCount);
-
-  const auto& referencePointCloud = attrInterPredParams.referencePointCloud;
-  const int32_t pointCountRef = int32_t(referencePointCloud.getPointCount());
-  std::vector<MortonCodeWithIndex> packedVoxelRef = {};
-  std::vector<uint32_t> retainedRef = {}, inputRef = {},
-                        pointIndexToPredictorIndexRef = {};
-  if (interRef) {
-    assert(referencePointCloud.getPointCount());
-    computeMortonCodesUnsorted(
-      referencePointCloud, aps.lodNeighBias, packedVoxelRef);
-    if (
-      !aps.canonical_point_order_flag && !aps.max_points_per_sort_log2_plus1) {
-      std::sort(packedVoxelRef.begin(), packedVoxelRef.end());
-    } else if (aps.max_points_per_sort_log2_plus1 > 1) {
-      int maxPtsPerSort = 1 << (aps.max_points_per_sort_log2_plus1 - 1);
-      for (int i = 0; i < pointCount; i += maxPtsPerSort) {
-        int iEnd = std::min(i + maxPtsPerSort, int(pointCount));
-        std::sort(packedVoxelRef.begin() + i, packedVoxelRef.begin() + iEnd);
-      }
-    }
-    pointIndexToPredictorIndexRef.resize(pointCountRef);
-    retainedRef.reserve(pointCountRef);
-    inputRef.resize(pointCountRef);
-    for (uint32_t i = 0; i < pointCountRef; ++i) {
-      inputRef[i] = i;
-    }
-    numberOfPointsPerLevelOfDetailRef.resize(0);
-    indexesRef.resize(0);
-    indexesRef.reserve(pointCountRef);
-    numberOfPointsPerLevelOfDetailRef.reserve(21);
-    numberOfPointsPerLevelOfDetailRef.push_back(pointCountRef);
-  }
-
-  bool concatenateLayers = aps.scalable_lifting_enabled_flag;
-  std::vector<uint32_t> indexesOfSubsample;
-  if (concatenateLayers)
-    indexesOfSubsample.reserve(pointCount);
-
-  std::vector<Box3<int32_t>> bBoxes;
-
-  const int32_t log2CubeSize = 7;
-  MortonIndexMap3d atlas;
-  atlas.resize(log2CubeSize);
-  atlas.init();
-
-  int32_t startIndexRef = 0, endIndexRef = 0;
-  if (interRef) {
-    for (const auto indexRef : inputRef)
-      indexesRef.push_back(indexRef);
-    startIndexRef = 0;
-    endIndexRef = indexesRef.size();
-  }
-
-  auto maxNumDetailLevels = aps.maxNumDetailLevels();
-  int32_t predIndex = int32_t(pointCount);
-  for (auto lodIndex = minGeomNodeSizeLog2;
-       !input.empty() && lodIndex < maxNumDetailLevels; ++lodIndex) {
-    const int32_t startIndex = indexes.size();
-    if (lodIndex == maxNumDetailLevels - 1) {
-      for (const auto index : input) {
-        indexes.push_back(index);
-      }
-    } else {
-      subsample(
-        aps, abh, pointCloud, packedVoxel, input, lodIndex, retained, indexes,
-        atlas);
-    }
-    const int32_t endIndex = indexes.size();
-
-    if (concatenateLayers) {
-      indexesOfSubsample.resize(endIndex);
-      if (startIndex != endIndex) {
-        for (int32_t i = startIndex; i < endIndex; i++)
-          indexesOfSubsample[i] = indexes[i];
-
-        int32_t numOfPointInSkipped = geom_num_points_minus1 + 1 - pointCount;
-        if (endIndex - startIndex <= startIndex + numOfPointInSkipped) {
-          concatenateLayers = false;
-        } else {
-          for (int32_t i = 0; i < startIndex; i++)
-            indexes[i] = indexesOfSubsample[i];
-
-          // reset predIndex
-          predIndex = pointCount;
-          for (int lod = 0; lod < lodIndex - minGeomNodeSizeLog2; lod++) {
-            int divided_startIndex =
-              pointCount - numberOfPointsPerLevelOfDetail[lod];
-            int divided_endIndex =
-              pointCount - numberOfPointsPerLevelOfDetail[lod + 1];
-
-            computeNearestNeighbors(
-              aps, abh, packedVoxel, retained, divided_startIndex,
-              divided_endIndex, lod + minGeomNodeSizeLog2, indexes, predictors,
-              pointIndexToPredictorIndex, predIndex, atlas);
-          }
-        }
-      }
-    }
-
-    computeNearestNeighbors(
-      aps, abh, packedVoxel, retained, startIndex, endIndex, lodIndex, indexes,
-      predictors, pointIndexToPredictorIndex, predIndex, atlas
-      , interRef,
-      packedVoxelRef, retainedRef, startIndexRef, endIndexRef, indexesRef      
-      );
-
-    if (!retained.empty()) {
-      numberOfPointsPerLevelOfDetail.push_back(retained.size());
-      if (interRef)
-        numberOfPointsPerLevelOfDetailRef.push_back(retained.size());
-    }
-    input.resize(0);
-    std::swap(retained, input);
-  }
-  std::reverse(indexes.begin(), indexes.end());
-  std::reverse(indexesRef.begin(), indexesRef.end());
-  updatePredictors(pointIndexToPredictorIndex, predictors, attrInterPredParams.frameDistance);
-  std::reverse(
-    numberOfPointsPerLevelOfDetailRef.begin(),
-    numberOfPointsPerLevelOfDetailRef.end());
-  //updatePredictors(pointIndexToPredictorIndex, predictors);
-  std::reverse(
-    numberOfPointsPerLevelOfDetail.begin(),
-    numberOfPointsPerLevelOfDetail.end());
-}
+//inline void
+//buildPredictorsFast(
+//  const AttributeParameterSet& aps,
+//  const AttributeBrickHeader& abh,
+//  const PCCPointSet3& pointCloud,
+//  int32_t minGeomNodeSizeLog2,
+//  int geom_num_points_minus1,
+//  std::vector<PCCPredictor>& predictors,
+//  std::vector<uint32_t>& numberOfPointsPerLevelOfDetail,
+//  std::vector<uint32_t>& indexes
+//  ,bool interRef,
+//  const AttributeInterPredParams& attrInterPredParams,
+//  std::vector<uint32_t>& numberOfPointsPerLevelOfDetailRef,
+//  std::vector<uint32_t>& indexesRef
+//  )
+//{
+//  const int32_t pointCount = int32_t(pointCloud.getPointCount());
+//  assert(pointCount);
+//
+//  std::vector<MortonCodeWithIndex> packedVoxel;
+//  computeMortonCodesUnsorted(pointCloud, aps.lodNeighBias, packedVoxel);
+//
+//  if (!aps.canonical_point_order_flag && !aps.max_points_per_sort_log2_plus1) {
+//    std::sort(packedVoxel.begin(), packedVoxel.end());
+//  } else if (aps.max_points_per_sort_log2_plus1 > 1) {
+//    int maxPtsPerSort = 1 << (aps.max_points_per_sort_log2_plus1 - 1);
+//    for (int i = 0; i < pointCount; i += maxPtsPerSort) {
+//      int iEnd = std::min(i + maxPtsPerSort, int(pointCount));
+//      std::sort(packedVoxel.begin() + i, packedVoxel.begin() + iEnd);
+//    }
+//  }
+//
+//  std::vector<uint32_t> retained, input, pointIndexToPredictorIndex;
+//  pointIndexToPredictorIndex.resize(pointCount);
+//  retained.reserve(pointCount);
+//  input.resize(pointCount);
+//  for (uint32_t i = 0; i < pointCount; ++i) {
+//    input[i] = i;
+//  }
+//
+//  // prepare output buffers
+//  predictors.resize(pointCount);
+//  numberOfPointsPerLevelOfDetail.resize(0);
+//  indexes.resize(0);
+//  indexes.reserve(pointCount);
+//  numberOfPointsPerLevelOfDetail.reserve(21);
+//  numberOfPointsPerLevelOfDetail.push_back(pointCount);
+//
+//  const auto& referencePointCloud = attrInterPredParams.referencePointCloud;
+//  const int32_t pointCountRef = int32_t(referencePointCloud.getPointCount());
+//  std::vector<MortonCodeWithIndex> packedVoxelRef = {};
+//  std::vector<uint32_t> retainedRef = {}, inputRef = {},
+//                        pointIndexToPredictorIndexRef = {};
+//  if (interRef) {
+//    assert(referencePointCloud.getPointCount());
+//    computeMortonCodesUnsorted(
+//      referencePointCloud, aps.lodNeighBias, packedVoxelRef);
+//    if (
+//      !aps.canonical_point_order_flag && !aps.max_points_per_sort_log2_plus1) {
+//      std::sort(packedVoxelRef.begin(), packedVoxelRef.end());
+//    } else if (aps.max_points_per_sort_log2_plus1 > 1) {
+//      int maxPtsPerSort = 1 << (aps.max_points_per_sort_log2_plus1 - 1);
+//      for (int i = 0; i < pointCount; i += maxPtsPerSort) {
+//        int iEnd = std::min(i + maxPtsPerSort, int(pointCount));
+//        std::sort(packedVoxelRef.begin() + i, packedVoxelRef.begin() + iEnd);
+//      }
+//    }
+//    pointIndexToPredictorIndexRef.resize(pointCountRef);
+//    retainedRef.reserve(pointCountRef);
+//    inputRef.resize(pointCountRef);
+//    for (uint32_t i = 0; i < pointCountRef; ++i) {
+//      inputRef[i] = i;
+//    }
+//    numberOfPointsPerLevelOfDetailRef.resize(0);
+//    indexesRef.resize(0);
+//    indexesRef.reserve(pointCountRef);
+//    numberOfPointsPerLevelOfDetailRef.reserve(21);
+//    numberOfPointsPerLevelOfDetailRef.push_back(pointCountRef);
+//  }
+//
+//  bool concatenateLayers = aps.scalable_lifting_enabled_flag;
+//  std::vector<uint32_t> indexesOfSubsample;
+//  if (concatenateLayers)
+//    indexesOfSubsample.reserve(pointCount);
+//
+//  std::vector<Box3<int32_t>> bBoxes;
+//
+//  const int32_t log2CubeSize = 7;
+//  MortonIndexMap3d atlas;
+//  atlas.resize(log2CubeSize);
+//  atlas.init();
+//
+//  int32_t startIndexRef = 0, endIndexRef = 0;
+//  if (interRef) {
+//    for (const auto indexRef : inputRef)
+//      indexesRef.push_back(indexRef);
+//    startIndexRef = 0;
+//    endIndexRef = indexesRef.size();
+//  }
+//
+//  auto maxNumDetailLevels = aps.maxNumDetailLevels();
+//  int32_t predIndex = int32_t(pointCount);
+//  for (auto lodIndex = minGeomNodeSizeLog2;
+//       !input.empty() && lodIndex < maxNumDetailLevels; ++lodIndex) {
+//    const int32_t startIndex = indexes.size();
+//    if (lodIndex == maxNumDetailLevels - 1) {
+//      for (const auto index : input) {
+//        indexes.push_back(index);
+//      }
+//    } else {
+//      subsample(
+//        aps, abh, pointCloud, packedVoxel, input, lodIndex, retained, indexes,
+//        atlas);
+//    }
+//    const int32_t endIndex = indexes.size();
+//
+//    if (concatenateLayers) {
+//      indexesOfSubsample.resize(endIndex);
+//      if (startIndex != endIndex) {
+//        for (int32_t i = startIndex; i < endIndex; i++)
+//          indexesOfSubsample[i] = indexes[i];
+//
+//        int32_t numOfPointInSkipped = geom_num_points_minus1 + 1 - pointCount;
+//        if (endIndex - startIndex <= startIndex + numOfPointInSkipped) {
+//          concatenateLayers = false;
+//        } else {
+//          for (int32_t i = 0; i < startIndex; i++)
+//            indexes[i] = indexesOfSubsample[i];
+//
+//          // reset predIndex
+//          predIndex = pointCount;
+//          for (int lod = 0; lod < lodIndex - minGeomNodeSizeLog2; lod++) {
+//            int divided_startIndex =
+//              pointCount - numberOfPointsPerLevelOfDetail[lod];
+//            int divided_endIndex =
+//              pointCount - numberOfPointsPerLevelOfDetail[lod + 1];
+//
+//            computeNearestNeighbors(
+//              aps, abh, packedVoxel, retained, divided_startIndex,
+//              divided_endIndex, lod + minGeomNodeSizeLog2, indexes, predictors,
+//              pointIndexToPredictorIndex, predIndex, atlas);
+//          }
+//        }
+//      }
+//    }
+//
+//    computeNearestNeighbors(
+//      aps, abh, packedVoxel, retained, startIndex, endIndex, lodIndex, indexes,
+//      predictors, pointIndexToPredictorIndex, predIndex, atlas
+//      , interRef,
+//      packedVoxelRef, retainedRef, startIndexRef, endIndexRef, indexesRef      
+//      );
+//
+//    if (!retained.empty()) {
+//      numberOfPointsPerLevelOfDetail.push_back(retained.size());
+//      if (interRef)
+//        numberOfPointsPerLevelOfDetailRef.push_back(retained.size());
+//    }
+//    input.resize(0);
+//    std::swap(retained, input);
+//  }
+//  std::reverse(indexes.begin(), indexes.end());
+//  std::reverse(indexesRef.begin(), indexesRef.end());
+//  updatePredictors(pointIndexToPredictorIndex, predictors, attrInterPredParams.frameDistance);
+//  std::reverse(
+//    numberOfPointsPerLevelOfDetailRef.begin(),
+//    numberOfPointsPerLevelOfDetailRef.end());
+//  //updatePredictors(pointIndexToPredictorIndex, predictors);
+//  std::reverse(
+//    numberOfPointsPerLevelOfDetail.begin(),
+//    numberOfPointsPerLevelOfDetail.end());
+//}
 
 //---------------------------------------------------------------------------
 

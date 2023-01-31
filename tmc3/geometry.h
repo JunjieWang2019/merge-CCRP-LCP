@@ -111,24 +111,24 @@ void decodeGeometryTrisoup(
 
 //----------------------------------------------------------------------------
 
-void encodePredictiveGeometry(
-  const PredGeomEncOpts& opt,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  std::vector<Vec3<int32_t>>* reconPosSph,
-  PredGeomPredictor& refFrameSph,
-  PredGeomContexts& ctxtMem,
-  EntropyEncoder* arithmeticEncoder);
+//void encodePredictiveGeometry(
+//  const PredGeomEncOpts& opt,
+//  const GeometryParameterSet& gps,
+//  GeometryBrickHeader& gbh,
+//  PCCPointSet3& pointCloud,
+//  std::vector<Vec3<int32_t>>* reconPosSph,
+//  PredGeomPredictor& refFrameSph,
+//  PredGeomContexts& ctxtMem,
+//  EntropyEncoder* arithmeticEncoder);
 
-void decodePredictiveGeometry(
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  std::vector<Vec3<int32_t>>* reconPosSph,
-  PredGeomPredictor& refFrameSph,
-  PredGeomContexts& ctxtMem,
-  EntropyDecoder& arithmeticDecoder);
+//void decodePredictiveGeometry(
+//  const GeometryParameterSet& gps,
+//  const GeometryBrickHeader& gbh,
+//  PCCPointSet3& pointCloud,
+//  std::vector<Vec3<int32_t>>* reconPosSph,
+//  PredGeomPredictor& refFrameSph,
+//  PredGeomContexts& ctxtMem,
+//  EntropyDecoder& arithmeticDecoder);
 
 //============================================================================
 

@@ -252,7 +252,7 @@ private:
   // Code current picture as inter prediction
   bool _codeCurrFrameAsInter;
   // Point positions in spherical coordinates of the reference frame
-  PredGeomPredictor _refFrameSph;
+  //PredGeomPredictor _refFrameSph;
   std::string motionVectorFileName;
 
   AttributeInterPredParams attrInterPredParams;

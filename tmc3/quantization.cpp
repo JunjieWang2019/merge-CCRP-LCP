@@ -136,8 +136,8 @@ deriveQpSet(
   // the lifting transform has extra fractional bits that equate to
   // increasing the QP.
   qpset.fixedPointQpOffset = 0;
-  if (attr_aps.attr_encoding == AttributeEncoding::kLiftingTransform)
-    qpset.fixedPointQpOffset = (kFixedPointWeightShift / 2) * 6;
+  /*if (attr_aps.attr_encoding == AttributeEncoding::kLiftingTransform)
+    qpset.fixedPointQpOffset = (kFixedPointWeightShift / 2) * 6;*/
 
   return qpset;
 }

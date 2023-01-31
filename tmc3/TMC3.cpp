@@ -1623,7 +1623,7 @@ sanitizeEncoderOpts(
 
   if (
     params.encoder.gps.predgeom_enabled_flag
-    && !params.encoder.gps.geom_angular_mode_enabled_flag)
+    && /*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
     params.encoder.gps.interPredictionEnabledFlag = false;
 
   if (!params.encoder.gps.interPredictionEnabledFlag) {
@@ -1731,8 +1731,8 @@ sanitizeEncoderOpts(
 
     // derive samplingPeriod values based on initial value
     if (
-      !attr_aps.lodParametersPresent()
-      || (attr_aps.lod_decimation_type == LodDecimationMethod::kNone)) {
+      /*!attr_aps.lodParametersPresent()
+      ||*/ (attr_aps.lod_decimation_type == LodDecimationMethod::kNone)) {
       attr_aps.lodSamplingPeriod.clear();
     } else if (!attr_aps.lodSamplingPeriod.empty()) {
       auto i = attr_aps.lodSamplingPeriod.size();
@@ -1742,10 +1742,10 @@ sanitizeEncoderOpts(
         attr_aps.lodSamplingPeriod[i] = attr_aps.lodSamplingPeriod[i - 1];
     }
 
-    if (attr_aps.attr_encoding == AttributeEncoding::kLiftingTransform) {
+    /*if (attr_aps.attr_encoding == AttributeEncoding::kLiftingTransform) {
       attr_aps.adaptive_prediction_threshold = 0;
       attr_aps.intra_lod_prediction_skip_layers = -1;
-    }
+    }*/
 
     // For RAHT, ensure that the unused lod count = 0 (prevents mishaps)
     if (attr_aps.attr_encoding == AttributeEncoding::kRAHTransform) {
@@ -1775,7 +1775,7 @@ sanitizeEncoderOpts(
       }
     }
 
-    if (!params.encoder.gps.geom_angular_mode_enabled_flag) {
+    if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true) {
       if (attr_aps.spherical_coord_flag)
         err.warn() << it.first
                    << ".spherical_coord_flag=1 requires angularEnabled=1, "
@@ -1788,7 +1788,7 @@ sanitizeEncoderOpts(
   }
 
   // convert floating point values of Lasers' Theta and H to fixed point
-  if (params.encoder.gps.geom_angular_mode_enabled_flag) {
+  /*if (params.encoder.gps.geom_angular_mode_enabled_flag) {
     if (params.encoder.numLasers == 0)
       err.error() << "numLasers must be at least 1\n";
 
@@ -1842,14 +1842,14 @@ sanitizeEncoderOpts(
         params.encoder.predGeom.maxPredIdxTested
           = params.encoder.gps.predgeom_max_pred_index;
     }
-  } else { // Angular disabled
+  } else*/ { // Angular disabled
     params.sortInputByAzimuth = false;
     params.encoder.gps.azimuth_scaling_enabled_flag = false;
   }
 
   // tweak qtbt when angular is / isn't enabled
   params.encoder.geom.qtbt.angularTweakEnabled =
-    params.encoder.gps.geom_angular_mode_enabled_flag;
+    /*params.encoder.gps.geom_angular_mode_enabled_flag*/ false;
 
   if (!params.encoder.geom.qtbt.angularTweakEnabled) {
     // NB: these aren't used in this condition
@@ -1858,7 +1858,7 @@ sanitizeEncoderOpts(
   }
 
   // 
-  if (!params.encoder.gps.geom_angular_mode_enabled_flag)
+  if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
     params.encoder.gps.geom_planar_disabled_idcm_angular_flag = false;
 
   // sanity checks
@@ -1866,7 +1866,7 @@ sanitizeEncoderOpts(
   if (params.encoder.gps.geom_qp_multiplier_log2 & ~3)
     err.error() << "positionQpMultiplierLog2 must be in the range 0..3\n";
 
-  if (!params.encoder.gps.geom_angular_mode_enabled_flag) {
+  if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true) {
     if (params.encoder.gps.planar_buffer_disabled_flag) {
       params.encoder.gps.planar_buffer_disabled_flag = 0;
       err.warn() << "ignoring planarBufferDisabled without angularEnabled\n";
@@ -1917,77 +1917,77 @@ sanitizeEncoderOpts(
     if (attr_sps.bitdepth > 16)
       err.error() << it.first << ".bitdepth must be less than 17\n";
 
-    if (attr_aps.lodParametersPresent()) {
-      int lod = attr_aps.num_detail_levels_minus1;
-      if (lod > 255 || lod < 0) {
-        err.error() << it.first
-                    << ".levelOfDetailCount must be in the range [0,255]\n";
-      }
+    //if (attr_aps.lodParametersPresent()) { //NOTE[FT] : lodParametersPresent=false
+    //  int lod = attr_aps.num_detail_levels_minus1;
+    //  if (lod > 255 || lod < 0) {
+    //    err.error() << it.first
+    //                << ".levelOfDetailCount must be in the range [0,255]\n";
+    //  }
 
-      // if zero, values are derived automatically
-      if (attr_aps.dist2 < 0 || attr_aps.dist2 > 20) {
-        err.error() << it.first << ".dist2 must be in the range [0,20]\n";
-      }
+    //  // if zero, values are derived automatically
+    //  if (attr_aps.dist2 < 0 || attr_aps.dist2 > 20) {
+    //    err.error() << it.first << ".dist2 must be in the range [0,20]\n";
+    //  }
 
-      if (lod > 0 && attr_aps.canonical_point_order_flag) {
-        err.error() << it.first
-                    << "when levelOfDetailCount > 0, "
-                       "canonical_point_order_flag must be 0\n";
-      }
+    //  if (lod > 0 && attr_aps.canonical_point_order_flag) {
+    //    err.error() << it.first
+    //                << "when levelOfDetailCount > 0, "
+    //                   "canonical_point_order_flag must be 0\n";
+    //  }
 
-      if (lod > 0 && attr_aps.max_points_per_sort_log2_plus1) {
-        err.error() << it.first
-                    << "when levelOfDetailCount > 0, "
-                       "maxPointsPerSortLog2Plus1 must be 0\n";
-      }
+    //  if (lod > 0 && attr_aps.max_points_per_sort_log2_plus1) {
+    //    err.error() << it.first
+    //                << "when levelOfDetailCount > 0, "
+    //                   "maxPointsPerSortLog2Plus1 must be 0\n";
+    //  }
 
-      if (
-        attr_aps.attr_encoding == AttributeEncoding::kPredictingTransform
-        && lod == 0 && attr_aps.intra_lod_prediction_skip_layers != 0) {
-        err.error()
-          << "when transformType == 0 (Pred) and levelOfDetailCount == 0, "
-             "intraLodPredictionSkipLayers must be 0\n";
-      }
+    //  if (
+    //    attr_aps.attr_encoding == AttributeEncoding::kPredictingTransform
+    //    && lod == 0 && attr_aps.intra_lod_prediction_skip_layers != 0) {
+    //    err.error()
+    //      << "when transformType == 0 (Pred) and levelOfDetailCount == 0, "
+    //         "intraLodPredictionSkipLayers must be 0\n";
+    //  }
 
-      if (
-        (attr_aps.lod_decimation_type != LodDecimationMethod::kNone)
-        && attr_aps.lodSamplingPeriod.empty()) {
-        err.error() << it.first
-                    << ".lodSamplingPeriod must contain at least one entry\n";
-      }
+    //  if (
+    //    (attr_aps.lod_decimation_type != LodDecimationMethod::kNone)
+    //    && attr_aps.lodSamplingPeriod.empty()) {
+    //    err.error() << it.first
+    //                << ".lodSamplingPeriod must contain at least one entry\n";
+    //  }
 
-      for (auto samplingPeriod : attr_aps.lodSamplingPeriod) {
-        if (samplingPeriod < 2)
-          err.error() << it.first << ".lodSamplingPeriod values must be > 1\n";
-      }
+    //  for (auto samplingPeriod : attr_aps.lodSamplingPeriod) {
+    //    if (samplingPeriod < 2)
+    //      err.error() << it.first << ".lodSamplingPeriod values must be > 1\n";
+    //  }
 
-      if (attr_aps.adaptive_prediction_threshold < 0) {
-        err.error() << it.first
-                    << ".adaptivePredictionThreshold must be positive\n";
-      }
+    //  if (attr_aps.adaptive_prediction_threshold < 0) {
+    //    err.error() << it.first
+    //                << ".adaptivePredictionThreshold must be positive\n";
+    //  }
 
-      if (
-        attr_aps.num_pred_nearest_neighbours_minus1
-        >= kAttributePredictionMaxNeighbourCount) {
-        err.error() << it.first
-                    << ".numberOfNearestNeighborsInPrediction must be <= "
-                    << kAttributePredictionMaxNeighbourCount << "\n";
-      }
+    //  if (
+    //    attr_aps.num_pred_nearest_neighbours_minus1
+    //    >= kAttributePredictionMaxNeighbourCount) {
+    //    err.error() << it.first
+    //                << ".numberOfNearestNeighborsInPrediction must be <= "
+    //                << kAttributePredictionMaxNeighbourCount << "\n";
+    //  }
 
-      if (attr_aps.scalable_lifting_enabled_flag) {
-        if (attr_aps.lod_decimation_type != LodDecimationMethod::kNone) {
-          err.error() << it.first << ".lod_decimation_type must be 0\n";
-        }
+    //  if (attr_aps.scalable_lifting_enabled_flag) {
+    //    if (attr_aps.lod_decimation_type != LodDecimationMethod::kNone) {
+    //      err.error() << it.first << ".lod_decimation_type must be 0\n";
+    //    }
 
-        if (params.encoder.gps.trisoup_enabled_flag) {
-          err.error() << it.first
-                      << " trisoup_enabled_flag must be disabled\n";
-        }
+    //    if (params.encoder.gps.trisoup_enabled_flag) {
+    //      err.error() << it.first
+    //                  << " trisoup_enabled_flag must be disabled\n";
+    //    }
 
-        if (params.encoder.gps.geom_qp_multiplier_log2 != 3)
-          err.error() << it.first << " positionQpMultiplierLog2 must be 3\n";
-      }
-    }
+    //    if (params.encoder.gps.geom_qp_multiplier_log2 != 3)
+    //      err.error() << it.first << " positionQpMultiplierLog2 must be 3\n";
+    //  }
+    //}
 
     if (attr_aps.init_qp_minus4 < 0 || attr_aps.init_qp_minus4 + 4 > 51)
       err.error() << it.first << ".qp must be in the range [4,51]\n";
