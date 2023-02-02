@@ -174,8 +174,7 @@ namespace dirac {
     void encode(int bit)
     {
       if (!_cabac_bypass_stream_enabled_flag) {
-        uint16_t probability = 0x8000;  // p=0.5
-        schro_arith_encode_bit(&impl, &probability, bit);
+        schro_arith_encode_bypass_bit(&impl, bit);
         return;
       }
 
@@ -285,8 +284,7 @@ namespace dirac {
     int decode()
     {
       if (!_cabac_bypass_stream_enabled_flag) {
-        uint16_t probability = 0x8000;  // p=0.5
-        return schro_arith_decode_bit(&impl, &probability);
+        return schro_arith_decode_bypass_bit(&impl);
       }
 
       return _chunkReader.readBypassBit();
