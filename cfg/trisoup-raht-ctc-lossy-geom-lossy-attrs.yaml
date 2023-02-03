@@ -9,9 +9,9 @@ categories:
 
      ##
      # partitioning for trisoup
-     - sliceMaxPointsTrisoup: 1100000
-     - sliceMaxPoints: 900000
-     - sliceMinPoints: 449000
+     - sliceMaxPointsTrisoup: 5000000
+     - sliceMaxPoints: 4000000
+     - sliceMinPoints: 2000000
      ##
      # geometry parameters (trisoup)
      - neighbourAvailBoundaryLog2: 8

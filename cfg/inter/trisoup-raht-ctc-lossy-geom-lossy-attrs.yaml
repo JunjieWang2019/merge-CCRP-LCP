@@ -8,6 +8,11 @@ categories:
      - mode: 0
 
      ##
+     # partitioning for trisoup
+     - sliceMaxPointsTrisoup: 5000000
+     - sliceMaxPoints: 4000000
+     - sliceMinPoints: 2000000
+     ##
      # geometry parameters (trisoup)
      - randomAccessPeriod: 32
      - interPredictionEnabled: 1

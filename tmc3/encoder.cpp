@@ -620,10 +620,10 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
     // If the lod search ranges are negative, use a full-range search
     // todo(df): lookup level limit
     if (attr_aps.inter_lod_search_range < 0)
-      attr_aps.inter_lod_search_range = 1100000;
+      attr_aps.inter_lod_search_range = 5000000;
 
     if (attr_aps.intra_lod_search_range < 0)
-      attr_aps.intra_lod_search_range = 1100000;
+      attr_aps.intra_lod_search_range = 5000000;
 
     // If all intra prediction layers are skipped, don't signal a search range
     if (
@@ -842,9 +842,9 @@ PCCTMC3Encoder3::compressPartition(
   // verify that the per-level slice constraint has been met
   // todo(df): avoid hard coded value here (should be level dependent)
   if (params->enforceLevelLimits)
-    if (pointCloud.getPointCount() > 1100000)
+    if (pointCloud.getPointCount() > 5000000)
       throw std::runtime_error(
-        std::string("level slice point count limit (1100000) exceeded: ")
+        std::string("level slice point count limit (5000000) exceeded: ")
         + std::to_string(pointCloud.getPointCount()));
 
   // recolouring

@@ -1455,7 +1455,7 @@ decodeGeometryOctree(
   // todo(df): derive buffer size from level limit
   size_t ringBufferSize = gbh.footer.geom_num_points_minus1 + 1;
   if (gbh.trisoupNodeSizeLog2(gps))
-    ringBufferSize = 1100000;
+    ringBufferSize = 5000000;
   pcc::ringbuf<PCCOctree3Node> fifo(ringBufferSize + 1);
 
   size_t processedPointCount = 0;

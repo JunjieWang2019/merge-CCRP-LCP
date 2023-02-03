@@ -790,15 +790,15 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Depth of octree partition for partitionMethod=4")
 
   ("sliceMaxPointsTrisoup",
-    params.encoder.partition.sliceMaxPointsTrisoup, 1100000,
+    params.encoder.partition.sliceMaxPointsTrisoup, 5000000,
     "Maximum number of points per slice")
 
   ("sliceMaxPoints",
-    params.encoder.partition.sliceMaxPoints, 1100000,
+    params.encoder.partition.sliceMaxPoints, 5000000,
     "Maximum number of points per slice")
 
   ("sliceMinPoints",
-    params.encoder.partition.sliceMinPoints, 550000,
+    params.encoder.partition.sliceMinPoints, 2500000,
     "Minimum number of points per slice (soft limit)")
 
   ("tileSize",
@@ -1156,7 +1156,7 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Reciprocal precision used in azimuthal sorting for tree construction")
 
   ("predGeomTreePtsMax",
-    params.encoder.predGeom.maxPtsPerTree, 1100000,
+    params.encoder.predGeom.maxPtsPerTree, 5000000,
     "Maximum number of points per predictive geometry tree")
 
   ("pointCountMetadata",
