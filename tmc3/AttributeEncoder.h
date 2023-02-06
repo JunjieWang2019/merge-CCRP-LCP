@@ -170,12 +170,12 @@ protected:
     const AttributeParameterSet& aps, int predMode, int32_t& coeff);*/
 
 private:
-  std::vector<int8_t> computeLastComponentPredictionCoeff(
+  /*std::vector<int8_t> computeLastComponentPredictionCoeff(
     const AttributeParameterSet& aps,
-    const std::vector<Vec3<int64_t>>& coeffs);
+    const std::vector<Vec3<int64_t>>& coeffs);*/
 
-  std::vector<Vec3<int8_t>> computeInterComponentPredictionCoeffs(
-    const AttributeParameterSet& aps, const PCCPointSet3& pointCloud);
+ /* std::vector<Vec3<int8_t>> computeInterComponentPredictionCoeffs(
+    const AttributeParameterSet& aps, const PCCPointSet3& pointCloud);*/
 
 private:
   // The current attribute slice header

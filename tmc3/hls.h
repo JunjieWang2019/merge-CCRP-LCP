@@ -526,7 +526,7 @@ struct GeometryParameterSet {
   bool qtbt_enabled_flag;
 
   // Controls the use of planar mode
-  bool geom_planar_mode_enabled_flag;
+  bool geom_planar_mode_enabled_flag{false}; //NOTE[FT] : explicitely FORCING geom_planar_mode_enabled_flag=false
   bool geom_octree_depth_planar_eligibiity_enabled_flag;
   bool geom_multiple_planar_mode_enable_flag;
   int geom_planar_threshold0;

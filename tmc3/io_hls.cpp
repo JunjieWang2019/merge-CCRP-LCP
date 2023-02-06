@@ -619,13 +619,13 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
     bs.write(gps.bitwise_occupancy_coding_flag);
 
     bs.write(gps.geom_planar_mode_enabled_flag);
-    if (gps.geom_planar_mode_enabled_flag) {
+    /*if (gps.geom_planar_mode_enabled_flag) {
       bs.writeUe(gps.geom_planar_threshold0);
       bs.writeUe(gps.geom_planar_threshold1);
       bs.writeUe(gps.geom_planar_threshold2);
       if (gps.inferred_direct_coding_mode == 1)
         bs.writeUn(5, gps.geom_idcm_rate_minus1);
-    }
+    }*/
   }
 
   bs.write(/*gps.geom_angular_mode_enabled_flag*/ false);
@@ -738,8 +738,8 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
     bs.write(gps.geom_octree_depth_planar_eligibiity_enabled_flag);
 
-    if (!gps.predgeom_enabled_flag && gps.geom_planar_mode_enabled_flag)
-      bs.write(gps.geom_multiple_planar_mode_enable_flag);
+    /*if (!gps.predgeom_enabled_flag && gps.geom_planar_mode_enabled_flag)
+      bs.write(gps.geom_multiple_planar_mode_enable_flag);*/
   }
   bs.byteAlign();
 
@@ -786,13 +786,13 @@ parseGps(const PayloadBuffer& buf)
     bs.read(&gps.bitwise_occupancy_coding_flag);
 
     bs.read(&gps.geom_planar_mode_enabled_flag);
-    if (gps.geom_planar_mode_enabled_flag) {
+    /*if (gps.geom_planar_mode_enabled_flag) {
       bs.readUe(&gps.geom_planar_threshold0);
       bs.readUe(&gps.geom_planar_threshold1);
       bs.readUe(&gps.geom_planar_threshold2);
       if (gps.inferred_direct_coding_mode == 1)
         bs.readUn(5, &gps.geom_idcm_rate_minus1);
-    }
+    }*/
   }
 
   gps.planar_buffer_disabled_flag = false;
@@ -922,11 +922,11 @@ parseGps(const PayloadBuffer& buf)
     /*if (!gps.predgeom_enabled_flag && gps.geom_angular_mode_enabled_flag)
       bs.read(&gps.octree_angular_extension_flag);*/
 
-    if (gps.geom_planar_mode_enabled_flag)
-      bs.read(&gps.geom_octree_depth_planar_eligibiity_enabled_flag);
+    /*if (gps.geom_planar_mode_enabled_flag)
+      bs.read(&gps.geom_octree_depth_planar_eligibiity_enabled_flag);*/
 
-    if (!gps.predgeom_enabled_flag && gps.geom_planar_mode_enabled_flag)
-      bs.read(&gps.geom_multiple_planar_mode_enable_flag);
+    /*if (!gps.predgeom_enabled_flag && gps.geom_planar_mode_enabled_flag)
+      bs.read(&gps.geom_multiple_planar_mode_enable_flag);*/
   }
   bs.byteAlign();
 

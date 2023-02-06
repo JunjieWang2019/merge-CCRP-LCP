@@ -264,7 +264,7 @@ mkIdcmEnableMask(const GeometryParameterSet& gps)
     return 0xffffffff;
 
   // if planar is disabled, there is no control over the rate
-  if (!gps.geom_planar_mode_enabled_flag)
+  if (/*!gps.geom_planar_mode_enabled_flag*/ true)
     return 0xffffffff;
 
   int mask = 0, acc = 0;
@@ -372,9 +372,9 @@ OctreePlanarBuffer::clear()
 OctreePlanarState::OctreePlanarState(const GeometryParameterSet& gps)
 {
   _planarBufferEnabled =
-    gps.geom_planar_mode_enabled_flag && !gps.planar_buffer_disabled_flag;
-  _geom_multiple_planar_mode_enable_flag = gps.geom_planar_mode_enabled_flag
-    && gps.geom_multiple_planar_mode_enable_flag;
+    /*gps.geom_planar_mode_enabled_flag && !gps.planar_buffer_disabled_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
+  _geom_multiple_planar_mode_enable_flag = /*gps.geom_planar_mode_enabled_flag
+    && gps.geom_multiple_planar_mode_enable_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
   _rateThreshold[0] = gps.geom_planar_threshold0 << 4;
   _rateThreshold[1] = gps.geom_planar_threshold1 << 4;
   _rateThreshold[2] = gps.geom_planar_threshold2 << 4;

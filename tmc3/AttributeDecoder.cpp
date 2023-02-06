@@ -278,7 +278,7 @@ bool
 AttributeDecoder::isReusable(
   const AttributeParameterSet& aps, const AttributeBrickHeader& abh) const
 {
-  return _lods.isReusable(aps, abh);
+  return /*_lods.isReusable(aps, abh)*/ true;
 }
 
 //----------------------------------------------------------------------------

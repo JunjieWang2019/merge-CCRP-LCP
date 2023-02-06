@@ -553,7 +553,7 @@ bool
 AttributeEncoder::isReusable(
   const AttributeParameterSet& aps, const AttributeBrickHeader& abh) const
 {
-  return _lods.isReusable(aps, abh);
+  return /*_lods.isReusable(aps, abh)*/ true;
 }
 
 //----------------------------------------------------------------------------
@@ -893,85 +893,85 @@ AttributeEncoder::computeColorResiduals(
 
 //----------------------------------------------------------------------------
 
-std::vector<Vec3<int8_t>>
-AttributeEncoder::computeInterComponentPredictionCoeffs(
-  const AttributeParameterSet& aps, const PCCPointSet3& pointCloud)
-{
-  int maxNumDetailLevels = aps.maxNumDetailLevels();
-  assert(_lods.numPointsInLod.size() <= maxNumDetailLevels);
-
-  // Two secondary colour components (positive sign set)
-  // NB: k=0 is never used
-  std::vector<Vec3<int8_t>> signs(maxNumDetailLevels, {0, 1, 1});
-
-  // Estimate residual using original neighbour as predictor
-  const size_t pointCount = pointCloud.getPointCount();
-  std::vector<Vec3<int32_t>> residual(pointCount);
-
-  for (size_t predIdx = 0; predIdx < pointCount; ++predIdx) {
-    const auto pointIdx = _lods.indexes[predIdx];
-    auto& predictor = _lods.predictors[predIdx];
-
-    // taking first neighbor for simplicity
-    predictor.predMode = 1;
-    auto predAttr = predictor.predictColor(pointCloud, _lods.indexes);
-    auto srcAttr = pointCloud.getColor(pointIdx);
-    residual[predIdx] = Vec3<int>(srcAttr) - Vec3<int>(predAttr);
-
-    // reset is needed as RD would be done later.
-    predictor.predMode = 0;
-  }
-
-  const int nWeights = 8;
-  const int nShift = 2;  // from log2(nWeights >> 1)
-  std::vector<Vec3<int64_t>> sumPredCoeff(nWeights, 0);
-  Vec3<int64_t> sumOrigCoeff = 0;
-
-  int lod = 0;
-  for (size_t predIdx = 0; predIdx < pointCount; ++predIdx) {
-    Vec3<int32_t> resid = residual[predIdx];
-
-    for (int w = 0; w < nWeights; w++) {
-      for (int k = 1; k < 3; k++)
-        sumPredCoeff[w][k] +=
-          abs(resid[k] - signs[lod][k] * (((w + 1) * resid[0] + 2) >> nShift));
-    }
-
-    for (int k = 1; k < 3; k++)
-      sumOrigCoeff[k] += abs(resid[k]);
-
-    // at LoD transition, determine the sign coeff
-    if (predIdx != _lods.numPointsInLod[lod] - 1)
-      continue;
-
-    // find the best weight
-    for (int k = 1; k < 3; k++) {
-      auto best = std::min_element(
-        sumPredCoeff.begin(), sumPredCoeff.end(),
-        [=](Vec3<int64_t>& a, Vec3<int64_t>& b) { return a[k] < b[k]; });
-
-      int coeff = 1 + std::distance(sumPredCoeff.begin(), best);
-      signs[lod][k] *= coeff;
-
-      assert(signs[lod][k] < nWeights + 1 && signs[lod][k] > -(nWeights + 1));
-
-      if ((*best)[k] > sumOrigCoeff[k])
-        signs[lod][k] = 0;
-    }
-
-    for (int w = 0; w < nWeights; w++)
-      sumPredCoeff[w] = 0;
-    sumOrigCoeff = 0;
-    lod++;
-  }
-
-  // NB: there may be more coefficients than actual detail levels
-  // Set any unused detail level coefficients to 0
-  for (; lod < maxNumDetailLevels; lod++)
-    signs[lod] = 0;
-
-  return signs;
-}
+//std::vector<Vec3<int8_t>>
+//AttributeEncoder::computeInterComponentPredictionCoeffs(
+//  const AttributeParameterSet& aps, const PCCPointSet3& pointCloud)
+//{
+//  int maxNumDetailLevels = aps.maxNumDetailLevels();
+//  assert(_lods.numPointsInLod.size() <= maxNumDetailLevels);
+//
+//  // Two secondary colour components (positive sign set)
+//  // NB: k=0 is never used
+//  std::vector<Vec3<int8_t>> signs(maxNumDetailLevels, {0, 1, 1});
+//
+//  // Estimate residual using original neighbour as predictor
+//  const size_t pointCount = pointCloud.getPointCount();
+//  std::vector<Vec3<int32_t>> residual(pointCount);
+//
+//  for (size_t predIdx = 0; predIdx < pointCount; ++predIdx) {
+//    const auto pointIdx = _lods.indexes[predIdx];
+//    auto& predictor = _lods.predictors[predIdx];
+//
+//    // taking first neighbor for simplicity
+//    predictor.predMode = 1;
+//    auto predAttr = predictor.predictColor(pointCloud, _lods.indexes);
+//    auto srcAttr = pointCloud.getColor(pointIdx);
+//    residual[predIdx] = Vec3<int>(srcAttr) - Vec3<int>(predAttr);
+//
+//    // reset is needed as RD would be done later.
+//    predictor.predMode = 0;
+//  }
+//
+//  const int nWeights = 8;
+//  const int nShift = 2;  // from log2(nWeights >> 1)
+//  std::vector<Vec3<int64_t>> sumPredCoeff(nWeights, 0);
+//  Vec3<int64_t> sumOrigCoeff = 0;
+//
+//  int lod = 0;
+//  for (size_t predIdx = 0; predIdx < pointCount; ++predIdx) {
+//    Vec3<int32_t> resid = residual[predIdx];
+//
+//    for (int w = 0; w < nWeights; w++) {
+//      for (int k = 1; k < 3; k++)
+//        sumPredCoeff[w][k] +=
+//          abs(resid[k] - signs[lod][k] * (((w + 1) * resid[0] + 2) >> nShift));
+//    }
+//
+//    for (int k = 1; k < 3; k++)
+//      sumOrigCoeff[k] += abs(resid[k]);
+//
+//    // at LoD transition, determine the sign coeff
+//    if (predIdx != _lods.numPointsInLod[lod] - 1)
+//      continue;
+//
+//    // find the best weight
+//    for (int k = 1; k < 3; k++) {
+//      auto best = std::min_element(
+//        sumPredCoeff.begin(), sumPredCoeff.end(),
+//        [=](Vec3<int64_t>& a, Vec3<int64_t>& b) { return a[k] < b[k]; });
+//
+//      int coeff = 1 + std::distance(sumPredCoeff.begin(), best);
+//      signs[lod][k] *= coeff;
+//
+//      assert(signs[lod][k] < nWeights + 1 && signs[lod][k] > -(nWeights + 1));
+//
+//      if ((*best)[k] > sumOrigCoeff[k])
+//        signs[lod][k] = 0;
+//    }
+//
+//    for (int w = 0; w < nWeights; w++)
+//      sumPredCoeff[w] = 0;
+//    sumOrigCoeff = 0;
+//    lod++;
+//  }
+//
+//  // NB: there may be more coefficients than actual detail levels
+//  // Set any unused detail level coefficients to 0
+//  for (; lod < maxNumDetailLevels; lod++)
+//    signs[lod] = 0;
+//
+//  return signs;
+//}
 
 //----------------------------------------------------------------------------
 
@@ -1359,48 +1359,48 @@ AttributeEncoder::encodeColorsTransformRaht(
 
 //----------------------------------------------------------------------------
 
-std::vector<int8_t>
-AttributeEncoder::computeLastComponentPredictionCoeff(
-  const AttributeParameterSet& aps, const std::vector<Vec3<int64_t>>& coeffs)
-{
-  int maxNumDetailLevels = aps.maxNumDetailLevels();
-  assert(_lods.numPointsInLod.size() <= maxNumDetailLevels);
-  std::vector<int8_t> signs(maxNumDetailLevels, 0);
-
-  int64_t sumk1k2 = 0;
-  int64_t sumk1k1 = 0;
-  int lod = 0;
-  for (size_t coeffIdx = 0; coeffIdx < coeffs.size(); ++coeffIdx) {
-    auto& attr = coeffs[coeffIdx];
-    int mult = attr[1] * attr[2];
-    int mult2 = attr[1] * attr[1];
-    sumk1k2 += mult;
-    sumk1k1 += mult2;
-
-    // compute prediction coefficient at end of detail level
-    if (coeffIdx != _lods.numPointsInLod[lod] - 1)
-      continue;
-
-    int scale = 0;
-    if (sumk1k2 && sumk1k1) {
-      // sign(sumk1k2) * sign(sumk1k1)
-      int sign = (sumk1k2 < 0) ^ (sumk1k1 < 0) ? -1 : 1;
-      scale = ((sumk1k2 << 2) + sign * (sumk1k1 >> 1)) / sumk1k1;
-    }
-    sumk1k2 = sumk1k1 = 0;
-
-    // NB: coding range is limited to +-8
-    signs[lod] = PCCClip(scale, -8, 8);
-    lod++;
-  }
-
-  // NB: there may be more coefficients than actual detail levels
-  // Propagate the last value to all unused levels to minimise useless cost
-  for (; lod < maxNumDetailLevels; lod++)
-    signs[lod] = signs[lod - 1];
-
-  return signs;
-}
+//std::vector<int8_t>
+//AttributeEncoder::computeLastComponentPredictionCoeff(
+//  const AttributeParameterSet& aps, const std::vector<Vec3<int64_t>>& coeffs)
+//{
+//  int maxNumDetailLevels = aps.maxNumDetailLevels();
+//  assert(_lods.numPointsInLod.size() <= maxNumDetailLevels);
+//  std::vector<int8_t> signs(maxNumDetailLevels, 0);
+//
+//  int64_t sumk1k2 = 0;
+//  int64_t sumk1k1 = 0;
+//  int lod = 0;
+//  for (size_t coeffIdx = 0; coeffIdx < coeffs.size(); ++coeffIdx) {
+//    auto& attr = coeffs[coeffIdx];
+//    int mult = attr[1] * attr[2];
+//    int mult2 = attr[1] * attr[1];
+//    sumk1k2 += mult;
+//    sumk1k1 += mult2;
+//
+//    // compute prediction coefficient at end of detail level
+//    if (coeffIdx != _lods.numPointsInLod[lod] - 1)
+//      continue;
+//
+//    int scale = 0;
+//    if (sumk1k2 && sumk1k1) {
+//      // sign(sumk1k2) * sign(sumk1k1)
+//      int sign = (sumk1k2 < 0) ^ (sumk1k1 < 0) ? -1 : 1;
+//      scale = ((sumk1k2 << 2) + sign * (sumk1k1 >> 1)) / sumk1k1;
+//    }
+//    sumk1k2 = sumk1k1 = 0;
+//
+//    // NB: coding range is limited to +-8
+//    signs[lod] = PCCClip(scale, -8, 8);
+//    lod++;
+//  }
+//
+//  // NB: there may be more coefficients than actual detail levels
+//  // Propagate the last value to all unused levels to minimise useless cost
+//  for (; lod < maxNumDetailLevels; lod++)
+//    signs[lod] = signs[lod - 1];
+//
+//  return signs;
+//}
 
 //----------------------------------------------------------------------------
 

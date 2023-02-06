@@ -49,7 +49,7 @@
 #include "pointset_processing.h"
 #include "geometry.h"
 #include "geometry_octree.h"
-#include "geometry_predictive.h"
+//#include "geometry_predictive.h"
 #include "io_hls.h"
 #include "osspecific.h"
 #include "partitioning.h"
@@ -73,7 +73,7 @@ PCCPointSet3 getPartition(
 PCCTMC3Encoder3::PCCTMC3Encoder3() : _frameCounter(-1)
 {
   _ctxtMemOctreeGeom.reset(new GeometryOctreeContexts);
-  _ctxtMemPredGeom.reset(new PredGeomContexts);
+  //_ctxtMemPredGeom.reset(new PredGeomContexts);
 }
 
 //----------------------------------------------------------------------------
@@ -581,8 +581,8 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
     params->gps.intra_pred_max_node_size_log2 = 0;
   }
 
-  if (params->gps.predgeom_enabled_flag)
-    params->gps.geom_planar_mode_enabled_flag = false;
+  /*if (params->gps.predgeom_enabled_flag)
+    params->gps.geom_planar_mode_enabled_flag = false;*/
 
   // fixup attribute parameters
   for (auto it : params->attributeIdxMap) {
@@ -945,8 +945,8 @@ PCCTMC3Encoder3::compressPartition(
     }
 
     // replace the attribute encoder if not compatible
-    if (!attrEncoder->isReusable(attr_aps, abh))
-      attrEncoder = makeAttributeEncoder();
+    /*if (!attrEncoder->isReusable(attr_aps, abh)) //NOTE[FT] :always true
+      attrEncoder = makeAttributeEncoder();*/
     
 	if (!attr_aps.spherical_coord_flag)
       for (auto i = 0; i < pointCloud.getPointCount(); i++)
@@ -1099,7 +1099,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
       !_gps->gof_geom_entropy_continuation_enabled_flag
       || !gbh.interPredictionEnabledFlag) {
       _ctxtMemOctreeGeom->reset();
-      _ctxtMemPredGeom->reset();
+      //_ctxtMemPredGeom->reset();
     }
     for (auto& ctxtMem : _ctxtMemAttrs)
       ctxtMem.reset();

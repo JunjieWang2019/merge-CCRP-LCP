@@ -50,7 +50,7 @@ namespace pcc {
 //============================================================================
 
 struct GeometryOctreeContexts;
-struct PredGeomContexts;
+//struct PredGeomContexts;
 struct CloudFrame;
 
 //============================================================================

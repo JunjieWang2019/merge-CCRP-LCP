@@ -45,7 +45,7 @@
 #include "coordinate_conversion.h"
 #include "geometry.h"
 #include "geometry_octree.h"
-#include "geometry_predictive.h"
+//#include "geometry_predictive.h"
 #include "hls.h"
 #include "io_hls.h"
 #include "io_tlv.h"
@@ -77,7 +77,7 @@ PCCTMC3Decoder3::init()
   _refFrameSeq.clear();
 
   _ctxtMemOctreeGeom.reset(new GeometryOctreeContexts);
-  _ctxtMemPredGeom.reset(new PredGeomContexts);
+  //_ctxtMemPredGeom.reset(new PredGeomContexts);
 }
 
 //----------------------------------------------------------------------------
@@ -428,7 +428,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
       !_gps->gof_geom_entropy_continuation_enabled_flag
       || !_gbh.interPredictionEnabledFlag) {
       _ctxtMemOctreeGeom->reset();
-      _ctxtMemPredGeom->reset();
+      //_ctxtMemPredGeom->reset();
     }
     for (auto& ctxtMem : _ctxtMemAttrs)
       ctxtMem.reset();
@@ -576,7 +576,7 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
 
   // replace the attribute decoder if not compatible
-  if (!_attrDecoder || !_attrDecoder->isReusable(attr_aps, abh))
+  if (!_attrDecoder || /*!_attrDecoder->isReusable(attr_aps, abh)*/ false)
     _attrDecoder = makeAttributeDecoder();
 
   clock_user.start();
