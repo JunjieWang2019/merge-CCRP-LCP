@@ -949,6 +949,13 @@ decodeTrisoupCommon(
       for (int direction = 0; direction < 3; direction++) {
         if (directionExcluded == direction) // exclude most parallel direction
           continue;
+
+        if (samplingValue==1 && !fineRayflag)
+          rayTracingAlongdirection_samp1_optim(
+            refinedVerticesBlock, direction, posNode, minRange,
+            maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
+            adaptiveHaloFlag);
+        else
         rayTracingAlongdirection(
           refinedVerticesBlock, direction, samplingValue, posNode, minRange,
           maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
@@ -1230,6 +1237,103 @@ int findDominantAxis(
 
   return dominantAxis;
 }
+
+
+
+
+
+// -------------------------------------------
+void rayTracingAlongdirection_samp1_optim(
+  std::vector<Vec3<int32_t>>& refinedVerticesBlock,
+  int direction,
+  Vec3<int32_t> posNode,
+  int minRange[3],
+  int maxRange[3],
+  Vec3<int32_t> edge1,
+  Vec3<int32_t> edge2,
+  Vec3<int32_t> Ver0,
+  int poistionClipValue,
+  bool haloFlag,
+  bool adaptiveHaloFlag) {
+
+  // check if ray tracing is valid; if not skip the direction
+  Vec3<int32_t> rayVector = 0;
+  rayVector[direction] = 1;// << kTrisoupFpBits;
+  Vec3<int32_t> h = crossProduct(rayVector, edge2);// >> kTrisoupFpBits;
+  int32_t a = (edge1 * h) >> kTrisoupFpBits; // max is node size square, shifted left by kTrisoupFpBits; max bits = 2*log22Nodesize + kTrisoupFpBits <=2*6 +8 = 20 bits 
+  if (std::abs(a) <= kTrisoupFpOne)
+    return;
+
+  const int precDivA = 30;
+  int64_t inva = (int64_t(1) << precDivA) / a;
+
+  // ray tracing
+  const int haloTriangle = haloFlag ? (adaptiveHaloFlag ? 32 * 1 : 32) : 0;
+
+  //bounds
+  const int g1pos[3] = { 1, 0, 0 };
+  const int g2pos[3] = { 2, 2, 1 };
+  const int i1 = g1pos[direction];
+  const int i2 = g2pos[direction];
+
+  const int32_t startposG1 = minRange[i1];
+  const int32_t startposG2 = minRange[i2];
+  const int32_t endposG1 = maxRange[i1];
+  const int32_t endposG2 = maxRange[i2];
+
+  Vec3<int32_t>  rayOrigin0 = minRange[direction] << kTrisoupFpBits;;
+  rayOrigin0[i1] = startposG1 << kTrisoupFpBits;
+  rayOrigin0[i2] = startposG2 << kTrisoupFpBits;
+
+  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
+  int32_t u0 =  ((s0 * h) * inva) >> precDivA;
+  Vec3<int32_t> q0 = crossProduct(s0, edge1);
+  int32_t v0 = (q0[direction] * inva) >> precDivA;
+  int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
+
+  Vec3<int32_t>  ray1 = { 0,0,0 };
+  ray1[i1] = kTrisoupFpOne;
+  int32_t u1 = (h[i1] * inva) >> (precDivA - kTrisoupFpBits); //(ray1 * h) / a;
+  Vec3<int32_t> q1 = crossProduct(ray1, edge1);
+  int32_t v1 = (q1[direction] * inva) >> precDivA;
+  int32_t t1 = ((edge2 * (q1 >> kTrisoupFpBits)) * inva) >> precDivA;
+
+  Vec3<int32_t>  ray2 = { 0,0,0 };
+  ray2[i2] = kTrisoupFpOne;
+  int32_t u2 = (h[i2] * inva) >> (precDivA - kTrisoupFpBits); //(ray2 * h) / a;
+  Vec3<int32_t> q2 = crossProduct(ray2, edge1);
+  int32_t v2 = (q2[direction] * inva) >> precDivA;
+  int32_t t2 = ((edge2 * (q2 >> kTrisoupFpBits)) * inva) >> precDivA;
+
+  for (int32_t g1 = startposG1;
+      g1 <= endposG1;
+      g1++, u0 += u1, v0 += v1, t0 += t1, rayOrigin0[i1] += kTrisoupFpOne) {
+
+    Vec3<int32_t> rayOrigin = rayOrigin0;
+    int32_t u = u0;
+    int32_t v = v0;
+    int32_t t = t0;
+
+    for (int32_t g2 = startposG2;
+        g2 <= endposG2;
+        g2++, u += u2, v += v2, t += t2, rayOrigin[i2] += kTrisoupFpOne) {
+
+      int w = kTrisoupFpOne - u - v;
+      if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
+        Vec3<int32_t>  intersection = rayOrigin;
+        intersection[direction] += t;
+
+        Vec3<int32_t> foundvoxel =
+          (posNode + intersection + truncateValue) >> kTrisoupFpBits;
+        if (boundaryinsidecheck(foundvoxel, poistionClipValue)) {
+          refinedVerticesBlock.push_back(foundvoxel);
+        }
+      }
+    }// loop g2
+  }//loop g1
+
+}
+
 
 
 // -------------------------------------------
