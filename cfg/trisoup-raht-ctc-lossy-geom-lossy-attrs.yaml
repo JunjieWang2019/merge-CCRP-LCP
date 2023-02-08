@@ -44,6 +44,11 @@ categories:
          r03: 1
          r04: 0
      - trisoupFineRayTracingEnabled: 1
+     -
+       - !conditional '"${group}" =~ m{^cat2}'
+       - trisoupThickness: '${thickness}'
+       - trisoupFineRayTracingEnabled: 0
+
      - trisoupImprovedEncoderEnabled: 1
      -
        - !conditional '"${group}" =~ m{^cat2}'
@@ -129,10 +134,10 @@ categories:
       ulb_unicorn_hires_vox20:           { enablePlanar: 1, Halo: 1, test-depth: 12 }
       ulb_unicorn_vox20:                 { enablePlanar: 1, Halo: 0, test-depth: 11 }
       # cat2
-      8ivfbv2_longdress_vox10:           { enablePlanar: 0, test-depth: 10 }
-      8ivfbv2_loot_vox10:                { enablePlanar: 0, test-depth: 10 }
-      8ivfbv2_redandblack_vox10:         { enablePlanar: 0, test-depth: 10 }
-      8ivfbv2_soldier_vox10:             { enablePlanar: 0, test-depth: 10 }
-      basketball_player_vox11:           { enablePlanar: 0, test-depth: 11 }
-      dancer_player_vox11:               { enablePlanar: 0, test-depth: 11 }
-      queen:                             { enablePlanar: 0, test-depth: 10 }
+      8ivfbv2_longdress_vox10:           { enablePlanar: 0, test-depth: 10, thickness: 24 }
+      8ivfbv2_loot_vox10:                { enablePlanar: 0, test-depth: 10, thickness: 24 }
+      8ivfbv2_redandblack_vox10:         { enablePlanar: 0, test-depth: 10, thickness: 24 }
+      8ivfbv2_soldier_vox10:             { enablePlanar: 0, test-depth: 10, thickness: 24 }
+      basketball_player_vox11:           { enablePlanar: 0, test-depth: 11, thickness: 32 }
+      dancer_player_vox11:               { enablePlanar: 0, test-depth: 11, thickness: 32 }
+      queen:                             { enablePlanar: 0, test-depth: 10, thickness: 40 }

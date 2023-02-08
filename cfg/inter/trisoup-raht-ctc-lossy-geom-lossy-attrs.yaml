@@ -45,7 +45,8 @@ categories:
          r03: 1
          r04: 0
      - trisoupHaloEnabled: 1
-     - trisoupFineRayTracingEnabled: 1
+     - trisoupFineRayTracingEnabled: 0
+     - trisoupThickness: '${thickness}'
      - trisoupImprovedEncoderEnabled: 1
      -
        - !conditional '"${group}" =~ m{^cat2}'
@@ -81,10 +82,10 @@ categories:
 
     sequences:
       # cat2
-      8ivfbv2_longdress_vox10:   { test-depth: 10 }
-      8ivfbv2_loot_vox10:        { test-depth: 10 }
-      8ivfbv2_redandblack_vox10: { test-depth: 10 }
-      8ivfbv2_soldier_vox10:     { test-depth: 10 }
-      basketball_player_vox11:   { test-depth: 11 }
-      dancer_player_vox11:       { test-depth: 11 }
-      queen:                     { test-depth: 10 }
+      8ivfbv2_longdress_vox10:   { test-depth: 10, thickness: 24 }
+      8ivfbv2_loot_vox10:        { test-depth: 10, thickness: 24 }
+      8ivfbv2_redandblack_vox10: { test-depth: 10, thickness: 24 }
+      8ivfbv2_soldier_vox10:     { test-depth: 10, thickness: 24 }
+      basketball_player_vox11:   { test-depth: 11, thickness: 32 }
+      dancer_player_vox11:       { test-depth: 11, thickness: 32 }
+      queen:                     { test-depth: 10, thickness: 40 }
