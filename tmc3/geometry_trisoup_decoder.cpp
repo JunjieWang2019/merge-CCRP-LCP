@@ -661,18 +661,6 @@ decodeTrisoupCommon(
       Vec3<int32_t> direction = segment.endpos - segment.startpos;
       uint32_t segment_len = direction.max();
 
-      // vertex to list of points 
-      Vec3<int32_t> foundvoxel = segment.startpos;
-      for (int k = 0; k <= 2; k++) {
-        if (direction[k])
-          foundvoxel[k] += segment.vertex == (segment_len >> bitDropped) - 1 ? segment_len - 1 : segment.vertex << bitDropped;
-        if (segment.startpos[k] - nodepos[k] > 0) // back to B-1 if B
-          foundvoxel[k]--;
-      }
-
-      if (boundaryinsidecheck(foundvoxel, poistionClipValue))
-        refinedVerticesBlock.push_back(foundvoxel);
-
       // Get 3D position of point of intersection.      
       Vec3<int32_t> point = (segment.startpos - nodepos) << kTrisoupFpBits;
       point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3 
@@ -687,8 +675,17 @@ decodeTrisoupCommon(
       else  // direction[2] 
         point[2] += distance;
 
-      // Add vertex to list of points.     
+      // Add vertex to list of vertices.
       leafVertices.push_back({ point, 0, 0 });
+
+      // vertex to list of points
+      if (bitDropped || samplingValue > 1) {
+        Vec3<int32_t> foundvoxel =
+          ((leaves[i].pos << kTrisoupFpBits) + point + truncateValue)
+          >> kTrisoupFpBits;
+        if (boundaryinsidecheck(foundvoxel, poistionClipValue))
+           refinedVerticesBlock.push_back(foundvoxel);
+      }
     }
 
     // Skip leaves that have fewer than 3 vertices.
