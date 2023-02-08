@@ -1068,6 +1068,8 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     params->gbh.trisoup_adaptive_halo_flag;
   gbh.trisoup_fine_ray_tracing_flag =
     params->gbh.trisoup_fine_ray_tracing_flag;
+  gbh.trisoup_thickness =
+    +params->gbh.trisoup_thickness;
   gbh.slice_bb_pos   = params->gbh.slice_bb_pos;
   gbh.slice_bb_width = params->gbh.slice_bb_width;
   gbh.slice_bb_pos_bits = params->gbh.slice_bb_pos_bits;

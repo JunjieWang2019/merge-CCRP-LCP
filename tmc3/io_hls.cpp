@@ -1319,6 +1319,7 @@ write(
     if (gbh.trisoup_halo_flag)
       bs.write(gbh.trisoup_adaptive_halo_flag);
     bs.write(gbh.trisoup_fine_ray_tracing_flag);
+    bs.writeUe(gbh.trisoup_thickness);
 
     int _write_bits = 0;
     if( gps.non_cubic_node_start_edge ){
@@ -1471,6 +1472,7 @@ parseGbh(
     if (gbh.trisoup_halo_flag)
       bs.read(&gbh.trisoup_adaptive_halo_flag);
     bs.read(&gbh.trisoup_fine_ray_tracing_flag);
+    bs.readUe(&gbh.trisoup_thickness);
 
     gbh.slice_bb_pos_bits = 0;
     gbh.slice_bb_pos_log2_scale = 0;

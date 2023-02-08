@@ -156,6 +156,7 @@ void decodeTrisoupCommon(
   bool haloFlag,
   bool adaptiveHaloFlag,
   bool fineRayflag,
+  int thickness,
   pcc::EntropyDecoder* arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree);
 
@@ -168,6 +169,8 @@ int findDominantAxis(
 void rayTracingAlongdirection_samp1_optim(
   std::vector<Vec3<int32_t>>& refinedVerticesBlock,
   int direction,
+  int bitDropped,
+  int blockWidth,
   Vec3<int32_t> posNode,
   int minRange[3],
   int maxRange[3],
@@ -176,7 +179,8 @@ void rayTracingAlongdirection_samp1_optim(
   Vec3<int32_t> v0,
   int poistionClipValue,
   bool haloFlag,
-  bool adaptiveHaloFlag);
+  bool adaptiveHaloFlag,
+  int thickness);
 
 void rayTracingAlongdirection(
   std::vector<Vec3<int32_t>>& refinedVerticesBlock,

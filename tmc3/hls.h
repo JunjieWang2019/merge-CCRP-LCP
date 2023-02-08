@@ -721,6 +721,9 @@ struct GeometryBrickHeader {
   // Indicates if fine ray tracing must be used for trisoup nodes
   bool trisoup_fine_ray_tracing_flag;
 
+  // Indicates the thickess of TriSoup Triangles
+  int trisoup_thickness;
+
   // bounding box information of trisoup volume inside the slice
   int slice_bb_pos_bits;
   int slice_bb_pos_log2_scale;

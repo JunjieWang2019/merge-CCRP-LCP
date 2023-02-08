@@ -182,12 +182,13 @@ decodeGeometryTrisoup(
   bool haloFlag = gbh.trisoup_halo_flag;
   bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
   bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;
+  int thickness = gbh.trisoup_thickness;
 
   decodeTrisoupCommon(
     nodes, segind, vertices, drifts, pointCloud, recPointCloud,
     compensatedPointCloud, gps, gbh, blockWidth, maxval,
     gbh.trisoup_sampling_value_minus1 + 1, bitDropped,
-    isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag,
+    isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag, thickness,
     &arithmeticDecoder,  ctxtMemOctree);
 
   pointCloud.resize(0);
@@ -541,6 +542,7 @@ decodeTrisoupCommon(
   bool haloFlag,
   bool adaptiveHaloFlag,
   bool fineRayflag,
+  int thickness,
   pcc::EntropyDecoder* arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree)
 {
@@ -949,9 +951,9 @@ decodeTrisoupCommon(
 
         if (samplingValue==1 && !fineRayflag)
           rayTracingAlongdirection_samp1_optim(
-            refinedVerticesBlock, direction, posNode, minRange,
+            refinedVerticesBlock, direction, bitDropped, blockWidth, posNode, minRange,
             maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
-            adaptiveHaloFlag);
+            adaptiveHaloFlag, thickness);
         else
         rayTracingAlongdirection(
           refinedVerticesBlock, direction, samplingValue, posNode, minRange,
@@ -1243,6 +1245,8 @@ int findDominantAxis(
 void rayTracingAlongdirection_samp1_optim(
   std::vector<Vec3<int32_t>>& refinedVerticesBlock,
   int direction,
+  int bitDropped,
+  int blockWidth,
   Vec3<int32_t> posNode,
   int minRange[3],
   int maxRange[3],
@@ -1251,7 +1255,8 @@ void rayTracingAlongdirection_samp1_optim(
   Vec3<int32_t> Ver0,
   int poistionClipValue,
   bool haloFlag,
-  bool adaptiveHaloFlag) {
+  bool adaptiveHaloFlag,
+  int thickness) {
 
   // check if ray tracing is valid; if not skip the direction
   Vec3<int32_t> rayVector = 0;
@@ -1265,7 +1270,10 @@ void rayTracingAlongdirection_samp1_optim(
   int64_t inva = (int64_t(1) << precDivA) / a;
 
   // ray tracing
-  const int haloTriangle = haloFlag ? (adaptiveHaloFlag ? 32 * 1 : 32) : 0;
+  //const int haloTriangle = haloFlag ? (adaptiveHaloFlag ? 32 * 1 : 32) : 0;
+  int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
+  haloTriangle = (haloTriangle * 28) / 32;
+  haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
 
   //bounds
   const int g1pos[3] = { 1, 0, 0 };
@@ -1319,11 +1327,29 @@ void rayTracingAlongdirection_samp1_optim(
       if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
         Vec3<int32_t>  intersection = rayOrigin;
         intersection[direction] += t;
-
         Vec3<int32_t> foundvoxel =
           (posNode + intersection + truncateValue) >> kTrisoupFpBits;
+
+        intersection[direction] += thickness;
+        Vec3<int32_t> foundvoxelUp =
+          (posNode + intersection + truncateValue) >> kTrisoupFpBits;
+
+        intersection[direction] -= 2*thickness;
+        Vec3<int32_t> foundvoxelDown =
+          (posNode + intersection + truncateValue) >> kTrisoupFpBits;
+
         if (boundaryinsidecheck(foundvoxel, poistionClipValue)) {
           refinedVerticesBlock.push_back(foundvoxel);
+        }
+
+        if (foundvoxelUp != foundvoxel
+            && boundaryinsidecheck(foundvoxelUp, poistionClipValue)) {
+          refinedVerticesBlock.push_back(foundvoxelUp);
+        }
+
+        if (foundvoxelDown != foundvoxel
+            && boundaryinsidecheck(foundvoxelDown, poistionClipValue)) {
+          refinedVerticesBlock.push_back(foundvoxelDown);
         }
       }
     }// loop g2

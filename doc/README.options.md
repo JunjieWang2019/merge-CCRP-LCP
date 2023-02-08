@@ -590,6 +590,9 @@ Controls the activation of additional ray tracing from non-integer origin.
 (Encoder only)
 Controls the activation of improved determination of trisoup vertex position.
 
+### `--trisoupThickness=INT-VALUE`
+Controls the thickness for point reconstruction with rasterization.
+
 ### `--predGeomSort=INT-VALUE`
 Point order used to construct predictive geometry trees.
 Requires `geomTreeType=1`.
