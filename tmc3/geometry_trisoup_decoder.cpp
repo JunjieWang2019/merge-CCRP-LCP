@@ -58,31 +58,29 @@ const int truncateValue = kTrisoupFpHalf;
 bool
 operator<(const TrisoupSegment& s1, const TrisoupSegment& s2)
 {
-  // assert all quantities are at most 21 bits
-  uint64_t s1startpos = (uint64_t(s1.startpos[0]) << 42)
-    | (uint64_t(s1.startpos[1]) << 21) | s1.startpos[2];
-
-  uint64_t s2startpos = (uint64_t(s2.startpos[0]) << 42)
-    | (uint64_t(s2.startpos[1]) << 21) | s2.startpos[2];
-
-  if (s1startpos < s2startpos)
+  // sort on start
+  if ((s1.startpos[0] < s2.startpos[0])
+      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] < s2.startpos[1])
+      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] == s2.startpos[1]
+          && s1.startpos[2] < s2.startpos[2]))
     return true;
 
-  if (s1startpos != s2startpos)
+  if (s1.startpos[0] != s2.startpos[0]
+      || s1.startpos[1] != s2.startpos[1]
+      || s1.startpos[2] != s2.startpos[2])
     return false;
 
-  uint64_t s1endpos = (uint64_t(s1.endpos[0]) << 42)
-    | (uint64_t(s1.endpos[1]) << 21) | s1.endpos[2];
-
-  uint64_t s2endpos = (uint64_t(s2.endpos[0]) << 42)
-    | (uint64_t(s2.endpos[1]) << 21) | s2.endpos[2];
-
-  if (s1endpos < s2endpos)
+  // sort on end
+  if ((s1.endpos[0] < s2.endpos[0])
+      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] < s2.endpos[1])
+      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] == s2.endpos[1]
+          && s1.endpos[2] < s2.endpos[2]))
     return true;
 
-  if (s1endpos == s2endpos)
-    if (s1.index < s2.index)  // stable sort
-      return true;
+  if (s1.endpos[0] == s2.endpos[0]
+      && s1.endpos[1] == s2.endpos[1]
+      && s1.endpos[2] == s2.endpos[2])
+    return (s1.index < s2.index);  // stable sort
 
   return false;
 }
@@ -91,31 +89,29 @@ operator<(const TrisoupSegment& s1, const TrisoupSegment& s2)
 bool
 operator<(const TrisoupSegmentNeighbours& s1, const TrisoupSegmentNeighbours& s2)
 {
-  // assert all quantities are at most 21 bits
-  uint64_t s1startpos = (uint64_t(s1.startpos[0]) << 42)
-    | (uint64_t(s1.startpos[1]) << 21) | s1.startpos[2];
-
-  uint64_t s2startpos = (uint64_t(s2.startpos[0]) << 42)
-    | (uint64_t(s2.startpos[1]) << 21) | s2.startpos[2];
-
-  if (s1startpos < s2startpos)
+  // sort on start
+  if ((s1.startpos[0] < s2.startpos[0])
+      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] < s2.startpos[1])
+      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] == s2.startpos[1]
+          && s1.startpos[2] < s2.startpos[2]))
     return true;
 
-  if (s1startpos != s2startpos)
+  if (s1.startpos[0] != s2.startpos[0]
+      || s1.startpos[1] != s2.startpos[1]
+      || s1.startpos[2] != s2.startpos[2])
     return false;
 
-  uint64_t s1endpos = (uint64_t(s1.endpos[0]) << 42)
-    | (uint64_t(s1.endpos[1]) << 21) | s1.endpos[2];
-
-  uint64_t s2endpos = (uint64_t(s2.endpos[0]) << 42)
-    | (uint64_t(s2.endpos[1]) << 21) | s2.endpos[2];
-
-  if (s1endpos < s2endpos)
+  // sort on end
+  if ((s1.endpos[0] < s2.endpos[0])
+      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] < s2.endpos[1])
+      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] == s2.endpos[1]
+          && s1.endpos[2] < s2.endpos[2]))
     return true;
 
-  if (s1endpos == s2endpos)
-    if (s1.index < s2.index)  // stable sort
-      return true;
+  if (s1.endpos[0] == s2.endpos[0]
+      && s1.endpos[1] == s2.endpos[1]
+      && s1.endpos[2] == s2.endpos[2])
+    return (s1.index < s2.index);  // stable sort
 
   return false;
 }
@@ -625,11 +621,6 @@ decodeTrisoupCommon(
     segments[i].vertex = uniqueSegments[segments[i].uniqueIndex].vertex;
   }
 
-  // contexts for drift centroids 
-  //AdaptiveBitModel ctxDrift0[9];
-  //AdaptiveBitModel ctxDriftSign[3][8][8];
-  //AdaptiveBitModel ctxDriftMag[4];
-
   // Create list of refined vertices, one leaf at a time.
   std::vector<Vec3<int32_t>> refinedVertices;
   refinedVertices.reserve(blockWidth * blockWidth * 4 * leaves.size());
@@ -661,8 +652,7 @@ decodeTrisoupCommon(
       Vec3<int32_t> point = (segment.startpos - nodepos) << kTrisoupFpBits;
       point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3 
 
-      // points on edges are located at integer values 
-      int halfDropped = 0; // bitDropped ? 1 << bitDropped - 1 : 0;
+      // points on edges are located at integer values
       int32_t distance = (segment.vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
       if (direction[0])
         point[0] += distance; // in {0,1,...,B-1}
@@ -684,8 +674,8 @@ decodeTrisoupCommon(
 
     // Skip leaves that have fewer than 3 vertices.
     if (leafVertices.size() < 3) {
-      //std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-      //refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+      std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+      refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
       refinedVertices.insert(refinedVertices.end(), refinedVerticesBlock.begin(), refinedVerticesBlock.end());
       continue;
     }
@@ -887,9 +877,15 @@ decodeTrisoupCommon(
         if (driftQ < 0)
           driftDQ = -driftDQ;
       }
-     
+
       blockCentroid += (driftDQ * normalV) >> 6;
-    } // end refinement of the centroid 
+      blockCentroid[0] = std::max(-kTrisoupFpHalf, blockCentroid[0]);
+      blockCentroid[1] = std::max(-kTrisoupFpHalf, blockCentroid[1]);
+      blockCentroid[2] = std::max(-kTrisoupFpHalf, blockCentroid[2]);
+      blockCentroid[0] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[0]);
+      blockCentroid[1] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[1]);
+      blockCentroid[2] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[2]);
+    } // end refinement of the centroid
 
 
     // Divide vertices into triangles around centroid
@@ -899,6 +895,8 @@ decodeTrisoupCommon(
       if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
         refinedVerticesBlock.push_back(nodepos + foundvoxel);
     }
+
+
     int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
     haloTriangle = (haloTriangle * 28) >> 5; // / 32;
     haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
@@ -948,19 +946,17 @@ decodeTrisoupCommon(
           refinedVerticesBlock, directionOk, samplingValue, posNode, minRange,
           maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
           adaptiveHaloFlag, fineRayflag);
-
       }
+
     }  // end loop on triangles
 
-    //std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-    //refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+
+    // remove points present twice or more for node
+    std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+    refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
     refinedVertices.insert(refinedVertices.end(), refinedVerticesBlock.begin(), refinedVerticesBlock.end());
 
   }// end loop on leaves
-
-  // remove points present twice or more
-  std::sort(refinedVertices.begin(), refinedVertices.end());
-  refinedVertices.erase( std::unique(refinedVertices.begin(), refinedVertices.end()), refinedVertices.end());
 
   // Move list of points to pointCloud.
   recPointCloud.resize(refinedVertices.size());
