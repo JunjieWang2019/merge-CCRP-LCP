@@ -442,13 +442,8 @@ trisoupVertexArc(int32_t x, int32_t y, int32_t Width_x, int32_t Width_y)
 bool
 boundaryinsidecheck(const Vec3<int32_t> a, const int bbsize)
 {
-  if (a[0] < 0 || a[0] > bbsize)
-    return false;
-  if (a[1] < 0 || a[1] > bbsize)
-    return false;
-  if (a[2] < 0 || a[2] > bbsize)
-    return false;
-  return true;
+  return a[0] >= 0 && a[0] <= bbsize && a[1] >= 0 && a[1] <= bbsize
+    && a[2] >= 0 && a[2] <= bbsize;
 }
 
 //---------------------------------------------------------------------------
@@ -597,9 +592,7 @@ decodeTrisoupCommon(
   }
 
   // Copy list of segments to another list to be sorted.
-  std::vector<TrisoupSegment> sortedSegments;
-  for (int i = 0; i < segments.size(); i++)
-    sortedSegments.push_back(segments[i]);
+  std::vector<TrisoupSegment> sortedSegments = segments;
 
   // Sort the list and find unique segments.
   std::sort(sortedSegments.begin(), sortedSegments.end());
@@ -639,7 +632,7 @@ decodeTrisoupCommon(
 
   // Create list of refined vertices, one leaf at a time.
   std::vector<Vec3<int32_t>> refinedVertices;
-
+  refinedVertices.reserve(blockWidth * blockWidth * 4 * leaves.size());
 
   // ----------- loop on leaf nodes ----------------------
   for (int i = 0; i < leaves.size(); i++) {
@@ -649,6 +642,7 @@ decodeTrisoupCommon(
     // Find up to 12 vertices for this leaf.
     std::vector<Vertex> leafVertices;
     std::vector<Vec3<int32_t>> refinedVerticesBlock;
+    refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
 
     for (int j = 0; j < 12; j++) {
       TrisoupSegment& segment = segments[i * 12 + j];
@@ -682,16 +676,16 @@ decodeTrisoupCommon(
 
       // vertex to list of points
       if (bitDropped || samplingValue > 1) {
-        Vec3<int32_t> foundvoxel =
-          ((leaves[i].pos << kTrisoupFpBits) + point + truncateValue)
-          >> kTrisoupFpBits;
-        if (boundaryinsidecheck(foundvoxel, poistionClipValue))
-           refinedVerticesBlock.push_back(foundvoxel);
+        Vec3<int32_t> foundvoxel = (point + truncateValue) >> kTrisoupFpBits;
+        if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
+           refinedVerticesBlock.push_back(nodepos + foundvoxel);
       }
     }
 
     // Skip leaves that have fewer than 3 vertices.
     if (leafVertices.size() < 3) {
+      //std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+      //refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
       refinedVertices.insert(refinedVertices.end(), refinedVerticesBlock.begin(), refinedVerticesBlock.end());
       continue;
     }
@@ -899,20 +893,20 @@ decodeTrisoupCommon(
 
 
     // Divide vertices into triangles around centroid
-    // and upsample each triangle by an upsamplingFactor.    
+    // and upsample each triangle by an upsamplingFactor.
+    if (triCount > 3) {
+      Vec3<int32_t> foundvoxel = (blockCentroid + truncateValue) >> kTrisoupFpBits;
+      if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
+        refinedVerticesBlock.push_back(nodepos + foundvoxel);
+    }
+    int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
+    haloTriangle = (haloTriangle * 28) >> 5; // / 32;
+    haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
+
+
     Vec3<int32_t> v2 = triCount == 3 ? leafVertices[2].pos : blockCentroid;
     Vec3<int32_t> v1 = leafVertices[0].pos;
-
-    Vec3<int32_t> posNode = nodepos << kTrisoupFpBits;
-
-    if (triCount > 3) {
-      Vec3<int32_t> foundvoxel = (posNode + blockCentroid + truncateValue) >> kTrisoupFpBits;
-      if (boundaryinsidecheck(foundvoxel, poistionClipValue))
-        refinedVerticesBlock.push_back(foundvoxel);
-    }
-
     for (int triIndex = 0; triIndex < (triCount == 3 ? 1 : triCount); triIndex++) {
-      int j0 = triIndex;
       int j1 = triIndex + 1;
       if (j1 >= triCount)
         j1 -= triCount;
@@ -925,59 +919,54 @@ decodeTrisoupCommon(
       int maxRange[3];
       for (int k = 0; k < 3; k++) {
         minRange[k] = std::max(0, std::min(std::min(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
-        maxRange[k] = std::min(33, std::max(std::max(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
+        maxRange[k] = std::min(blockWidth - 1, std::max(std::max(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
       }
 
-      // precompute for rays 
+      // choose ray direction
       Vec3<int32_t> edge1 = v1 - v0;
       Vec3<int32_t> edge2 = v2 - v0;
-      int minDir = 1 << 28;
-      int directionExcluded = 0;
-      for (int k = 0; k <= 2; k++) {
-        Vec3<int32_t> rayVector = 0;
-        rayVector[k] = 1 << kTrisoupFpBits;
-        Vec3<int32_t> h = crossProduct(edge1, edge2) >> kTrisoupFpBits;
-        int32_t a = (rayVector * h) >> kTrisoupFpBits;
-        if (std::abs(a) < minDir) {
-          minDir = std::abs(a);
-          directionExcluded = k;
-        }
+      Vec3<int32_t> h = crossProduct(edge1, edge2) >> kTrisoupFpBits;
+      int minDir = std::abs(h[0]);
+      int directionOk = 0;
+      if (std::abs(h[1]) >= minDir) {
+        minDir = std::abs(h[1]);
+        directionOk = 1;
+      }
+      if (std::abs(h[2]) >= minDir) {
+        directionOk = 2;
       }
 
       // applying ray tracing along direction
-      for (int direction = 0; direction < 3; direction++) {
-        if (directionExcluded == direction) // exclude most parallel direction
-          continue;
-
-        if (samplingValue==1 && !fineRayflag)
-          rayTracingAlongdirection_samp1_optim(
-            refinedVerticesBlock, direction, bitDropped, blockWidth, posNode, minRange,
-            maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
-            adaptiveHaloFlag, thickness);
-        else
+      if (samplingValue == 1 && !fineRayflag) {
+        rayTracingAlongdirection_samp1_optim(
+          refinedVerticesBlock, directionOk, blockWidth, nodepos, minRange,
+          maxRange, edge1, edge2, v0, haloTriangle, thickness);
+      }
+      else {
+        Vec3<int32_t> posNode = nodepos << kTrisoupFpBits;
         rayTracingAlongdirection(
-          refinedVerticesBlock, direction, samplingValue, posNode, minRange,
+          refinedVerticesBlock, directionOk, samplingValue, posNode, minRange,
           maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
           adaptiveHaloFlag, fineRayflag);
-      }
 
+      }
     }  // end loop on triangles
 
-    std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-    refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+    //std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+    //refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
     refinedVertices.insert(refinedVertices.end(), refinedVerticesBlock.begin(), refinedVerticesBlock.end());
 
   }// end loop on leaves
 
- // remove points present twice or more 
+  // remove points present twice or more
   std::sort(refinedVertices.begin(), refinedVertices.end());
   refinedVertices.erase( std::unique(refinedVertices.begin(), refinedVertices.end()), refinedVertices.end());
-  
+
   // Move list of points to pointCloud.
   recPointCloud.resize(refinedVertices.size());
-  for (int i = 0; i < refinedVertices.size(); i++) {
+  for (int i = 0; i < refinedVertices.size(); i++)
     recPointCloud[i] = refinedVertices[i];
-  }
+
 }
 
 
@@ -1245,17 +1234,14 @@ int findDominantAxis(
 void rayTracingAlongdirection_samp1_optim(
   std::vector<Vec3<int32_t>>& refinedVerticesBlock,
   int direction,
-  int bitDropped,
   int blockWidth,
-  Vec3<int32_t> posNode,
+  Vec3<int32_t> nodepos,
   int minRange[3],
   int maxRange[3],
   Vec3<int32_t> edge1,
   Vec3<int32_t> edge2,
   Vec3<int32_t> Ver0,
-  int poistionClipValue,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
+  int haloTriangle,
   int thickness) {
 
   // check if ray tracing is valid; if not skip the direction
@@ -1268,12 +1254,6 @@ void rayTracingAlongdirection_samp1_optim(
 
   const int precDivA = 30;
   int64_t inva = (int64_t(1) << precDivA) / a;
-
-  // ray tracing
-  //const int haloTriangle = haloFlag ? (adaptiveHaloFlag ? 32 * 1 : 32) : 0;
-  int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
-  haloTriangle = (haloTriangle * 28) / 32;
-  haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
 
   //bounds
   const int g1pos[3] = { 1, 0, 0 };
@@ -1328,28 +1308,27 @@ void rayTracingAlongdirection_samp1_optim(
         Vec3<int32_t>  intersection = rayOrigin;
         intersection[direction] += t;
         Vec3<int32_t> foundvoxel =
-          (posNode + intersection + truncateValue) >> kTrisoupFpBits;
+          (intersection + truncateValue) >> kTrisoupFpBits;
+        if (foundvoxel[direction]>=0 && foundvoxel[direction] < blockWidth) {
+          refinedVerticesBlock.push_back(nodepos + foundvoxel);
+        }
 
         intersection[direction] += thickness;
         Vec3<int32_t> foundvoxelUp =
-          (posNode + intersection + truncateValue) >> kTrisoupFpBits;
-
-        intersection[direction] -= 2*thickness;
-        Vec3<int32_t> foundvoxelDown =
-          (posNode + intersection + truncateValue) >> kTrisoupFpBits;
-
-        if (boundaryinsidecheck(foundvoxel, poistionClipValue)) {
-          refinedVerticesBlock.push_back(foundvoxel);
-        }
-
+          (intersection + truncateValue) >> kTrisoupFpBits;
         if (foundvoxelUp != foundvoxel
-            && boundaryinsidecheck(foundvoxelUp, poistionClipValue)) {
-          refinedVerticesBlock.push_back(foundvoxelUp);
+            && foundvoxelUp[direction] >= 0
+            && foundvoxelUp[direction] < blockWidth) {
+          refinedVerticesBlock.push_back(nodepos + foundvoxelUp);
         }
 
+        intersection[direction] -= 2 * thickness;
+        Vec3<int32_t> foundvoxelDown =
+          (intersection + truncateValue) >> kTrisoupFpBits;
         if (foundvoxelDown != foundvoxel
-            && boundaryinsidecheck(foundvoxelDown, poistionClipValue)) {
-          refinedVerticesBlock.push_back(foundvoxelDown);
+            && foundvoxelDown[direction] >= 0
+            && foundvoxelDown[direction] < blockWidth) {
+          refinedVerticesBlock.push_back(nodepos + foundvoxelDown);
         }
       }
     }// loop g2

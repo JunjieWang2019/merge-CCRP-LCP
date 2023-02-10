@@ -169,17 +169,14 @@ int findDominantAxis(
 void rayTracingAlongdirection_samp1_optim(
   std::vector<Vec3<int32_t>>& refinedVerticesBlock,
   int direction,
-  int bitDropped,
   int blockWidth,
-  Vec3<int32_t> posNode,
+  Vec3<int32_t> posNnodeposode,
   int minRange[3],
   int maxRange[3],
   Vec3<int32_t> edge1,
   Vec3<int32_t> edge2,
   Vec3<int32_t> v0,
-  int poistionClipValue,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
+  int haloTriangle,
   int thickness);
 
 void rayTracingAlongdirection(
