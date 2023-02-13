@@ -12,66 +12,27 @@ categories:
        - srcUnitLength: '${src-unit-metres}'
        - outputUnitLength: '${src-unit-metres}'
 
-     # preserve lossless geometry property
+     ##
+     # geometry parameters (octree)
+     #  - preserve lossless geometry property
+     - trisoupNodeSizeLog2: 0
      - mergeDuplicatedPoints: 0
+     - neighbourAvailBoundaryLog2: 8
+     - intra_pred_max_node_size_log2: 6
      - positionQuantizationScale: 1
      - randomAccessPeriod: 32
      - interPredictionEnabled: 1
-     -
-       - !conditional '"${group}" =~ m{^cat2}'
-       - localMotionEnabled: 1
-       - motionParamPreset: 2
-       - entropyContinuationEnabled: 1
-       - GoFGeometryEntropyContinuationEnabled: 1
-       # disable qtbt, it may crash local motion currently
-       - qtbtEnabled: 0
-     -
-       - !conditional '"${group}" eq "cat3-frame"'
-       - globalMotionEnabled: 1
-       - motionVectorPath: '${global_motion_file}'
+     - localMotionEnabled: 1
 
-     ##
-     # geometry parameters (octree)
-     - trisoupNodeSizeLog2: 0
-     - neighbourAvailBoundaryLog2: 8
-     - intra_pred_max_node_size_log2: 6
-     -
-       - !conditional '${numLasers}'
-       - angularEnabled: 1
-       - numLasers: '${numLasers}'
-       - lasersTheta: '${lasersTheta}'
-       - lasersZ: '${lasersZ}'
-       - lasersNumPhiPerTurn:  '${lasersNumPhiPerTurn}'
-       - planarBufferDisabled: 1
-
-     # idcm intensity depends upon the content type
-     - inferredDirectCodingMode: 1
-     -
-       - !conditional '"${group}" eq "cat3-frame"'
-       - inferredDirectCodingMode: 3
-     -
-       - !conditional '"${group}" =~ m{^cat2}'
-       # disable idcm, it may crash local motion currently
-       - inferredDirectCodingMode: 0
-
-     # default qtbt and planar with cat3-frame exception
-     - maxNumQtBtBeforeOt: 4
-     - minQtbtSizeLog2: 0
-     - planarEnabled: 1
-     -
-       - !conditional '"${group}" =~ m{^cat2}'
-       - planarEnabled: 0
-     - planarModeIdcmUse: 0
-     -
-       - !conditional '"${group}" eq "cat3-frame"'
-       - partitionMethod: 0
-       - maxNumQtBtBeforeOt: 6
-       - planarModeIdcmUse: 32
-     - gmThresholdHistScale: '$eval{ ${gm-thresh-hist-scale} || 100 }'
-     - gmThresholdMinZ: '$eval{ ${gm-thresh-min-z} || -4000 }'
-     - gmThresholdMaxZ: '$eval{ ${gm-thresh-max-z} || -500 }'
-     - gmThresholdLeftScale: '$eval{ ${gm-thresh-left-scale} || 1.5 }'
-     - gmThresholdRightScale: '$eval{ ${gm-thresh-right-scale} || 1.5 }'
+     - motionParamPreset: 2
+     - entropyContinuationEnabled: 1
+     - GoFGeometryEntropyContinuationEnabled: 1
+     # disable qtbt, local motion may support it
+     - qtbtEnabled: 0
+     # disable idcm, local motion may not support it
+     - inferredDirectCodingMode: 0
+     # disable planar for dense contents
+     - planarEnabled: 0
 
      ####
      # attribute coding (common options -- relies on option ordering)
@@ -84,15 +45,6 @@ categories:
        - transformType: 1
        - numberOfNearestNeighborsInPrediction: 3
        - levelOfDetailCount: '$eval{ ${seq_lod} || 12 }'
-       -
-         - !conditional '"${group}" =~ m{^cat3}'
-         - levelOfDetailCount: 0
-         - lod_neigh_bias: ${seq_lod_bias}
-         - direct_avg_predictor_disabled_flag: 1
-       -
-         - !conditional '${numLasers}'
-         - lod_neigh_bias: '1,1,1'
-         - spherical_coord_flag: 1
        - intraLodPredictionSkipLayers: 0
        - interComponentPredictionEnabled: 0
 
@@ -146,35 +98,3 @@ categories:
       basketball_player_vox11:
       dancer_player_vox11:
       queen:
-
-      # cat3
-      ford_01_q1mm:
-      ford_02_q1mm:
-      ford_03_q1mm:
-      qnxadas-junction-approach:
-      qnxadas-junction-exit:
-      qnxadas-motorway-join:
-      qnxadas-navigating-bends:
-      innovizQC1:
-        translation-thresh: 100
-        gm-thresh-hist-scale: 10
-        gm-thresh-min-z: -250
-        gm-thresh-max-z: 250
-        gm-thresh-left-scale: 0.2
-        gm-thresh-right-scale: 0.5
-
-      innovizQC2:
-        translation-thresh: 100
-        gm-thresh-hist-scale: 10
-        gm-thresh-min-z: -250
-        gm-thresh-max-z: 250
-        gm-thresh-left-scale: 0.2
-        gm-thresh-right-scale: 0.5
-
-      innovizQC3:
-        translation-thresh: 100
-        gm-thresh-hist-scale: 10
-        gm-thresh-min-z: -250
-        gm-thresh-max-z: 250
-        gm-thresh-left-scale: 0.2
-        gm-thresh-right-scale: 0.5

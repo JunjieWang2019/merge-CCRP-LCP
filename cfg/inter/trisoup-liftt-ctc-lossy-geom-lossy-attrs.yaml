@@ -16,22 +16,19 @@ categories:
      # geometry parameters (trisoup)
      - randomAccessPeriod: 32
      - interPredictionEnabled: 1
-     -
-       - !conditional '"${group}" =~ m{^cat2}'
-       - localMotionEnabled: 1
-       - motionParamPreset: 3
-       - entropyContinuationEnabled: 1
-       - GoFGeometryEntropyContinuationEnabled: 1
-       # disable qtbt, it may crash local motion currently
-       - qtbtEnabled: 0
+     - localMotionEnabled: 1
+
+     - motionParamPreset: 3
+     - entropyContinuationEnabled: 1
+     - GoFGeometryEntropyContinuationEnabled: 1
+     # disable qtbt, local motion may support it
+     - qtbtEnabled: 0
+     # disable planar for dense contents
+     - planarEnabled: 0
+
      - neighbourAvailBoundaryLog2: 8
      - intra_pred_max_node_size_log2: 6
      - inferredDirectCodingMode: 0
-     - planarEnabled: 1
-     -
-       - !conditional '"${group}" =~ m{^cat2}'
-       - planarEnabled: 0
-     - planarModeIdcmUse: 0
      - positionQuantizationScale: '$eval{ 1 / (1 << ( ${src-geometry-precision} - ${test-depth} )) }'
      - trisoupNodeSizeLog2:
          r01: 5
@@ -47,9 +44,7 @@ categories:
      - trisoupHaloEnabled: 1
      - trisoupFineRayTracingEnabled: 1
      - trisoupImprovedEncoderEnabled: 1
-     -
-       - !conditional '"${group}" =~ m{^cat2}'
-       - safeTrisoupPartionning: 0 # safeTrisoupPartitionning not working properly with cat2
+     - safeTrisoupPartionning: 0 # safeTrisoupPartitionning not working properly with cat2
 
      ####
      # attribute coding (common options -- relies on option ordering)
