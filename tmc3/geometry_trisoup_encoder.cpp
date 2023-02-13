@@ -270,6 +270,9 @@ determineTrisoupVertices(
       int check0 = (voxel[0] < tmin) + 2 * (voxel[0] > tmax.x());
       int check1 = (voxel[1] < tmin) + 2 * (voxel[1] > tmax.y());
       int check2 = (voxel[2] < tmin) + 2 * (voxel[2] > tmax.z());
+      if (check0 > 2) check0 = 1;
+      if (check1 > 2) check1 = 1;
+      if (check2 > 2) check2 = 1;
 
       int check = check0 + 3 * check1 + 9 * check2; // in [0,26]
 
@@ -288,6 +291,9 @@ determineTrisoupVertices(
         check0 = (voxel[0] < tmin2) + 2 * (voxel[0] > tmax2.x());
         check1 = (voxel[1] < tmin2) + 2 * (voxel[1] > tmax2.y());
         check2 = (voxel[2] < tmin2) + 2 * (voxel[2] > tmax2.z());
+        if (check0 > 2) check0 = 1;
+        if (check1 > 2) check1 = 1;
+        if (check2 > 2) check2 = 1;
 
         check = check0 + 3 * check1 + 9 * check2; // in [0,26]
 
