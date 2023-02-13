@@ -209,41 +209,39 @@ determineTrisoupVertices(
   segments.reserve(12 * leaves.size());
   segind.reserve(4 * leaves.size());
 
+  const int bufferIdx0[27] = { 12, 12, 12, 12, 4, 7, 12, 5, 6, 12, 1, 3, 0, 4, 7, 2, 5, 6, 12, 9, 11, 8, 4, 7, 10, 5, 6 };
+  const int voxelComp0[27] = { 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 2, 2 };
+  const int bufferIdx1[27] = { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 0, 0, 12, 2, 2, 12, 12, 12, 12, 8, 8, 12, 10, 10 };
+  const int voxelComp1[27] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  const int bufferIdx2[27] = { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 3, 12, 1, 3, 12, 12, 12, 12, 9, 11, 12, 9, 11 };
+  const int voxelComp2[27] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 1 };
+
+  // create segments
+  int segIdx = 0; // for stable ordering
   for (int i = 0; i < leaves.size(); i++) {
     const auto& leaf = leaves[i];
 
-    // Width of block.
-    // in future, may override with leaf blockWidth
-    const int32_t blockWidth = defaultBlockWidth;
-
+    // Size of block
     Vec3<int32_t> newP, newW, corner[8];
     nonCubicNode( gps, gbh, leaf.pos, defaultBlockWidth, sliceBB, newP, newW, corner );
 
+    // mini buffer Segment
     // x: left to right; y: bottom to top; z: far to near
-    TrisoupSegmentEnc seg000W00 =  // far bottom edge
-      {newP + corner[POS_000], newP + corner[POS_W00], 12 * i + 0, -1, -1, 0, 0, 0, 0}; // direction x
-    TrisoupSegmentEnc seg0000W0 =  // far left edge
-      {newP + corner[POS_000], newP + corner[POS_0W0], 12 * i + 1, -1, -1, 0, 0, 0, 0}; // direction y
-    TrisoupSegmentEnc seg0W0WW0 =  // far top edge
-      {newP + corner[POS_0W0], newP + corner[POS_WW0], 12 * i + 2, -1, -1, 0, 0, 0, 0}; // direction x
-    TrisoupSegmentEnc segW00WW0 =  // far right edge
-      {newP + corner[POS_W00], newP + corner[POS_WW0], 12 * i + 3, -1, -1, 0, 0, 0, 0}; // direction y
-    TrisoupSegmentEnc seg00000W =  // bottom left edge
-      {newP + corner[POS_000], newP + corner[POS_00W], 12 * i + 4, -1, -1, 0, 0, 0, 0}; // direction z
-    TrisoupSegmentEnc seg0W00WW =  // top left edge
-      {newP + corner[POS_0W0], newP + corner[POS_0WW], 12 * i + 5, -1, -1, 0, 0, 0, 0}; // direction z
-    TrisoupSegmentEnc segWW0WWW =  // top right edge
-      {newP + corner[POS_WW0], newP + corner[POS_WWW], 12 * i + 6, -1, -1, 0, 0, 0, 0}; // direction z
-    TrisoupSegmentEnc segW00W0W =  // bottom right edge
-      {newP + corner[POS_W00], newP + corner[POS_W0W], 12 * i + 7, -1, -1, 0, 0, 0, 0}; // direction z
-    TrisoupSegmentEnc seg00WW0W =  // near bottom edge
-      {newP + corner[POS_00W], newP + corner[POS_W0W], 12 * i + 8, -1, -1, 0, 0, 0, 0}; // direction x
-    TrisoupSegmentEnc seg00W0WW =  // near left edge
-      {newP + corner[POS_00W], newP + corner[POS_0WW], 12 * i + 9, -1, -1, 0, 0, 0, 0}; // direction y
-    TrisoupSegmentEnc seg0WWWWW =  // near top edge
-      {newP + corner[POS_0WW], newP + corner[POS_WWW], 12 * i + 10, -1, -1, 0, 0, 0, 0}; // direction x
-    TrisoupSegmentEnc segW0WWWW =  // near right edge
-      {newP + corner[POS_W0W], newP + corner[POS_WWW], 12 * i + 11, -1, -1, 0, 0, 0, 0}; // direction y
+    std::vector<TrisoupSegmentEnc> segmentsBuffer12 = {
+        { newP + corner[POS_000], newP + corner[POS_W00], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_000], newP + corner[POS_0W0], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_0W0], newP + corner[POS_WW0], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_W00], newP + corner[POS_WW0], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_000], newP + corner[POS_00W], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_0W0], newP + corner[POS_0WW], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_WW0], newP + corner[POS_WWW], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_W00], newP + corner[POS_W0W], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_00W], newP + corner[POS_W0W], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_00W], newP + corner[POS_0WW], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_0WW], newP + corner[POS_WWW], segIdx++, -1, -1, 0, 0, 0, 0 },
+        { newP + corner[POS_W0W], newP + corner[POS_WWW], segIdx++, -1, -1, 0, 0, 0, 0 },
+        {0, 0, 0, -1, -1, 0, 0, 0, 0 }  // last is foo
+    };
 
     // Each voxel votes for a position along each edge it is close to
     const int tmin = 1;
@@ -255,6 +253,7 @@ determineTrisoupVertices(
                            newW.y() - tmin2 - 1,
                            newW.z() - tmin2 - 1 );
 
+    // pick adequate point cloud
     int idxStart = leaf.start;
     int idxEnd = leaf.end;
     if (isCompensated) {
@@ -262,14 +261,9 @@ determineTrisoupVertices(
       idxEnd = leaf.predEnd;
     }
 
-
+    // loop on voxels
     for (int j = idxStart; j < idxEnd; j++) {
-      Vec3<int> voxel;
-
-      if (isCompensated && leaf.isCompensated)
-        voxel = compensatedPointCloud[j] - newP;
-      else
-        voxel = pointCloud[j] - newP;
+      Vec3<int> voxel = (isCompensated && leaf.isCompensated ? compensatedPointCloud[j] : pointCloud[j]) - newP;
 
       // parameter indicating threshold of how close voxels must be to edge
       // ----------- 1 -------------------
@@ -277,134 +271,38 @@ determineTrisoupVertices(
       int check1 = (voxel[1] < tmin) + 2 * (voxel[1] > tmax.y());
       int check2 = (voxel[2] < tmin) + 2 * (voxel[2] > tmax.z());
 
-      if (!check0 + !check1 + !check2 < 2) {
+      int check = check0 + 3 * check1 + 9 * check2; // in [0,26]
 
-        // to be relevant
-        if (voxel[1] < tmin && voxel[2] < tmin) {
-          seg000W00.count++;
-          seg000W00.distanceSum += voxel[0];
-        }  // far bottom edge
-        if (voxel[0] < tmin && voxel[2] < tmin) {
-          seg0000W0.count++;
-          seg0000W0.distanceSum += voxel[1];
-        }  // far left edge
-        if (voxel[1] > tmax.y() && voxel[2] < tmin) {
-          seg0W0WW0.count++;
-          seg0W0WW0.distanceSum += voxel[0];
-        }  // far top edge
-        if (voxel[0] > tmax.x() && voxel[2] < tmin) {
-          segW00WW0.count++;
-          segW00WW0.distanceSum += voxel[1];
-        }  // far right edge
-        if (voxel[0] < tmin && voxel[1] < tmin) {
-          seg00000W.count++;
-          seg00000W.distanceSum += voxel[2];
-        }  // bottom left edge
-        if (voxel[0] < tmin && voxel[1] > tmax.y()) {
-          seg0W00WW.count++;
-          seg0W00WW.distanceSum += voxel[2];
-        }  // top left edge
-        if (voxel[0] > tmax.x() && voxel[1] > tmax.y()) {
-          segWW0WWW.count++;
-          segWW0WWW.distanceSum += voxel[2];
-        }  // top right edge
-        if (voxel[0] > tmax.x() && voxel[1] < tmin) {
-          segW00W0W.count++;
-          segW00W0W.distanceSum += voxel[2];
-        }  // bottom right edge
-        if (voxel[1] < tmin && voxel[2] > tmax.z()) {
-          seg00WW0W.count++;
-          seg00WW0W.distanceSum += voxel[0];
-        }  // near bottom edge
-        if (voxel[0] < tmin && voxel[2] > tmax.z()) {
-          seg00W0WW.count++;
-          seg00W0WW.distanceSum += voxel[1];
-        }  // near left edge
-        if (voxel[1] > tmax.y() && voxel[2] > tmax.z()) {
-          seg0WWWWW.count++;
-          seg0WWWWW.distanceSum += voxel[0];
-        }  // near top edge
-        if (voxel[0] > tmax.x() && voxel[2] > tmax.z()) {
-          segW0WWWW.count++;
-          segW0WWWW.distanceSum += voxel[1];
-        }  // near right edge
-      }
+      segmentsBuffer12[bufferIdx0[check]].count++;
+      segmentsBuffer12[bufferIdx0[check]].distanceSum += voxel[voxelComp0[check]];
+      segmentsBuffer12[bufferIdx1[check]].count++;
+      segmentsBuffer12[bufferIdx1[check]].distanceSum += voxel[voxelComp1[check]];
+      segmentsBuffer12[bufferIdx2[check]].count++;
+      segmentsBuffer12[bufferIdx2[check]].distanceSum += voxel[voxelComp2[check]];
+
+
       // parameter indicating threshold of how close voxels must be to edge
       // ----------- 2 -------------------
-      // to be relevant
       if (distanceSearchEncoder > 1) {
 
-        int check0 = (voxel[0] < tmin2) + 2 * (voxel[0] > tmax2.x());
-        int check1 = (voxel[1] < tmin2) + 2 * (voxel[1] > tmax2.y());
-        int check2 = (voxel[2] < tmin2) + 2 * (voxel[2] > tmax2.z());
+        check0 = (voxel[0] < tmin2) + 2 * (voxel[0] > tmax2.x());
+        check1 = (voxel[1] < tmin2) + 2 * (voxel[1] > tmax2.y());
+        check2 = (voxel[2] < tmin2) + 2 * (voxel[2] > tmax2.z());
 
-        if (!check0 + !check1 + !check2 < 2) {
-          if (voxel[1] < tmin2 && voxel[2] < tmin2) {
-            seg000W00.count2++;
-            seg000W00.distanceSum2 += voxel[0];
-          }  // far bottom edge
-          if (voxel[0] < tmin2 && voxel[2] < tmin2) {
-            seg0000W0.count2++;
-            seg0000W0.distanceSum2 += voxel[1];
-          }  // far left edge
-          if (voxel[1] > tmax2.y() && voxel[2] < tmin2) {
-            seg0W0WW0.count2++;
-            seg0W0WW0.distanceSum2 += voxel[0];
-          }  // far top edge
-          if (voxel[0] > tmax2.x() && voxel[2] < tmin2) {
-            segW00WW0.count2++;
-            segW00WW0.distanceSum2 += voxel[1];
-          }  // far right edge
-          if (voxel[0] < tmin2 && voxel[1] < tmin2) {
-            seg00000W.count2++;
-            seg00000W.distanceSum2 += voxel[2];
-          }  // bottom left edge
-          if (voxel[0] < tmin2 && voxel[1] > tmax2.y()) {
-            seg0W00WW.count2++;
-            seg0W00WW.distanceSum2 += voxel[2];
-          }  // top left edge
-          if (voxel[0] > tmax2.x() && voxel[1] > tmax2.y()) {
-            segWW0WWW.count2++;
-            segWW0WWW.distanceSum2 += voxel[2];
-          }  // top right edge
-          if (voxel[0] > tmax2.x() && voxel[1] < tmin2) {
-            segW00W0W.count2++;
-            segW00W0W.distanceSum2 += voxel[2];
-          }  // bottom right edge
-          if (voxel[1] < tmin2 && voxel[2] > tmax2.z()) {
-            seg00WW0W.count2++;
-            seg00WW0W.distanceSum2 += voxel[0];
-          }  // near bottom edge
-          if (voxel[0] < tmin2 && voxel[2] > tmax2.z()) {
-            seg00W0WW.count2++;
-            seg00W0WW.distanceSum2 += voxel[1];
-          }  // near left edge
-          if (voxel[1] > tmax2.y() && voxel[2] > tmax2.z()) {
-            seg0WWWWW.count2++;
-            seg0WWWWW.distanceSum2 += voxel[0];
-          }  // near top edge
-          if (voxel[0] > tmax2.x() && voxel[2] > tmax2.z()) {
-            segW0WWWW.count2++;
-            segW0WWWW.distanceSum2 += voxel[1];
-          }  // near right edge
-        }
+        check = check0 + 3 * check1 + 9 * check2; // in [0,26]
+
+        segmentsBuffer12[bufferIdx0[check]].count2++;
+        segmentsBuffer12[bufferIdx0[check]].distanceSum2 += voxel[voxelComp0[check]];
+        segmentsBuffer12[bufferIdx1[check]].count2++;
+        segmentsBuffer12[bufferIdx1[check]].distanceSum2 += voxel[voxelComp1[check]];
+        segmentsBuffer12[bufferIdx2[check]].count2++;
+        segmentsBuffer12[bufferIdx2[check]].distanceSum2 += voxel[voxelComp2[check]];
       }
 
     }
 
-    // Push segments onto list.
-    segments.push_back(seg000W00);  // far bottom edge
-    segments.push_back(seg0000W0);  // far left edge
-    segments.push_back(seg0W0WW0);  // far top edge
-    segments.push_back(segW00WW0);  // far right edge
-    segments.push_back(seg00000W);  // bottom left edge
-    segments.push_back(seg0W00WW);  // top left edge
-    segments.push_back(segWW0WWW);  // top right edge
-    segments.push_back(segW00W0W);  // bottom right edge
-    segments.push_back(seg00WW0W);  // near bottom edge
-    segments.push_back(seg00W0WW);  // near left edge
-    segments.push_back(seg0WWWWW);  // near top edge
-    segments.push_back(segW0WWWW);  // near right edge
+    // Append segments to list
+    segments.insert(segments.end(), segmentsBuffer12.begin(), segmentsBuffer12.end() - 1); // -1 removes foo at the end
   }
 
   // Sort the list and find unique segments.
