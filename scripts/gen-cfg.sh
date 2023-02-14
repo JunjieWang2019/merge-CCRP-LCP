@@ -17,7 +17,6 @@ while (( $# )); do
 	--octree) geom="octree" ;;
 	--trisoup) geom="trisoup" ;;
 	--raht) attr="raht" ;;
-	--pred-lift) attr="predlift" ;;
 	--intra) pred="intra" ;;
 	--inter) pred="inter" ;;
 	--all) all=1 ;;
@@ -25,7 +24,7 @@ while (( $# )); do
 	--) shift; break ;;
 	--help|*)
 		echo -e "usage:\n $0\n" \
-			"    [[--octree|--trisoup] [--raht|--pred-lift] [--intra|--inter]  | --all]\n" \
+			"    [[--octree|--trisoup] [--raht] [--intra|--inter]  | --all]\n" \
 			"    [--cfgdir=<dir>]"
 		exit 1
 	esac
@@ -38,20 +37,9 @@ extra_args=("$@")
 # NB: it is important that the configs in each config set are
 # capable of being merged together by gen-cfg.pl.  Ie, no two
 # configs may have different definitions of one category.
-cfg_octree_predlift=(
-	octree-liftt-ctc-lossless-geom-lossy-attrs.yaml
-	octree-liftt-ctc-lossy-geom-lossy-attrs.yaml
-	octree-predt-ctc-lossless-geom-lossless-attrs.yaml
-	octree-predt-ctc-lossless-geom-nearlossless-attrs.yaml
-)
-
 cfg_octree_raht=(
 	octree-raht-ctc-lossless-geom-lossy-attrs.yaml
 	octree-raht-ctc-lossy-geom-lossy-attrs.yaml
-)
-
-cfg_trisoup_predlift=(
-	trisoup-liftt-ctc-lossy-geom-lossy-attrs.yaml
 )
 
 cfg_trisoup_raht=(
@@ -97,12 +85,8 @@ if [[ "$all" != "1" ]]
 then
 	do_one_cfgset "$geom" "$attr" "$pred"
 else
-	do_one_cfgset "octree" "predlift" "intra"
 	do_one_cfgset "octree" "raht" "intra"
-	do_one_cfgset "trisoup" "predlift" "intra"
 	do_one_cfgset "trisoup" "raht" "intra"
-	do_one_cfgset "octree" "predlift" "inter"
 	do_one_cfgset "octree" "raht" "inter"
-	do_one_cfgset "trisoup" "predlift" "inter"
 	do_one_cfgset "trisoup" "raht" "inter"
 fi
