@@ -721,13 +721,13 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       std::cout << "presetMode for Trisoup dense of size " << TriSoupSize << " \n";
 
 
-      motion.motion_block_size = std::min(512, 32 * TriSoupSize);
-      motion.motion_window_size = 12;
-      motion.motion_min_pu_size = std::max(TriSoupSize, motion.motion_block_size >> 2);
+      motion.motion_block_size = std::min(256, 16 * TriSoupSize);
+      motion.motion_window_size = 10;
+      motion.motion_min_pu_size = std::max(TriSoupSize, motion.motion_block_size >> 1);
 
       // search parameters
       motion.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
-      motion.lambda = 2.5*TriSoupSize*2;
+      motion.lambda = 2.5*TriSoupSize*4;
       motion.decimate = 7;
       break;
 
