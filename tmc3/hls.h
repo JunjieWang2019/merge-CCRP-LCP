@@ -474,7 +474,7 @@ struct GeometryParameterSet {
   int gps_geom_box_log2_scale;
 
   // Selects between predictive and octree geometry coding methods.
-  bool predgeom_enabled_flag;
+  bool predgeom_enabled_flag{false};
 
   // Controls the ability to represent multiple points (with associated
   // attributes) at the same spatial position.
@@ -487,7 +487,7 @@ struct GeometryParameterSet {
 
   // Controls the use of early termination of the geometry tree
   // by directly coding the position of isolated points.
-  int inferred_direct_coding_mode;
+  int inferred_direct_coding_mode{0};
 
   // Permits coding the common prefix of two idcm points
   bool joint_2pt_idcm_enabled_flag;
@@ -533,7 +533,7 @@ struct GeometryParameterSet {
   int geom_planar_threshold1;
   int geom_planar_threshold2;
   int geom_idcm_rate_minus1;
-  bool geom_planar_disabled_idcm_angular_flag;
+  bool geom_planar_disabled_idcm_angular_flag{false}; //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
 
   // Enables angular coding in octree/predgeom
   bool geom_angular_mode_enabled_flag;
@@ -820,7 +820,7 @@ struct AttributeParameterSet {
 
   // indicates that attribute coding should be performed in
   // pseudo-spherical domain
-  bool spherical_coord_flag;
+  bool spherical_coord_flag{false}; //NOTE[FT] : setting to false
 
   // (r, phi, laserid) scale factors for domain conversion
   Vec3<int> attr_coord_scale;

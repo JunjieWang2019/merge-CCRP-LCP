@@ -602,13 +602,13 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
   bs.write(gps.geom_unique_points_flag);
 
-  bs.write(gps.predgeom_enabled_flag);
-  if (!gps.predgeom_enabled_flag) {
+  bs.write(/*gps.predgeom_enabled_flag*/false);
+  if (/*!gps.predgeom_enabled_flag*/true) {
     bs.write(gps.octree_point_count_list_present_flag);
 
-    bs.writeUn(2, gps.inferred_direct_coding_mode);
-    if (gps.inferred_direct_coding_mode)
-      bs.write(gps.joint_2pt_idcm_enabled_flag);
+    bs.writeUn(2, /*gps.inferred_direct_coding_mode*/0);
+    /*if (gps.inferred_direct_coding_mode)
+      bs.write(gps.joint_2pt_idcm_enabled_flag);*/
 
     bs.write(gps.qtbt_enabled_flag);
     bs.writeUn(3, gps.neighbour_avail_boundary_log2_minus1);
@@ -685,10 +685,10 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
   if (gps.geom_scaling_enabled_flag) {
     bs.writeUe(gps.geom_base_qp);
     bs.writeUn(2, gps.geom_qp_multiplier_log2);
-    if (gps.predgeom_enabled_flag)
+    /*if (gps.predgeom_enabled_flag)
       bs.writeUe(gps.geom_qp_offset_intvl_log2);
     else if (gps.inferred_direct_coding_mode)
-      bs.writeSe(gps.geom_idcm_qp_offset);
+      bs.writeSe(gps.geom_idcm_qp_offset);*/
   }
 
   // NB: bitstreams conforming to the first edition must set
@@ -696,13 +696,13 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
   bool gps_extension_flag = sps.profile.isDraftProfile();
   bs.write(gps_extension_flag);
   if (gps_extension_flag) {
-    if(!gps.predgeom_enabled_flag)
+    if(/*!gps.predgeom_enabled_flag*/true)
       bs.write(gps.trisoup_enabled_flag);
 
     /*if (gps.geom_planar_mode_enabled_flag && gps.geom_angular_mode_enabled_flag && gps.inferred_direct_coding_mode)
       bs.write(gps.geom_planar_disabled_idcm_angular_flag);*/
 
-    if (!gps.predgeom_enabled_flag ||/* gps.geom_angular_mode_enabled_flag*/ false)
+    if (/*!gps.predgeom_enabled_flag*/true ||/* gps.geom_angular_mode_enabled_flag*/false)
       bs.write(gps.interPredictionEnabledFlag);
     
     // inter 
@@ -710,8 +710,8 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
       //global 
       bs.write(gps.globalMotionEnabled);
       if (gps.globalMotionEnabled) {
-        if (gps.predgeom_enabled_flag)
-          bs.writeUe(gps.interAzimScaleLog2);
+        /*if (gps.predgeom_enabled_flag)
+          bs.writeUe(gps.interAzimScaleLog2);*/
       }
 
       //local 
@@ -771,8 +771,8 @@ parseGps(const PayloadBuffer& buf)
     bs.read(&gps.octree_point_count_list_present_flag);
 
     bs.readUn(2, &gps.inferred_direct_coding_mode);
-    if (gps.inferred_direct_coding_mode)
-      bs.read(&gps.joint_2pt_idcm_enabled_flag);
+    /*if (gps.inferred_direct_coding_mode)
+      bs.read(&gps.joint_2pt_idcm_enabled_flag);*/
 
     bs.read(&gps.qtbt_enabled_flag);
     bs.readUn(3, &gps.neighbour_avail_boundary_log2_minus1);
@@ -863,10 +863,10 @@ parseGps(const PayloadBuffer& buf)
   if (gps.geom_scaling_enabled_flag) {
     bs.readUe(&gps.geom_base_qp);
     bs.readUn(2, &gps.geom_qp_multiplier_log2);
-    if (gps.predgeom_enabled_flag)
+    /*if (gps.predgeom_enabled_flag)
       bs.readUe(&gps.geom_qp_offset_intvl_log2);
     else if (gps.inferred_direct_coding_mode)
-      bs.readSe(&gps.geom_idcm_qp_offset);
+      bs.readSe(&gps.geom_idcm_qp_offset);*/
   }
 
   gps.trisoup_enabled_flag = false;
@@ -875,12 +875,12 @@ parseGps(const PayloadBuffer& buf)
   gps.interPredictionEnabledFlag = false;
   gps.globalMotionEnabled = false;
   gps.localMotionEnabled = false;
-  gps.geom_planar_disabled_idcm_angular_flag = false;
+  //gps.geom_planar_disabled_idcm_angular_flag = false; //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false at construction
   gps.residual2_disabled_flag = false;
   gps.geom_octree_depth_planar_eligibiity_enabled_flag = false;
   bool gps_extension_flag = bs.read();
   if (gps_extension_flag) {
-    if(!gps.predgeom_enabled_flag)
+    if(/*!gps.predgeom_enabled_flag*/true)
       bs.read(&gps.trisoup_enabled_flag);
 
     /*if (
@@ -888,7 +888,7 @@ parseGps(const PayloadBuffer& buf)
       && gps.inferred_direct_coding_mode)
       bs.read(&gps.geom_planar_disabled_idcm_angular_flag);*/
     
-    if (!gps.predgeom_enabled_flag || /*gps.geom_angular_mode_enabled_flag*/ false)
+    if (/*!gps.predgeom_enabled_flag*/true || /*gps.geom_angular_mode_enabled_flag*/false)
       bs.read(&gps.interPredictionEnabledFlag);
     
     // inter   
@@ -897,8 +897,8 @@ parseGps(const PayloadBuffer& buf)
       //global
       bs.read(&gps.globalMotionEnabled);
       if (gps.globalMotionEnabled) {
-        if (gps.predgeom_enabled_flag)
-          bs.readUe(&gps.interAzimScaleLog2);
+        /*if (gps.predgeom_enabled_flag)
+          bs.readUe(&gps.interAzimScaleLog2);*/
       }
 
       //local
@@ -1021,15 +1021,15 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     bs.write(aps.raw_attr_variable_len_flag);
 
   if (!aps.scalable_lifting_enabled_flag)
-    bs.write(aps.spherical_coord_flag);
-  if (aps.spherical_coord_flag) {
+    bs.write(/*aps.spherical_coord_flag*/ false);
+  /*if (aps.spherical_coord_flag) {
     assert(!aps.scalable_lifting_enabled_flag);
     for (int k = 0; k < 3; k++) {
       int attr_coord_scale_bits_minus1 = numBits(aps.attr_coord_scale[k]) - 1;
       bs.writeUn(5, attr_coord_scale_bits_minus1);
       bs.writeUn(attr_coord_scale_bits_minus1 + 1, aps.attr_coord_scale[k]);
     }
-  }
+  }*/
  
 
   
@@ -1165,16 +1165,16 @@ parseAps(const PayloadBuffer& buf)
   if (aps.attr_encoding == AttributeEncoding::kRaw)
     bs.read(&aps.raw_attr_variable_len_flag);
 
-  aps.spherical_coord_flag = false;
+  //aps.spherical_coord_flag = false;
   if (!aps.scalable_lifting_enabled_flag)
     bs.read(&aps.spherical_coord_flag);
-  if (aps.spherical_coord_flag) {
+  /*if (aps.spherical_coord_flag) {
     for (int k = 0; k < 3; k++) {
       int attr_coord_scale_bits_minus1;
       bs.readUn(5, &attr_coord_scale_bits_minus1);
       bs.readUn(attr_coord_scale_bits_minus1 + 1, &aps.attr_coord_scale[k]);
     }
-  }
+  }*/
 
   bool aps_extension_flag = bs.read();
   aps.max_points_per_sort_log2_plus1 = 0;
@@ -1281,7 +1281,7 @@ write(
     bs.writeSn(gbh_angular_origin_bits_minus1 + 1, gbh_angular_origin.z());
   }
 
-  if (!gps.predgeom_enabled_flag) {
+  if (/*!gps.predgeom_enabled_flag*/true) {
     int tree_depth_minus1 = gbh.tree_depth_minus1();
     bs.writeUe(tree_depth_minus1);
     if (gps.qtbt_enabled_flag)
@@ -1335,14 +1335,14 @@ write(
           bs.writeSe(gbh.gm_matrix[3 * i + j]);
       }
     }
-    if (!gps.predgeom_enabled_flag) {
+    if (/*!gps.predgeom_enabled_flag*/true) {
       bs.writeUe(gbh.lpu_type);
       bs.write(gbh.min_zero_origin_flag);
       if (gbh.lpu_type != 0)
         for (int i = 0; i < 3; i++)
           bs.writeUe(gbh.motion_block_size[i]);
     }
-    if (gps.predgeom_enabled_flag || !gbh.lpu_type)
+    if (/*gps.predgeom_enabled_flag*/false || !gbh.lpu_type)
     {
       bs.writeSe(gbh.gm_thresh.first);
       bs.writeSe(gbh.gm_thresh.second);
@@ -1407,7 +1407,7 @@ parseGbh(
   }
 
   gbh.geom_stream_cnt_minus1 = 0;
-  if (!gps.predgeom_enabled_flag) {
+  if (/*!gps.predgeom_enabled_flag*/true) {
     int tree_depth_minus1;
     bs.readUe(&tree_depth_minus1);
 
@@ -1422,8 +1422,8 @@ parseGbh(
   gbh.geom_slice_qp_offset = 0;
   if (gps.geom_scaling_enabled_flag) {
     bs.readSe(&gbh.geom_slice_qp_offset);
-    if (gps.predgeom_enabled_flag)
-      bs.readUe(&gbh.geom_qp_offset_intvl_log2_delta);
+    /*if (gps.predgeom_enabled_flag)
+      bs.readUe(&gbh.geom_qp_offset_intvl_log2_delta);*/
   }
 
   if (gps.trisoup_enabled_flag) {
@@ -1442,13 +1442,13 @@ parseGbh(
   }
 
   gbh.pgeom_min_radius = 0;
-  if (gps.predgeom_enabled_flag) {
-    for (int k = 0; k < 3; k++)
-      bs.readUn(3, &gbh.pgeom_resid_abs_log2_bits[k]);
+  //if (gps.predgeom_enabled_flag) {
+  //  for (int k = 0; k < 3; k++)
+  //    bs.readUn(3, &gbh.pgeom_resid_abs_log2_bits[k]);
 
-    /*if (gps.geom_angular_mode_enabled_flag)
-      bs.readUe(&gbh.pgeom_min_radius);*/
-  }
+  //  /*if (gps.geom_angular_mode_enabled_flag)
+  //    bs.readUe(&gbh.pgeom_min_radius);*/
+  //}
   if (gps.interPredictionEnabledFlag)
     bs.read(&gbh.interPredictionEnabledFlag);
   else
@@ -1472,7 +1472,7 @@ parseGbh(
       }
     }
 
-    if (!gps.predgeom_enabled_flag) {
+    if (/*!gps.predgeom_enabled_flag*/true) {
       bs.readUe(&gbh.lpu_type);
       // temporal...
       bs.read(&gbh.min_zero_origin_flag);
@@ -1480,7 +1480,7 @@ parseGbh(
         for (int i = 0; i < 3; i++)
           bs.readUe(&gbh.motion_block_size[i]);
     }
-    if (gps.predgeom_enabled_flag || !gbh.lpu_type)
+    if (/*gps.predgeom_enabled_flag*/ false || !gbh.lpu_type)
     {
       bs.readSe(&gbh.gm_thresh.first);
       bs.readSe(&gbh.gm_thresh.second);

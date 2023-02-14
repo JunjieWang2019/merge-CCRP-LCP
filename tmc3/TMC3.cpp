@@ -1556,16 +1556,16 @@ sanitizeEncoderOpts(
   // If idcm rate is configured as 0, disable idcm
   // NB: if user has requested less contrained idcm, warn
   if (params.encoder.gps.geom_idcm_rate_minus1 < 0) {
-    if (params.encoder.gps.inferred_direct_coding_mode == 1)
-      params.encoder.gps.inferred_direct_coding_mode = 0;
+    //if (params.encoder.gps.inferred_direct_coding_mode == 1) //NOTE[FT] forcing inferred_direct_coding_mode to 0
+    //  params.encoder.gps.inferred_direct_coding_mode = 0;
   }
 
   if (params.encoder.gps.geom_idcm_rate_minus1 < 31) {
-    if (params.encoder.gps.inferred_direct_coding_mode > 1) {
-      params.encoder.gps.geom_idcm_rate_minus1 = 31;
-      err.warn() << "ignoring planarModeIdcmUse < 32: "
-                    "contradicts inferredDirectCodingMode > 1\n";
-    }
+    //if (params.encoder.gps.inferred_direct_coding_mode > 1) { //NOTE[FT] forcing inferred_direct_coding_mode to 0
+    //  params.encoder.gps.geom_idcm_rate_minus1 = 31;
+    //  err.warn() << "ignoring planarModeIdcmUse < 32: "
+    //                "contradicts inferredDirectCodingMode > 1\n";
+    //}
   }
 
   // convert coordinate systems if the coding order is different from xyz
@@ -1598,8 +1598,8 @@ sanitizeEncoderOpts(
     if (!params.encoder.gps.geom_unique_points_flag)
       err.warn() << "TriSoup geometry does not preserve duplicated points\n";
 
-    if (params.encoder.gps.inferred_direct_coding_mode)
-      err.warn() << "TriSoup geometry is incompatable with IDCM\n";
+    //if (params.encoder.gps.inferred_direct_coding_mode) //NOTE[FT] forcing inferred_direct_coding_mode to 0
+    //  err.warn() << "TriSoup geometry is incompatable with IDCM\n";
 
     params.encoder.gps.geom_unique_points_flag = true;
     params.encoder.gps.inferred_direct_coding_mode = 0;
@@ -1622,7 +1622,7 @@ sanitizeEncoderOpts(
   }
 
   if (
-    params.encoder.gps.predgeom_enabled_flag
+    /*params.encoder.gps.predgeom_enabled_flag*/ false
     && /*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
     params.encoder.gps.interPredictionEnabledFlag = false;
 
@@ -1632,9 +1632,9 @@ sanitizeEncoderOpts(
   }
 
   if (params.motionVectorPath.size() == 0) {
-    if (params.encoder.gps.predgeom_enabled_flag)
+    /*if (params.encoder.gps.predgeom_enabled_flag)
       params.encoder.gps.globalMotionEnabled = false;
-    else
+    else*/
       params.encoder.interGeom.motionSrc = InterGeomEncOpts::kInternalLMSGMSrc;
   }
 
@@ -1775,13 +1775,13 @@ sanitizeEncoderOpts(
       }
     }
 
-    if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true) {
-      if (attr_aps.spherical_coord_flag)
-        err.warn() << it.first
-                   << ".spherical_coord_flag=1 requires angularEnabled=1, "
-                      "disabling\n";
-      attr_aps.spherical_coord_flag = false;
-    }
+    //if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true) {
+    //  if (attr_aps.spherical_coord_flag)
+    //    err.warn() << it.first
+    //               << ".spherical_coord_flag=1 requires angularEnabled=1, "
+    //                  "disabling\n";
+    //  attr_aps.spherical_coord_flag = false;
+    //}
 
     if (!params.encoder.gps.interPredictionEnabledFlag)
       attr_aps.attrInterPredictionEnabled = false;
@@ -1858,8 +1858,8 @@ sanitizeEncoderOpts(
   }
 
   // 
-  if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
-    params.encoder.gps.geom_planar_disabled_idcm_angular_flag = false;
+  //if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
+  //  params.encoder.gps.geom_planar_disabled_idcm_angular_flag = false; //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false at construction
 
   // sanity checks
 

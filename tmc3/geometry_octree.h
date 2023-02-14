@@ -104,7 +104,7 @@ struct PCCOctree3Node {
   uint8_t siblingOccupancy;
 
   // Indicatest hat the current node qualifies for IDCM
-  bool idcmEligible;
+  bool idcmEligible{false}; //NOTE[FT]: FORCING idcmEligible to false at construction
 
   // The qp used for geometry quantisation.
   // NB: this qp value always uses a step size doubling interval of 8 qps
@@ -118,7 +118,7 @@ struct PCCOctree3Node {
 
 struct OctreeNodePlanar {
   // planar; first bit for x, second bit for y, third bit for z
-  uint8_t planarPossible = 7;
+  //uint8_t planarPossible = 7;
   uint8_t planePosBits = 0;
   uint8_t planarMode = 0;
 
@@ -126,11 +126,11 @@ struct OctreeNodePlanar {
   bool isSignaled = false;
   bool isRead = false;
 
-  bool allowPCM = true;
-  bool isPreDirMatch = true;
-  int lastDirIdx = 0;
+  //bool allowPCM = true;
+  //bool isPreDirMatch = true;
+  //int lastDirIdx = 0;
 
-  bool eligible[3] = {false, false, false};
+  //bool eligible[3] = {false, false, false};
   int ctxBufPCM = 0;
 };
 
@@ -596,78 +596,78 @@ OctreeAngPosScaler::scaleNs(Vec3<int32_t> pos) const
 
 //============================================================================
 
-struct OctreePlanarBuffer {
-  static constexpr unsigned numBitsC = 14;
-  static constexpr unsigned numBitsAb = 5;
-  static constexpr unsigned rowSize = 1;
-  static_assert(numBitsC >= 0 && numBitsC <= 32, "0 <= numBitsC <= 32");
-  static_assert(numBitsAb >= 0 && numBitsAb <= 32, "0 <= numBitsAb <= 32");
-  static_assert(rowSize > 0, "rowSize must be greater than 0");
-  static constexpr unsigned shiftAb = 3;
-  static constexpr int maskAb = ((1 << numBitsAb) - 1) << shiftAb;
-  static constexpr int maskC = (1 << numBitsC) - 1;
-
-#pragma pack(push)
-#pragma pack(1)
-  struct Elmt {
-    // maximum of two position components
-    unsigned int pos : numBitsAb;
-
-    // -2: not used, -1: not planar, 0: plane 0, 1: plane 1
-    int planeIdx : 2;
-  };
-#pragma pack(pop)
-
-  typedef Elmt Row[rowSize];
-
-  OctreePlanarBuffer();
-  OctreePlanarBuffer(const OctreePlanarBuffer& rhs);
-  OctreePlanarBuffer(OctreePlanarBuffer&& rhs);
-  ~OctreePlanarBuffer();
-
-  OctreePlanarBuffer& operator=(const OctreePlanarBuffer& rhs);
-  OctreePlanarBuffer& operator=(OctreePlanarBuffer&& rhs);
-
-  void resize(Vec3<int> numBufferRows);
-  void clear();
-
-  // Access to a particular buffer column (dimension)
-  Row* getBuffer(int dim) { return _col[dim]; }
-
-private:
-  // Backing storage for the underlying buffer
-  std::vector<Elmt> _buf;
-
-  // Base pointers for the first, second and third position components.
-  std::array<Row*, 3> _col = {{nullptr, nullptr, nullptr}};
-};
+//struct OctreePlanarBuffer {
+//  static constexpr unsigned numBitsC = 14;
+//  static constexpr unsigned numBitsAb = 5;
+//  static constexpr unsigned rowSize = 1;
+//  static_assert(numBitsC >= 0 && numBitsC <= 32, "0 <= numBitsC <= 32");
+//  static_assert(numBitsAb >= 0 && numBitsAb <= 32, "0 <= numBitsAb <= 32");
+//  static_assert(rowSize > 0, "rowSize must be greater than 0");
+//  static constexpr unsigned shiftAb = 3;
+//  static constexpr int maskAb = ((1 << numBitsAb) - 1) << shiftAb;
+//  static constexpr int maskC = (1 << numBitsC) - 1;
+//
+//#pragma pack(push)
+//#pragma pack(1)
+//  struct Elmt {
+//    // maximum of two position components
+//    unsigned int pos : numBitsAb;
+//
+//    // -2: not used, -1: not planar, 0: plane 0, 1: plane 1
+//    int planeIdx : 2;
+//  };
+//#pragma pack(pop)
+//
+//  typedef Elmt Row[rowSize];
+//
+//  OctreePlanarBuffer();
+//  OctreePlanarBuffer(const OctreePlanarBuffer& rhs);
+//  OctreePlanarBuffer(OctreePlanarBuffer&& rhs);
+//  ~OctreePlanarBuffer();
+//
+//  OctreePlanarBuffer& operator=(const OctreePlanarBuffer& rhs);
+//  OctreePlanarBuffer& operator=(OctreePlanarBuffer&& rhs);
+//
+//  void resize(Vec3<int> numBufferRows);
+//  void clear();
+//
+//  // Access to a particular buffer column (dimension)
+//  Row* getBuffer(int dim) { return _col[dim]; }
+//
+//private:
+//  // Backing storage for the underlying buffer
+//  std::vector<Elmt> _buf;
+//
+//  // Base pointers for the first, second and third position components.
+//  std::array<Row*, 3> _col = {{nullptr, nullptr, nullptr}};
+//};
 
 //============================================================================
 
-struct OctreePlanarState {
-  OctreePlanarState(const GeometryParameterSet&);
-
-  OctreePlanarState(const OctreePlanarState&);
-  OctreePlanarState(OctreePlanarState&&);
-  OctreePlanarState& operator=(const OctreePlanarState&);
-  OctreePlanarState& operator=(OctreePlanarState&&);
-
-  bool _planarBufferEnabled;
-  bool _geom_multiple_planar_mode_enable_flag;
-  OctreePlanarBuffer _planarBuffer;
-
-  std::array<int, 3> _rate{{128 * 8, 128 * 8, 128 * 8}};
-  int _localDensity = 1024 * 4;
-
-  std::array<int, 3> _rateThreshold;
-
-  void initPlanes(const Vec3<int>& planarDepth);
-  void updateRate(int occupancy, int numSiblings);
-  void isEligible(bool eligible[3]);
-};
+//struct OctreePlanarState {
+//  OctreePlanarState(const GeometryParameterSet&);
+//
+//  OctreePlanarState(const OctreePlanarState&);
+//  OctreePlanarState(OctreePlanarState&&);
+//  OctreePlanarState& operator=(const OctreePlanarState&);
+//  OctreePlanarState& operator=(OctreePlanarState&&);
+//
+//  bool _planarBufferEnabled;
+//  bool _geom_multiple_planar_mode_enable_flag;
+//  OctreePlanarBuffer _planarBuffer;
+//
+//  std::array<int, 3> _rate{{128 * 8, 128 * 8, 128 * 8}};
+//  int _localDensity = 1024 * 4;
+//
+//  std::array<int, 3> _rateThreshold;
+//
+//  void initPlanes(const Vec3<int>& planarDepth);
+//  void updateRate(int occupancy, int numSiblings);
+//  void isEligible(bool eligible[3]);
+//};
 
 // determine if a 222 block is planar
-void setPlanesFromOccupancy(int occupancy, OctreeNodePlanar& planar);
+//void setPlanesFromOccupancy(int occupancy, OctreeNodePlanar& planar);
 
 int maskPlanarX(const OctreeNodePlanar& planar);
 int maskPlanarY(const OctreeNodePlanar& planar);
@@ -675,19 +675,19 @@ int maskPlanarZ(const OctreeNodePlanar& planar);
 
 void maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes);
 
-int determineContextAngleForPlanar(
-  PCCOctree3Node& node,
-  const Vec3<int>& nodeSizeLog2,
-  const Vec3<int>& angularOrigin,
-  const int* zLaser,
-  const int* thetaLaser,
-  const int numLasers,
-  int deltaAngle,
-  const AzimuthalPhiZi& phiZi,
-  int* phiBuffer,
-  int* contextAnglePhiX,
-  int* contextAnglePhiY,
-  Vec3<uint32_t> quantMasks);
+//int determineContextAngleForPlanar(
+//  PCCOctree3Node& node,
+//  const Vec3<int>& nodeSizeLog2,
+//  const Vec3<int>& angularOrigin,
+//  const int* zLaser,
+//  const int* thetaLaser,
+//  const int numLasers,
+//  int deltaAngle,
+//  const AzimuthalPhiZi& phiZi,
+//  int* phiBuffer,
+//  int* contextAnglePhiX,
+//  int* contextAnglePhiY,
+//  Vec3<uint32_t> quantMasks);
 
 //---------------------------------------------------------------------------
 

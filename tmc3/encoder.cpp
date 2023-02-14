@@ -204,9 +204,9 @@ PCCTMC3Encoder3::compress(
     _ctxtMemAttrs.resize(params->sps.attributeSets.size());
     
     if (params->gps.globalMotionEnabled) {
-      if (params->gps.predgeom_enabled_flag) {
-        /*_refFrameSph.parseMotionParams(motionVectorFileName, 1.0);*/
-      } else if (!params->gps.trisoup_enabled_flag) {
+      /*if (params->gps.predgeom_enabled_flag) {
+        _refFrameSph.parseMotionParams(motionVectorFileName, 1.0);
+      } else*/ if (!params->gps.trisoup_enabled_flag) {
         params->interGeom.motionParams.parseFile(
           motionVectorFileName, params->codedGeomScale);
         deriveMotionParams(params);
@@ -889,51 +889,51 @@ PCCTMC3Encoder3::compressPartition(
     // Convert cartesian positions to spherical for use in attribute coding.
     // NB: this retains the original cartesian positions to restore afterwards
     std::vector<pcc::point_t> altPositions;
-    if (attr_aps.spherical_coord_flag) {
-      // If predgeom was used, re-use the internal positions rather than
-      // calculating afresh.
-      Box3<int> bboxRpl;
+    //if (attr_aps.spherical_coord_flag) {
+    //  // If predgeom was used, re-use the internal positions rather than
+    //  // calculating afresh.
+    //  Box3<int> bboxRpl;
 
-      pcc::point_t minPos = 0;
+    //  pcc::point_t minPos = 0;
 
-      if (_gps->predgeom_enabled_flag) {
-        altPositions = _posSph;
-        bboxRpl = Box3<int>(altPositions.begin(), altPositions.end());
-        minPos = bboxRpl.min;
-        if (attrInterPredParams.enableAttrInterPred) {
-          for (auto i = 0; i < 3; i++)
-            minPos[i] = minPos[i] < minPos_ref[i] ? minPos[i] : minPos_ref[i];
-          auto minPos_shift = minPos_ref - minPos;
+    //  if (_gps->predgeom_enabled_flag) {
+    //    altPositions = _posSph;
+    //    bboxRpl = Box3<int>(altPositions.begin(), altPositions.end());
+    //    minPos = bboxRpl.min;
+    //    if (attrInterPredParams.enableAttrInterPred) {
+    //      for (auto i = 0; i < 3; i++)
+    //        minPos[i] = minPos[i] < minPos_ref[i] ? minPos[i] : minPos_ref[i];
+    //      auto minPos_shift = minPos_ref - minPos;
 
-          if (minPos_shift[0] || minPos_shift[1] || minPos_shift[2])
-            offsetAndScaleShift(
-              minPos_shift, attr_aps.attr_coord_scale,
-              &attrInterPredParams.referencePointCloud[0],
-              &attrInterPredParams.referencePointCloud[0]
-                + attrInterPredParams.getPointCount());
-        }
-        minPos_ref = minPos;
-      } else {
-        altPositions.resize(pointCloud.getPointCount());
+    //      if (minPos_shift[0] || minPos_shift[1] || minPos_shift[2])
+    //        offsetAndScaleShift(
+    //          minPos_shift, attr_aps.attr_coord_scale,
+    //          &attrInterPredParams.referencePointCloud[0],
+    //          &attrInterPredParams.referencePointCloud[0]
+    //            + attrInterPredParams.getPointCount());
+    //    }
+    //    minPos_ref = minPos;
+    //  } else {
+    //    altPositions.resize(pointCloud.getPointCount());
 
-        auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
-        bboxRpl = convertXyzToRpl(
-          laserOrigin, _gps->angularTheta.data(), _gps->angularTheta.size(),
-          &pointCloud[0], &pointCloud[0] + pointCloud.getPointCount(),
-          altPositions.data());
+    //    auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
+    //    bboxRpl = convertXyzToRpl(
+    //      laserOrigin, _gps->angularTheta.data(), _gps->angularTheta.size(),
+    //      &pointCloud[0], &pointCloud[0] + pointCloud.getPointCount(),
+    //      altPositions.data());
 
-        if(!attr_aps.attrInterPredictionEnabled){
-          minPos = bboxRpl.min;
-        }
-      }
+    //    if(!attr_aps.attrInterPredictionEnabled){
+    //      minPos = bboxRpl.min;
+    //    }
+    //  }
 
-      offsetAndScale(
-        minPos, attr_aps.attr_coord_scale, altPositions.data(),      
-        //bboxRpl.min, attr_aps.attr_coord_scale, altPositions.data(),
-        altPositions.data() + altPositions.size());
+    //  offsetAndScale(
+    //    minPos, attr_aps.attr_coord_scale, altPositions.data(),      
+    //    //bboxRpl.min, attr_aps.attr_coord_scale, altPositions.data(),
+    //    altPositions.data() + altPositions.size());
 
-      pointCloud.swapPoints(altPositions);
-    }
+    //  pointCloud.swapPoints(altPositions);
+    //}
 
     // calculate dist2 for this slice
     abh.attr_dist2_delta = 0;
@@ -948,7 +948,7 @@ PCCTMC3Encoder3::compressPartition(
     /*if (!attrEncoder->isReusable(attr_aps, abh)) //NOTE[FT] :always true
       attrEncoder = makeAttributeEncoder();*/
     
-	if (!attr_aps.spherical_coord_flag)
+	if (/*!attr_aps.spherical_coord_flag*/ true)
       for (auto i = 0; i < pointCloud.getPointCount(); i++)
         pointCloud[i] += _sliceOrigin; 
 
@@ -956,19 +956,19 @@ PCCTMC3Encoder3::compressPartition(
     attrEncoder->encode(
       *_sps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud, &payload, attrInterPredParams);
 
-    if (!attr_aps.spherical_coord_flag)
+    if (/*!attr_aps.spherical_coord_flag*/ true)
       for (auto i = 0; i < pointCloud.getPointCount(); i++)
         pointCloud[i] -= _sliceOrigin;    
 
-    if (attr_aps.spherical_coord_flag){
+   /* if (attr_aps.spherical_coord_flag){
       pointCloud.swapPoints(altPositions);
-    }
+    }*/
 
-    if(attr_aps.spherical_coord_flag){
+    /*if(attr_aps.spherical_coord_flag){
       attrInterPredParams.referencePointCloud = pointCloud;
       attrInterPredParams.referencePointCloud.swapPoints(altPositions);     
     }
-    else{
+    else*/{
       attrInterPredParams.referencePointCloud.clear();
     }
 
@@ -998,9 +998,9 @@ PCCTMC3Encoder3::compressPartition(
   }
 
   if (_gps->interPredictionEnabledFlag) {
-    if (_gps->predgeom_enabled_flag){
-      /*_refFrameSph.insert(_posSph);*/
-    }
+    /*if (_gps->predgeom_enabled_flag){
+      _refFrameSph.insert(_posSph);
+    }*/
   }
 
   // Note the current slice id for loss detection with entropy continuation
@@ -1053,7 +1053,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.gm_matrix = {65536, 0, 0, 0, 65536, 0, 0, 0, 65536};
   gbh.gm_trans = 0;
   gbh.gm_thresh = {0, 0};
-  if (gbh.interPredictionEnabledFlag && !_gps->predgeom_enabled_flag) {
+  if (gbh.interPredictionEnabledFlag && /*!_gps->predgeom_enabled_flag*/ true) {
     gbh.lpu_type = params->interGeom.lpuType;
     gbh.motion_block_size = params->gbh.motion_block_size;
   }
@@ -1078,7 +1078,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.maxRootNodeDimLog2 = gbh.rootNodeSizeLog2.max();
 
   // use a cubic node if qtbt is disabled
-  if (!_gps->predgeom_enabled_flag && !_gps->qtbt_enabled_flag)
+  if (/*!_gps->predgeom_enabled_flag*/ true && !_gps->qtbt_enabled_flag)
     gbh.rootNodeSizeLog2 = gbh.maxRootNodeDimLog2;
 
   // todo(df): remove estimate when arithmetic codec is replaced
@@ -1105,12 +1105,12 @@ PCCTMC3Encoder3::encodeGeometryBrick(
       ctxtMem.reset();
   }
 
-  if (_gps->predgeom_enabled_flag) {
-    /*  _refFrameSph.setInterEnabled(gbh.interPredictionEnabledFlag);
+  /*if (_gps->predgeom_enabled_flag) {
+      _refFrameSph.setInterEnabled(gbh.interPredictionEnabledFlag);
     encodePredictiveGeometry(
       params->predGeom, *_gps, gbh, pointCloud, &_posSph, _refFrameSph,
-      *_ctxtMemPredGeom, arithmeticEncoders[0].get());*/
-  } else if (!_gps->trisoup_enabled_flag) {
+      *_ctxtMemPredGeom, arithmeticEncoders[0].get());
+  } else*/ if (!_gps->trisoup_enabled_flag) {
     PCCPointSet3 compensatedPointCloud;
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,

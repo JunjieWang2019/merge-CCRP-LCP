@@ -256,241 +256,241 @@ CtxMapOctreeOccupancy::CtxMapOctreeOccupancy()
 uint32_t
 mkIdcmEnableMask(const GeometryParameterSet& gps)
 {
-  if (!gps.inferred_direct_coding_mode)
+  if (/*!gps.inferred_direct_coding_mode*/ true)  //NOTE[FT]: FORCING idcm to 0, hence !0 is true
     return 0;
 
-  // intense IDCM requires idcm to be enabled all the time
-  if (gps.inferred_direct_coding_mode != 1)
-    return 0xffffffff;
+  //// intense IDCM requires idcm to be enabled all the time
+  //if (gps.inferred_direct_coding_mode != 1)
+  //  return 0xffffffff;
 
-  // if planar is disabled, there is no control over the rate
-  if (/*!gps.geom_planar_mode_enabled_flag*/ true)
-    return 0xffffffff;
+  //// if planar is disabled, there is no control over the rate
+  //if (/*!gps.geom_planar_mode_enabled_flag*/ true)
+  //  return 0xffffffff;
 
-  int mask = 0, acc = 0;
-  for (int i = 0; i < 32; i++) {
-    acc += gps.geom_idcm_rate_minus1 + 1;
-    mask |= (acc >= 32) << i;
-    acc &= 0x1f;
-  }
+  //int mask = 0, acc = 0;
+  //for (int i = 0; i < 32; i++) {
+  //  acc += gps.geom_idcm_rate_minus1 + 1;
+  //  mask |= (acc >= 32) << i;
+  //  acc &= 0x1f;
+  //}
 
-  return mask;
+  //return mask;
 }
 
 //============================================================================
 // determine if a 222 block is planar
 
-void
-setPlanesFromOccupancy(int occupancy, OctreeNodePlanar& planar)
-{
-  uint8_t plane0 = 0;
-  plane0 |= !!(occupancy & 0x0f) << 0;
-  plane0 |= !!(occupancy & 0x33) << 1;
-  plane0 |= !!(occupancy & 0x55) << 2;
-
-  uint8_t plane1 = 0;
-  plane1 |= !!(occupancy & 0xf0) << 0;
-  plane1 |= !!(occupancy & 0xcc) << 1;
-  plane1 |= !!(occupancy & 0xaa) << 2;
-
-  // Only planar if a single plane normal to an axis is occupied
-  planar.planarMode = plane0 ^ plane1;
-  planar.planePosBits = planar.planarMode & plane1;
-}
+//void
+//setPlanesFromOccupancy(int occupancy, OctreeNodePlanar& planar)
+//{
+//  uint8_t plane0 = 0;
+//  plane0 |= !!(occupancy & 0x0f) << 0;
+//  plane0 |= !!(occupancy & 0x33) << 1;
+//  plane0 |= !!(occupancy & 0x55) << 2;
+//
+//  uint8_t plane1 = 0;
+//  plane1 |= !!(occupancy & 0xf0) << 0;
+//  plane1 |= !!(occupancy & 0xcc) << 1;
+//  plane1 |= !!(occupancy & 0xaa) << 2;
+//
+//  // Only planar if a single plane normal to an axis is occupied
+//  planar.planarMode = plane0 ^ plane1;
+//  planar.planePosBits = planar.planarMode & plane1;
+//}
 
 //============================================================================
 // :: Default planar buffer methods
 
-OctreePlanarBuffer::OctreePlanarBuffer() = default;
-OctreePlanarBuffer::OctreePlanarBuffer(OctreePlanarBuffer&& rhs) = default;
-OctreePlanarBuffer::~OctreePlanarBuffer() = default;
-
-OctreePlanarBuffer&
-OctreePlanarBuffer::operator=(OctreePlanarBuffer&& rhs) = default;
+//OctreePlanarBuffer::OctreePlanarBuffer() = default;
+//OctreePlanarBuffer::OctreePlanarBuffer(OctreePlanarBuffer&& rhs) = default;
+//OctreePlanarBuffer::~OctreePlanarBuffer() = default;
+//
+//OctreePlanarBuffer&
+//OctreePlanarBuffer::operator=(OctreePlanarBuffer&& rhs) = default;
 
 //----------------------------------------------------------------------------
 // :: Copying the planar buffer
 
-OctreePlanarBuffer::OctreePlanarBuffer(const OctreePlanarBuffer& rhs)
-{
-  *this = rhs;
-}
+//OctreePlanarBuffer::OctreePlanarBuffer(const OctreePlanarBuffer& rhs)
+//{
+//  *this = rhs;
+//}
 
 //----------------------------------------------------------------------------
 
-OctreePlanarBuffer&
-OctreePlanarBuffer::operator=(const OctreePlanarBuffer& rhs)
-{
-  _buf = rhs._buf;
-  _col = rhs._col;
-  // Afjust the column offsets to the new base address
-  auto oldBase = _col[0];
-  auto newBase = reinterpret_cast<Row*>(&_buf.front());
-  for (auto& ptr : _col)
-    ptr = ptr - oldBase + newBase;
-  return *this;
-}
+//OctreePlanarBuffer&
+//OctreePlanarBuffer::operator=(const OctreePlanarBuffer& rhs)
+//{
+//  _buf = rhs._buf;
+//  _col = rhs._col;
+//  // Afjust the column offsets to the new base address
+//  auto oldBase = _col[0];
+//  auto newBase = reinterpret_cast<Row*>(&_buf.front());
+//  for (auto& ptr : _col)
+//    ptr = ptr - oldBase + newBase;
+//  return *this;
+//}
 
 //----------------------------------------------------------------------------
 // :: Planar buffer management
 
-void
-OctreePlanarBuffer::resize(Vec3<int> numBufferRows)
-{
-  if (maskC < numBufferRows[0])
-    numBufferRows[0] = maskC + 1;
-  if (maskC < numBufferRows[1])
-    numBufferRows[1] = maskC + 1;
-  if (maskC < numBufferRows[2])
-    numBufferRows[2] = maskC + 1;
-
-  // NB: based upon the expected max buffer size of 3*14k, just allocate the
-  //     maximum buffer size.
-  int size = numBufferRows[0] + numBufferRows[1] + numBufferRows[2];
-  _buf.clear();
-  _buf.reserve(rowSize * 3 * (maskC + 1));
-  _buf.resize(rowSize * size, Elmt{0, -2});
-
-  // NB: the flat backing buffer is cast with a row stride for access
-  _col[0] = reinterpret_cast<Row*>(&_buf.front());
-  _col[1] = _col[0] + numBufferRows[0];
-  _col[2] = _col[1] + numBufferRows[1];
-}
+//void
+//OctreePlanarBuffer::resize(Vec3<int> numBufferRows)
+//{
+//  if (maskC < numBufferRows[0])
+//    numBufferRows[0] = maskC + 1;
+//  if (maskC < numBufferRows[1])
+//    numBufferRows[1] = maskC + 1;
+//  if (maskC < numBufferRows[2])
+//    numBufferRows[2] = maskC + 1;
+//
+//  // NB: based upon the expected max buffer size of 3*14k, just allocate the
+//  //     maximum buffer size.
+//  int size = numBufferRows[0] + numBufferRows[1] + numBufferRows[2];
+//  _buf.clear();
+//  _buf.reserve(rowSize * 3 * (maskC + 1));
+//  _buf.resize(rowSize * size, Elmt{0, -2});
+//
+//  // NB: the flat backing buffer is cast with a row stride for access
+//  _col[0] = reinterpret_cast<Row*>(&_buf.front());
+//  _col[1] = _col[0] + numBufferRows[0];
+//  _col[2] = _col[1] + numBufferRows[1];
+//}
 
 //----------------------------------------------------------------------------
 
-void
-OctreePlanarBuffer::clear()
-{
-  _buf.clear();
-  _col = {nullptr, nullptr, nullptr};
-}
+//void
+//OctreePlanarBuffer::clear()
+//{
+//  _buf.clear();
+//  _col = {nullptr, nullptr, nullptr};
+//}
 
 //============================================================================
 // intitialize planes for planar pred
 
-OctreePlanarState::OctreePlanarState(const GeometryParameterSet& gps)
-{
-  _planarBufferEnabled =
-    /*gps.geom_planar_mode_enabled_flag && !gps.planar_buffer_disabled_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
-  _geom_multiple_planar_mode_enable_flag = /*gps.geom_planar_mode_enabled_flag
-    && gps.geom_multiple_planar_mode_enable_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
-  _rateThreshold[0] = gps.geom_planar_threshold0 << 4;
-  _rateThreshold[1] = gps.geom_planar_threshold1 << 4;
-  _rateThreshold[2] = gps.geom_planar_threshold2 << 4;
-}
+//OctreePlanarState::OctreePlanarState(const GeometryParameterSet& gps)
+//{
+//  _planarBufferEnabled =
+//    /*gps.geom_planar_mode_enabled_flag && !gps.planar_buffer_disabled_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
+//  _geom_multiple_planar_mode_enable_flag = /*gps.geom_planar_mode_enabled_flag
+//    && gps.geom_multiple_planar_mode_enable_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
+//  _rateThreshold[0] = gps.geom_planar_threshold0 << 4;
+//  _rateThreshold[1] = gps.geom_planar_threshold1 << 4;
+//  _rateThreshold[2] = gps.geom_planar_threshold2 << 4;
+//}
 
-void
-OctreePlanarState::initPlanes(const Vec3<int>& depthXyz)
-{
-  if (!_planarBufferEnabled)
-    return;
-
-  Vec3<int> numBufferRows = {
-    1 << depthXyz[0], 1 << depthXyz[1], 1 << depthXyz[2]};
-  _planarBuffer.resize(numBufferRows);
-}
+//void
+//OctreePlanarState::initPlanes(const Vec3<int>& depthXyz)
+//{
+//  if (!_planarBufferEnabled)
+//    return;
+//
+//  Vec3<int> numBufferRows = {
+//    1 << depthXyz[0], 1 << depthXyz[1], 1 << depthXyz[2]};
+//  _planarBuffer.resize(numBufferRows);
+//}
 
 //============================================================================
 // update the plane rate depending on the occupancy
 
-void
-OctreePlanarState::updateRate(int occupancy, int numSiblings)
-{
-  bool isPlanarX = !((occupancy & 0xf0) && (occupancy & 0x0f));
-  bool isPlanarY = !((occupancy & 0xcc) && (occupancy & 0x33));
-  bool isPlanarZ = !((occupancy & 0x55) && (occupancy & 0xaa));
-
-  _rate[0] = (255 * _rate[0] + (isPlanarX ? 256 * 8 : 0) + 128) >> 8;
-  _rate[1] = (255 * _rate[1] + (isPlanarY ? 256 * 8 : 0) + 128) >> 8;
-  _rate[2] = (255 * _rate[2] + (isPlanarZ ? 256 * 8 : 0) + 128) >> 8;
-
-  _localDensity = (255 * _localDensity + 1024 * numSiblings) >> 8;
-}
+//void
+//OctreePlanarState::updateRate(int occupancy, int numSiblings)
+//{
+//  bool isPlanarX = !((occupancy & 0xf0) && (occupancy & 0x0f));
+//  bool isPlanarY = !((occupancy & 0xcc) && (occupancy & 0x33));
+//  bool isPlanarZ = !((occupancy & 0x55) && (occupancy & 0xaa));
+//
+//  _rate[0] = (255 * _rate[0] + (isPlanarX ? 256 * 8 : 0) + 128) >> 8;
+//  _rate[1] = (255 * _rate[1] + (isPlanarY ? 256 * 8 : 0) + 128) >> 8;
+//  _rate[2] = (255 * _rate[2] + (isPlanarZ ? 256 * 8 : 0) + 128) >> 8;
+//
+//  _localDensity = (255 * _localDensity + 1024 * numSiblings) >> 8;
+//}
 
 //============================================================================
 // planar eligbility
 
-void
-OctreePlanarState::isEligible(bool eligible[3])
-{
-  eligible[0] = false;
-  eligible[1] = false;
-  eligible[2] = false;
-  if (_localDensity >= 3 * 1024) {
-    return;
-  }
-
-  if (_rate[0] >= _rate[1] && _rate[0] >= _rate[2]) {
-    // planar x dominates
-    eligible[0] = _rate[0] >= _rateThreshold[0];
-    if (_rate[1] >= _rate[2]) {
-      eligible[1] = _rate[1] >= _rateThreshold[1];
-      eligible[2] = _rate[2] >= _rateThreshold[2];
-    } else {
-      eligible[2] = _rate[2] >= _rateThreshold[1];
-      eligible[1] = _rate[1] >= _rateThreshold[2];
-    }
-  } else if (_rate[1] >= _rate[0] && _rate[1] >= _rate[2]) {
-    // planar y dominates
-    eligible[1] = _rate[1] >= _rateThreshold[0];
-    if (_rate[0] >= _rate[2]) {
-      eligible[0] = _rate[0] >= _rateThreshold[1];
-      eligible[2] = _rate[2] >= _rateThreshold[2];
-    } else {
-      eligible[2] = _rate[2] >= _rateThreshold[1];
-      eligible[0] = _rate[0] >= _rateThreshold[2];
-    }
-  } else if (_rate[2] >= _rate[0] && _rate[2] >= _rate[1]) {
-    // planar z dominates
-    eligible[2] = _rate[2] >= _rateThreshold[0];
-    if (_rate[0] >= _rate[1]) {
-      eligible[0] = _rate[0] >= _rateThreshold[1];
-      eligible[1] = _rate[1] >= _rateThreshold[2];
-    } else {
-      eligible[1] = _rate[1] >= _rateThreshold[1];
-      eligible[0] = _rate[0] >= _rateThreshold[2];
-    }
-  }
-}
-
-//----------------------------------------------------------------------------
-
-OctreePlanarState::OctreePlanarState(const OctreePlanarState& rhs)
-{
-  *this = rhs;
-}
+//void
+//OctreePlanarState::isEligible(bool eligible[3])
+//{
+//  eligible[0] = false;
+//  eligible[1] = false;
+//  eligible[2] = false;
+//  if (_localDensity >= 3 * 1024) {
+//    return;
+//  }
+//
+//  if (_rate[0] >= _rate[1] && _rate[0] >= _rate[2]) {
+//    // planar x dominates
+//    eligible[0] = _rate[0] >= _rateThreshold[0];
+//    if (_rate[1] >= _rate[2]) {
+//      eligible[1] = _rate[1] >= _rateThreshold[1];
+//      eligible[2] = _rate[2] >= _rateThreshold[2];
+//    } else {
+//      eligible[2] = _rate[2] >= _rateThreshold[1];
+//      eligible[1] = _rate[1] >= _rateThreshold[2];
+//    }
+//  } else if (_rate[1] >= _rate[0] && _rate[1] >= _rate[2]) {
+//    // planar y dominates
+//    eligible[1] = _rate[1] >= _rateThreshold[0];
+//    if (_rate[0] >= _rate[2]) {
+//      eligible[0] = _rate[0] >= _rateThreshold[1];
+//      eligible[2] = _rate[2] >= _rateThreshold[2];
+//    } else {
+//      eligible[2] = _rate[2] >= _rateThreshold[1];
+//      eligible[0] = _rate[0] >= _rateThreshold[2];
+//    }
+//  } else if (_rate[2] >= _rate[0] && _rate[2] >= _rate[1]) {
+//    // planar z dominates
+//    eligible[2] = _rate[2] >= _rateThreshold[0];
+//    if (_rate[0] >= _rate[1]) {
+//      eligible[0] = _rate[0] >= _rateThreshold[1];
+//      eligible[1] = _rate[1] >= _rateThreshold[2];
+//    } else {
+//      eligible[1] = _rate[1] >= _rateThreshold[1];
+//      eligible[0] = _rate[0] >= _rateThreshold[2];
+//    }
+//  }
+//}
 
 //----------------------------------------------------------------------------
 
-OctreePlanarState::OctreePlanarState(OctreePlanarState&& rhs)
-{
-  *this = std::move(rhs);
-}
+//OctreePlanarState::OctreePlanarState(const OctreePlanarState& rhs)
+//{
+//  *this = rhs;
+//}
 
 //----------------------------------------------------------------------------
 
-OctreePlanarState&
-OctreePlanarState::operator=(const OctreePlanarState& rhs)
-{
-  _planarBuffer = rhs._planarBuffer;
-  _rate = rhs._rate;
-  _localDensity = rhs._localDensity;
-  _rateThreshold = rhs._rateThreshold;
-  return *this;
-}
+//OctreePlanarState::OctreePlanarState(OctreePlanarState&& rhs)
+//{
+//  *this = std::move(rhs);
+//}
 
 //----------------------------------------------------------------------------
 
-OctreePlanarState&
-OctreePlanarState::operator=(OctreePlanarState&& rhs)
-{
-  _planarBuffer = std::move(rhs._planarBuffer);
-  _rate = std::move(rhs._rateThreshold);
-  _localDensity = std::move(rhs._localDensity);
-  _rateThreshold = std::move(rhs._rateThreshold);
-  return *this;
-}
+//OctreePlanarState&
+//OctreePlanarState::operator=(const OctreePlanarState& rhs)
+//{
+//  _planarBuffer = rhs._planarBuffer;
+//  _rate = rhs._rate;
+//  _localDensity = rhs._localDensity;
+//  _rateThreshold = rhs._rateThreshold;
+//  return *this;
+//}
+
+//----------------------------------------------------------------------------
+
+//OctreePlanarState&
+//OctreePlanarState::operator=(OctreePlanarState&& rhs)
+//{
+//  _planarBuffer = std::move(rhs._planarBuffer);
+//  _rate = std::move(rhs._rateThreshold);
+//  _localDensity = std::move(rhs._localDensity);
+//  _rateThreshold = std::move(rhs._rateThreshold);
+//  return *this;
+//}
 
 //============================================================================
 // directional mask depending on the planarity
@@ -549,120 +549,120 @@ maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes)
 //----------------------------------------------------------------------------
 // determine angular context for planar integer implementation.
 
-int
-determineContextAngleForPlanar(
-  PCCOctree3Node& node,
-  const Vec3<int>& nodeSizeLog2,
-  const Vec3<int>& angularOrigin,
-  const int* zLaser,
-  const int* thetaLaser,
-  const int numLasers,
-  int deltaAngle,
-  const AzimuthalPhiZi& phiZi,
-  int* phiBuffer,
-  int* contextAnglePhiX,
-  int* contextAnglePhiY,
-  Vec3<uint32_t> quantMasks)
-{
-  Vec3<int> nodePos = node.pos << nodeSizeLog2;
-  Vec3<int> midNode = (1 << nodeSizeLog2) >> 1;
-  Vec3<int> nodeSize = 1 << nodeSizeLog2;
-
-  if (node.qp) {
-    OctreeAngPosScaler quant(node.qp, quantMasks);
-    nodePos = quant.scaleNs(nodePos);
-    midNode = quant.scaleNs(midNode);
-    nodeSize = quant.scaleNs(nodeSize);
-  }
-
-  // eligibility
-  auto nodePosLidar = nodePos - angularOrigin;
-  uint64_t xLidar = std::abs(((nodePosLidar[0] + midNode[0]) << 8) - 128);
-  uint64_t yLidar = std::abs(((nodePosLidar[1] + midNode[1]) << 8) - 128);
-
-  uint64_t rL1 = (xLidar + yLidar) >> 1;
-  uint64_t deltaAngleR = deltaAngle * rL1;
-  if (numLasers > 1 && deltaAngleR <= uint64_t(midNode[2]) << 26)
-    return -1;
-
-  // determine inverse of r  (1/sqrt(r2) = irsqrt(r2))
-  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
-  uint64_t rInv = irsqrt(r2);
-
-  // determine non-corrected theta
-  int64_t zLidar = ((nodePosLidar[2] + midNode[2]) << 1) - 1;
-  int64_t theta = zLidar * rInv;
-  int theta32 = theta >= 0 ? theta >> 15 : -((-theta) >> 15);
-
-  // determine laser
-  int laserIndex = int(node.laserIndex);
-  if (numLasers == 1)
-    laserIndex = 0;
-  else if (laserIndex == 255 || deltaAngleR <= uint64_t(midNode[2]) << 28) {
-    auto end = thetaLaser + numLasers - 1;
-    auto it = std::upper_bound(thetaLaser + 1, end, theta32);
-    if (theta32 - *std::prev(it) <= *it - theta32)
-      --it;
-
-    laserIndex = std::distance(thetaLaser, it);
-    node.laserIndex = uint8_t(laserIndex);
-  }
-
-  // -- PHI  --
-  //angles
-  int posx = nodePosLidar[0];
-  int posy = nodePosLidar[1];
-  int phiNode = iatan2(posy + midNode[1], posx + midNode[0]);
-  int phiNode0 = iatan2(posy, posx);
-
-  // find predictor
-  int predPhi = phiBuffer[laserIndex];
-  if (predPhi == 0x80000000)
-    predPhi = phiNode;
-
-  // use predictor
-  if (predPhi != 0x80000000) {
-    // elementary shift predictor
-    int Nshift =
-      ((predPhi - phiNode) * phiZi.invDelta(laserIndex) + (1 << 29)) >> 30;
-    predPhi -= phiZi.delta(laserIndex) * Nshift;
-
-    // ctx azimutal x or y
-    int angleL = phiNode0 - predPhi;
-    int angleR = phiNode - predPhi;
-    int contextAnglePhi =
-      (angleL >= 0 && angleR >= 0) || (angleL < 0 && angleR < 0) ? 2 : 0;
-    angleL = std::abs(angleL);
-    angleR = std::abs(angleR);
-    if (angleL > angleR) {
-      contextAnglePhi++;
-      std::swap(angleL, angleR);
-    }
-    if (angleR > (angleL << 2))
-      contextAnglePhi += 4;
-
-    if (std::abs(posx) <= std::abs(posy))
-      *contextAnglePhiX = contextAnglePhi;
-    else
-      *contextAnglePhiY = contextAnglePhi;
-  }
-
-  // -- THETA --
-  int thetaLaserDelta = thetaLaser[laserIndex] - theta32;
-  int64_t hr = zLaser[laserIndex] * rInv;
-  thetaLaserDelta += hr >= 0 ? -(hr >> 17) : ((-hr) >> 17);
-
-  int64_t zShift = (rInv * nodeSize[2]) >> 20;
-  int thetaLaserDeltaBot = thetaLaserDelta + zShift;
-  int thetaLaserDeltaTop = thetaLaserDelta - zShift;
-  int contextAngle = thetaLaserDelta >= 0 ? 0 : 1;
-  if (thetaLaserDeltaTop >= 0)
-    contextAngle += 2;
-  else if (thetaLaserDeltaBot < 0)
-    contextAngle += 2;
-
-  return contextAngle;
-}
+//int
+//determineContextAngleForPlanar(
+//  PCCOctree3Node& node,
+//  const Vec3<int>& nodeSizeLog2,
+//  const Vec3<int>& angularOrigin,
+//  const int* zLaser,
+//  const int* thetaLaser,
+//  const int numLasers,
+//  int deltaAngle,
+//  const AzimuthalPhiZi& phiZi,
+//  int* phiBuffer,
+//  int* contextAnglePhiX,
+//  int* contextAnglePhiY,
+//  Vec3<uint32_t> quantMasks)
+//{
+//  Vec3<int> nodePos = node.pos << nodeSizeLog2;
+//  Vec3<int> midNode = (1 << nodeSizeLog2) >> 1;
+//  Vec3<int> nodeSize = 1 << nodeSizeLog2;
+//
+//  if (node.qp) {
+//    OctreeAngPosScaler quant(node.qp, quantMasks);
+//    nodePos = quant.scaleNs(nodePos);
+//    midNode = quant.scaleNs(midNode);
+//    nodeSize = quant.scaleNs(nodeSize);
+//  }
+//
+//  // eligibility
+//  auto nodePosLidar = nodePos - angularOrigin;
+//  uint64_t xLidar = std::abs(((nodePosLidar[0] + midNode[0]) << 8) - 128);
+//  uint64_t yLidar = std::abs(((nodePosLidar[1] + midNode[1]) << 8) - 128);
+//
+//  uint64_t rL1 = (xLidar + yLidar) >> 1;
+//  uint64_t deltaAngleR = deltaAngle * rL1;
+//  if (numLasers > 1 && deltaAngleR <= uint64_t(midNode[2]) << 26)
+//    return -1;
+//
+//  // determine inverse of r  (1/sqrt(r2) = irsqrt(r2))
+//  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
+//  uint64_t rInv = irsqrt(r2);
+//
+//  // determine non-corrected theta
+//  int64_t zLidar = ((nodePosLidar[2] + midNode[2]) << 1) - 1;
+//  int64_t theta = zLidar * rInv;
+//  int theta32 = theta >= 0 ? theta >> 15 : -((-theta) >> 15);
+//
+//  // determine laser
+//  int laserIndex = int(node.laserIndex);
+//  if (numLasers == 1)
+//    laserIndex = 0;
+//  else if (laserIndex == 255 || deltaAngleR <= uint64_t(midNode[2]) << 28) {
+//    auto end = thetaLaser + numLasers - 1;
+//    auto it = std::upper_bound(thetaLaser + 1, end, theta32);
+//    if (theta32 - *std::prev(it) <= *it - theta32)
+//      --it;
+//
+//    laserIndex = std::distance(thetaLaser, it);
+//    node.laserIndex = uint8_t(laserIndex);
+//  }
+//
+//  // -- PHI  --
+//  //angles
+//  int posx = nodePosLidar[0];
+//  int posy = nodePosLidar[1];
+//  int phiNode = iatan2(posy + midNode[1], posx + midNode[0]);
+//  int phiNode0 = iatan2(posy, posx);
+//
+//  // find predictor
+//  int predPhi = phiBuffer[laserIndex];
+//  if (predPhi == 0x80000000)
+//    predPhi = phiNode;
+//
+//  // use predictor
+//  if (predPhi != 0x80000000) {
+//    // elementary shift predictor
+//    int Nshift =
+//      ((predPhi - phiNode) * phiZi.invDelta(laserIndex) + (1 << 29)) >> 30;
+//    predPhi -= phiZi.delta(laserIndex) * Nshift;
+//
+//    // ctx azimutal x or y
+//    int angleL = phiNode0 - predPhi;
+//    int angleR = phiNode - predPhi;
+//    int contextAnglePhi =
+//      (angleL >= 0 && angleR >= 0) || (angleL < 0 && angleR < 0) ? 2 : 0;
+//    angleL = std::abs(angleL);
+//    angleR = std::abs(angleR);
+//    if (angleL > angleR) {
+//      contextAnglePhi++;
+//      std::swap(angleL, angleR);
+//    }
+//    if (angleR > (angleL << 2))
+//      contextAnglePhi += 4;
+//
+//    if (std::abs(posx) <= std::abs(posy))
+//      *contextAnglePhiX = contextAnglePhi;
+//    else
+//      *contextAnglePhiY = contextAnglePhi;
+//  }
+//
+//  // -- THETA --
+//  int thetaLaserDelta = thetaLaser[laserIndex] - theta32;
+//  int64_t hr = zLaser[laserIndex] * rInv;
+//  thetaLaserDelta += hr >= 0 ? -(hr >> 17) : ((-hr) >> 17);
+//
+//  int64_t zShift = (rInv * nodeSize[2]) >> 20;
+//  int thetaLaserDeltaBot = thetaLaserDelta + zShift;
+//  int thetaLaserDeltaTop = thetaLaserDelta - zShift;
+//  int contextAngle = thetaLaserDelta >= 0 ? 0 : 1;
+//  if (thetaLaserDeltaTop >= 0)
+//    contextAngle += 2;
+//  else if (thetaLaserDeltaBot < 0)
+//    contextAngle += 2;
+//
+//  return contextAngle;
+//}
 
 //============================================================================
 

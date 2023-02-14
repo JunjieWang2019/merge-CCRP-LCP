@@ -486,12 +486,12 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
   aec.enableBypassStream(_sps->cabac_bypass_stream_enabled_flag);
   aec.start();
 
-  if (_gps->predgeom_enabled_flag) {
-    //_refFrameSph.setInterEnabled(_gbh.interPredictionEnabledFlag);
-    //decodePredictiveGeometry(
-    //  *_gps, _gbh, _currentPointCloud, &_posSph, _refFrameSph,
-    //  *_ctxtMemPredGeom, aec);
-  } else if (!_gps->trisoup_enabled_flag) {
+  /*if (_gps->predgeom_enabled_flag) {
+    _refFrameSph.setInterEnabled(_gbh.interPredictionEnabledFlag);
+    decodePredictiveGeometry(
+      *_gps, _gbh, _currentPointCloud, &_posSph, _refFrameSph,
+      *_ctxtMemPredGeom, aec);
+  } else*/ if (!_gps->trisoup_enabled_flag) {
     if (!_params.minGeomNodeSizeLog2) {
       PCCPointSet3 compensatedPointCloud;
       decodeGeometryOctree(
@@ -584,53 +584,53 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   // Convert cartesian positions to spherical for use in attribute coding.
   // NB: this retains the original cartesian positions to restore afterwards
   std::vector<pcc::point_t> altPositions;
-  if (attr_aps.spherical_coord_flag) {
-    // If predgeom was used, re-use the internal positions rather than
-    // calculating afresh.
-    Box3<int> bboxRpl;
+  //if (attr_aps.spherical_coord_flag) {
+  //  // If predgeom was used, re-use the internal positions rather than
+  //  // calculating afresh.
+  //  Box3<int> bboxRpl;
 
-    pcc::point_t minPos = 0;
+  //  pcc::point_t minPos = 0;
 
-    if (_gps->predgeom_enabled_flag) {
-      altPositions = _posSph;
-      bboxRpl = Box3<int>(altPositions.begin(), altPositions.end());
-      minPos = bboxRpl.min;
-      if (attrInterPredParams.enableAttrInterPred) {
-        for (auto i = 0; i < 3; i++)
-          minPos[i] = minPos[i] < minPos_ref[i] ? minPos[i] : minPos_ref[i];
-        auto minPos_shift = minPos_ref - minPos;
+  //  if (_gps->predgeom_enabled_flag) {
+  //    altPositions = _posSph;
+  //    bboxRpl = Box3<int>(altPositions.begin(), altPositions.end());
+  //    minPos = bboxRpl.min;
+  //    if (attrInterPredParams.enableAttrInterPred) {
+  //      for (auto i = 0; i < 3; i++)
+  //        minPos[i] = minPos[i] < minPos_ref[i] ? minPos[i] : minPos_ref[i];
+  //      auto minPos_shift = minPos_ref - minPos;
 
-        if (minPos_shift[0] || minPos_shift[1] || minPos_shift[2])
-          offsetAndScaleShift(
-            minPos_shift, attr_aps.attr_coord_scale,
-            &attrInterPredParams.referencePointCloud[0],
-            &attrInterPredParams.referencePointCloud[0]
-              + attrInterPredParams.getPointCount());
-      }
-      minPos_ref = minPos;
-    } else {
-      altPositions.resize(_currentPointCloud.getPointCount());
+  //      if (minPos_shift[0] || minPos_shift[1] || minPos_shift[2])
+  //        offsetAndScaleShift(
+  //          minPos_shift, attr_aps.attr_coord_scale,
+  //          &attrInterPredParams.referencePointCloud[0],
+  //          &attrInterPredParams.referencePointCloud[0]
+  //            + attrInterPredParams.getPointCount());
+  //    }
+  //    minPos_ref = minPos;
+  //  } else {
+  //    altPositions.resize(_currentPointCloud.getPointCount());
 
-      auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
-      bboxRpl = convertXyzToRpl(
-        laserOrigin, _gps->angularTheta.data(), _gps->angularTheta.size(),
-        &_currentPointCloud[0],
-        &_currentPointCloud[0] + _currentPointCloud.getPointCount(),
-        altPositions.data());
+  //    auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
+  //    bboxRpl = convertXyzToRpl(
+  //      laserOrigin, _gps->angularTheta.data(), _gps->angularTheta.size(),
+  //      &_currentPointCloud[0],
+  //      &_currentPointCloud[0] + _currentPointCloud.getPointCount(),
+  //      altPositions.data());
 
-      if(!attr_aps.attrInterPredictionEnabled){
-        minPos = bboxRpl.min;
-      }
-    }
+  //    if(!attr_aps.attrInterPredictionEnabled){
+  //      minPos = bboxRpl.min;
+  //    }
+  //  }
 
-    offsetAndScale(
-      minPos, attr_aps.attr_coord_scale, altPositions.data(),
-      altPositions.data() + altPositions.size());
+  //  offsetAndScale(
+  //    minPos, attr_aps.attr_coord_scale, altPositions.data(),
+  //    altPositions.data() + altPositions.size());
 
-    _currentPointCloud.swapPoints(altPositions);
-  }
+  //  _currentPointCloud.swapPoints(altPositions);
+  //}
 
-  if (!attr_aps.spherical_coord_flag)
+  if (/*!attr_aps.spherical_coord_flag*/ true)
     for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
       _currentPointCloud[i] += _sliceOrigin;
 
@@ -641,18 +641,18 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     ctxtMemAttr, _currentPointCloud
     , attrInterPredParams);
 
-  if (!attr_aps.spherical_coord_flag)
+  if (/*!attr_aps.spherical_coord_flag*/ true)
     for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
       _currentPointCloud[i] -= _sliceOrigin;
 
-  if (attr_aps.spherical_coord_flag)
-    _currentPointCloud.swapPoints(altPositions);
+  /*if (attr_aps.spherical_coord_flag)
+    _currentPointCloud.swapPoints(altPositions);*/
 
   attrInterPredParams.referencePointCloud.clear();
-  if (attr_aps.spherical_coord_flag) {
+  /*if (attr_aps.spherical_coord_flag) {
     attrInterPredParams.referencePointCloud = _currentPointCloud;
     attrInterPredParams.referencePointCloud.swapPoints(altPositions);
-  }
+  }*/
 
   // Note the current sliceID for loss detection
   _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;

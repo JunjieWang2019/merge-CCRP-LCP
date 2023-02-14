@@ -82,7 +82,7 @@ public:
 
   void encodePositionLeafNumPoints(int count);
 
-  int encodePlanarMode(
+  /*int encodePlanarMode(
     OctreeNodePlanar& planar,
     int plane,
     int dist,
@@ -91,15 +91,15 @@ public:
     int contextAngle,
     bool* twoPlanesIsPlanar,
     bool* multiPlanarEligible,
-    OctreeNodePlanar& planarRef);
+    OctreeNodePlanar& planarRef);*/
 
-  void derivePlanarPCMContextBuffer(
+  /*void derivePlanarPCMContextBuffer(
     OctreeNodePlanar& planar,
     OctreeNodePlanar& planarRef,
     OctreePlanarBuffer& planeBuffer,
     int xx,
     int yy,
-    int zz);
+    int zz);*/
 
   /*void determinePlanarMode(
     const bool& adjacent_child_contextualization_enabled_flag,
@@ -235,19 +235,19 @@ public:
   EntropyEncoder* _arithmeticEncoder;
 
   // Planar state
-  OctreePlanarState _planar;
+  //OctreePlanarState _planar;
 
   // Azimuthal buffer
-  std::vector<int> _phiBuffer;
+  //std::vector<int> _phiBuffer;
 
   // last previously coded laser index residual for a given node laser index
-  std::vector<int> _prevLaserIndexResidual;
+  //std::vector<int> _prevLaserIndexResidual;
 
   // azimuthal elementary shifts
-  AzimuthalPhiZi _phiZi;
+  //AzimuthalPhiZi _phiZi;
 
   // Octree extensions
-  bool _angularExtension;
+  //bool _angularExtension;
 };
 
 //============================================================================
@@ -261,11 +261,11 @@ GeometryOctreeEncoder::GeometryOctreeEncoder(
   , _useBitwiseOccupancyCoder(gps.bitwise_occupancy_coding_flag)
   , _neighPattern64toR1(neighPattern64toR1(gps))
   , _arithmeticEncoder(arithmeticEncoder)
-  , _planar(gps)
+  /*, _planar(gps)
   , _phiBuffer(gps.numLasers(), 0x80000000)
   , _prevLaserIndexResidual(gps.numLasers(), 0x00000000)
   , _phiZi(gps.numLasers(), gps.angularNumPhiPerTurn)
-  , _angularExtension(gps.octree_angular_extension_flag)
+  , _angularExtension(gps.octree_angular_extension_flag)*/
 {
   if (!_useBitwiseOccupancyCoder && !gbh.entropy_continuation_flag) {
     for (int i = 0; i < 10; i++)
@@ -282,7 +282,7 @@ GeometryOctreeEncoder::beginOctreeLevel(const Vec3<int>& planarDepth)
     _bytewiseOccupancyCoder[i].resetLut();
   }
 
-  _planar.initPlanes(planarDepth);
+  //_planar.initPlanes(planarDepth);
 }
 
 
@@ -303,170 +303,170 @@ GeometryOctreeEncoder::encodePositionLeafNumPoints(int count)
 
 //============================================================================
 
-int
-GeometryOctreeEncoder::encodePlanarMode(
-  OctreeNodePlanar& node,
-  int plane,
-  int dist,
-  int adjPlanes,
-  int planeId,
-  int contextAngle,
-  bool* multiPlanarFlag,
-  bool* multiPlanarEligible,
-  OctreeNodePlanar& planarRef
-)
-{
-  const int mask0 = (1 << planeId);
-  const int mask1[3] = {6, 5, 3};
-
-  bool isPlanar = node.planarMode & mask0;
-  int planeBit = (node.planePosBits & mask0) == 0 ? 0 : 1;
-
-  bool isPlanarRef = planarRef.planarMode & mask0;
-  int planeBitRef = (planarRef.planePosBits & mask0) == 0 ? 0 : 1;
-
-  int ctxIdx_Planar_flag = planeId;
-  if (isPlanarRef)
-    ctxIdx_Planar_flag += 3 * (planeBitRef + 1);
-
-  if (!node.isPCM) {
-    if (_planar._geom_multiple_planar_mode_enable_flag) {
-      static const int planeId2Index[3][3] = {{0, 1, 2}, {0, 1, 3}, {0, 2, 3}};
-      bool multiPlanarFlagFalse = true;
-      for (int i = 0; i < 3; i++) {
-        multiPlanarFlagFalse &= !(multiPlanarFlag[planeId2Index[planeId][i]]);
-      }
-      bool inferredPlanarFalse = multiPlanarFlagFalse;
-
-      if (multiPlanarFlagFalse) {
-        if (planeId == 2) {
-          if (multiPlanarEligible[0])
-            inferredPlanarFalse =
-              !((node.planarMode & 2) && (node.planarMode & 1));
-          else if (multiPlanarEligible[2])
-            inferredPlanarFalse = !(node.planarMode & 1);
-          else if (multiPlanarEligible[3])
-            inferredPlanarFalse = !(node.planarMode & 2);
-        } else if (planeId == 1) {
-          if (multiPlanarEligible[1])
-            inferredPlanarFalse = !(node.planarMode & 1);
-        }
-      }
-
-      if (inferredPlanarFalse)
-        _arithmeticEncoder->encode(
-          isPlanar, _ctxPlanarMode[ctxIdx_Planar_flag]);
-    } else {
-      _arithmeticEncoder->encode(isPlanar, _ctxPlanarMode[ctxIdx_Planar_flag]);
-    }
-  }
-
-  if (!isPlanar) {
-    node.planarPossible &= mask1[planeId];
-    return -1;
-  }
-
-  // encode the plane index
-
-  if (node.isPCM)
-    return planeBit;
-
-  // Not PCM and signall the plane bit
-
-  if (planeId == node.lastDirIdx && node.isPreDirMatch && node.allowPCM) {
-    if (
-      isPlanarRef)  // isPlanarRef = isPlanar = 1; and it is not PCM --> Not need to signal the position bit
-    {
-      if (planeBitRef == planeBit)
-        assert(false);
-      return planeBit;
-    }
-  }
-
-  if (contextAngle == -1) {  // angular mode off
-    static const int kAdjPlaneCtx[4] = {0, 1, 2, 0};
-    int planePosCtx = kAdjPlaneCtx[adjPlanes];
-    if (plane < 0) {
-      int planePostCtxTmp = planePosCtx;
-      if (isPlanarRef) {
-        planePostCtxTmp += 3 * (planeBitRef + 1);
-      }
-      _arithmeticEncoder->encode(
-        planeBit, _ctxPlanarPlaneLastIndexZ[planePostCtxTmp]);
-
-    } else {
-      int discreteDist = dist > (8 >> OctreePlanarBuffer::shiftAb);
-      int lastIndexPlane2d = plane + (discreteDist << 1);
-      int refPlane = 0;
-      if (isPlanarRef) {
-        refPlane = 1 + planeBitRef;
-      }
-      _arithmeticEncoder->encode(
-        planeBit,
-        _ctxPlanarPlaneLastIndex[refPlane][planeId][planePosCtx]
-                                [lastIndexPlane2d]);
-    }
-  } else {  // angular mode on
-    int refPlane = isPlanarRef ? (1 + planeBitRef) : 0;
-    if (planeId == 2) {  // angular
-      _arithmeticEncoder->encode(
-        planeBit, _ctxPlanarPlaneLastIndexAngular[refPlane][contextAngle]);
-    } else {  // azimuthal
-      _arithmeticEncoder->encode(
-        planeBit, _ctxPlanarPlaneLastIndexAngularPhi[refPlane][contextAngle]);
-    }
-  }
-  return planeBit;
-}
+//int
+//GeometryOctreeEncoder::encodePlanarMode(
+//  OctreeNodePlanar& node,
+//  int plane,
+//  int dist,
+//  int adjPlanes,
+//  int planeId,
+//  int contextAngle,
+//  bool* multiPlanarFlag,
+//  bool* multiPlanarEligible,
+//  OctreeNodePlanar& planarRef
+//)
+//{
+//  const int mask0 = (1 << planeId);
+//  const int mask1[3] = {6, 5, 3};
+//
+//  bool isPlanar = node.planarMode & mask0;
+//  int planeBit = (node.planePosBits & mask0) == 0 ? 0 : 1;
+//
+//  bool isPlanarRef = planarRef.planarMode & mask0;
+//  int planeBitRef = (planarRef.planePosBits & mask0) == 0 ? 0 : 1;
+//
+//  int ctxIdx_Planar_flag = planeId;
+//  if (isPlanarRef)
+//    ctxIdx_Planar_flag += 3 * (planeBitRef + 1);
+//
+//  if (!node.isPCM) {
+//    if (_planar._geom_multiple_planar_mode_enable_flag) {
+//      static const int planeId2Index[3][3] = {{0, 1, 2}, {0, 1, 3}, {0, 2, 3}};
+//      bool multiPlanarFlagFalse = true;
+//      for (int i = 0; i < 3; i++) {
+//        multiPlanarFlagFalse &= !(multiPlanarFlag[planeId2Index[planeId][i]]);
+//      }
+//      bool inferredPlanarFalse = multiPlanarFlagFalse;
+//
+//      if (multiPlanarFlagFalse) {
+//        if (planeId == 2) {
+//          if (multiPlanarEligible[0])
+//            inferredPlanarFalse =
+//              !((node.planarMode & 2) && (node.planarMode & 1));
+//          else if (multiPlanarEligible[2])
+//            inferredPlanarFalse = !(node.planarMode & 1);
+//          else if (multiPlanarEligible[3])
+//            inferredPlanarFalse = !(node.planarMode & 2);
+//        } else if (planeId == 1) {
+//          if (multiPlanarEligible[1])
+//            inferredPlanarFalse = !(node.planarMode & 1);
+//        }
+//      }
+//
+//      if (inferredPlanarFalse)
+//        _arithmeticEncoder->encode(
+//          isPlanar, _ctxPlanarMode[ctxIdx_Planar_flag]);
+//    } else {
+//      _arithmeticEncoder->encode(isPlanar, _ctxPlanarMode[ctxIdx_Planar_flag]);
+//    }
+//  }
+//
+//  if (!isPlanar) {
+//    node.planarPossible &= mask1[planeId];
+//    return -1;
+//  }
+//
+//  // encode the plane index
+//
+//  if (node.isPCM)
+//    return planeBit;
+//
+//  // Not PCM and signall the plane bit
+//
+//  if (planeId == node.lastDirIdx && node.isPreDirMatch && node.allowPCM) {
+//    if (
+//      isPlanarRef)  // isPlanarRef = isPlanar = 1; and it is not PCM --> Not need to signal the position bit
+//    {
+//      if (planeBitRef == planeBit)
+//        assert(false);
+//      return planeBit;
+//    }
+//  }
+//
+//  if (contextAngle == -1) {  // angular mode off
+//    static const int kAdjPlaneCtx[4] = {0, 1, 2, 0};
+//    int planePosCtx = kAdjPlaneCtx[adjPlanes];
+//    if (plane < 0) {
+//      int planePostCtxTmp = planePosCtx;
+//      if (isPlanarRef) {
+//        planePostCtxTmp += 3 * (planeBitRef + 1);
+//      }
+//      _arithmeticEncoder->encode(
+//        planeBit, _ctxPlanarPlaneLastIndexZ[planePostCtxTmp]);
+//
+//    } else {
+//      int discreteDist = dist > (8 >> OctreePlanarBuffer::shiftAb);
+//      int lastIndexPlane2d = plane + (discreteDist << 1);
+//      int refPlane = 0;
+//      if (isPlanarRef) {
+//        refPlane = 1 + planeBitRef;
+//      }
+//      _arithmeticEncoder->encode(
+//        planeBit,
+//        _ctxPlanarPlaneLastIndex[refPlane][planeId][planePosCtx]
+//                                [lastIndexPlane2d]);
+//    }
+//  } else {  // angular mode on
+//    int refPlane = isPlanarRef ? (1 + planeBitRef) : 0;
+//    if (planeId == 2) {  // angular
+//      _arithmeticEncoder->encode(
+//        planeBit, _ctxPlanarPlaneLastIndexAngular[refPlane][contextAngle]);
+//    } else {  // azimuthal
+//      _arithmeticEncoder->encode(
+//        planeBit, _ctxPlanarPlaneLastIndexAngularPhi[refPlane][contextAngle]);
+//    }
+//  }
+//  return planeBit;
+//}
 
 //============================================================================
 
-void
-GeometryOctreeEncoder::derivePlanarPCMContextBuffer(
-  OctreeNodePlanar& planar,
-  OctreeNodePlanar& planarRef,
-  OctreePlanarBuffer& planeBuffer,
-  int xx,
-  int yy,
-  int zz)
-{
-  int matchedDir = 0;
-
-  planarRef.ctxBufPCM = 4
-    * (int(planar.eligible[0]) + int(planar.eligible[1])
-       + int(planar.eligible[2]) - 1);
-  assert(planarRef.ctxBufPCM >= 0);
-
-  for (int planeId = 0; planeId < 3; planeId++) {
-    if (planar.eligible[planeId]) {
-      const int mask0 = (1 << planeId);
-
-      bool isPlanarRef = planarRef.planarMode & mask0;
-      int planeBitRef = (planarRef.planePosBits & mask0) == 0 ? 0 : 1;
-
-      // Get the buffer information
-      OctreePlanarBuffer::Row* planeBufferDir = planeBuffer.getBuffer(planeId);
-
-      int coord3 = (planeId == 2) ? zz : (planeId == 1 ? yy : xx);
-
-      const int rowLen = OctreePlanarBuffer::rowSize;
-
-      if (planeBufferDir) {
-        coord3 &= OctreePlanarBuffer::maskC;
-
-        const auto row = planeBufferDir[coord3];
-
-        const int idxMinDist = rowLen - 1;
-        const int closestPlanarFlag = row[idxMinDist].planeIdx;
-        const bool closestPL = (closestPlanarFlag > -1) ? true : false;
-        const int closestPlane = closestPL ? closestPlanarFlag : 0;
-        matchedDir +=
-          int((closestPL == isPlanarRef && closestPlane == planeBitRef));
-      }
-    }
-  }
-  planarRef.ctxBufPCM += matchedDir;
-}
+//void
+//GeometryOctreeEncoder::derivePlanarPCMContextBuffer(
+//  OctreeNodePlanar& planar,
+//  OctreeNodePlanar& planarRef,
+//  OctreePlanarBuffer& planeBuffer,
+//  int xx,
+//  int yy,
+//  int zz)
+//{
+//  int matchedDir = 0;
+//
+//  planarRef.ctxBufPCM = 4
+//    * (int(planar.eligible[0]) + int(planar.eligible[1])
+//       + int(planar.eligible[2]) - 1);
+//  assert(planarRef.ctxBufPCM >= 0);
+//
+//  for (int planeId = 0; planeId < 3; planeId++) {
+//    if (planar.eligible[planeId]) {
+//      const int mask0 = (1 << planeId);
+//
+//      bool isPlanarRef = planarRef.planarMode & mask0;
+//      int planeBitRef = (planarRef.planePosBits & mask0) == 0 ? 0 : 1;
+//
+//      // Get the buffer information
+//      OctreePlanarBuffer::Row* planeBufferDir = planeBuffer.getBuffer(planeId);
+//
+//      int coord3 = (planeId == 2) ? zz : (planeId == 1 ? yy : xx);
+//
+//      const int rowLen = OctreePlanarBuffer::rowSize;
+//
+//      if (planeBufferDir) {
+//        coord3 &= OctreePlanarBuffer::maskC;
+//
+//        const auto row = planeBufferDir[coord3];
+//
+//        const int idxMinDist = rowLen - 1;
+//        const int closestPlanarFlag = row[idxMinDist].planeIdx;
+//        const bool closestPL = (closestPlanarFlag > -1) ? true : false;
+//        const int closestPlane = closestPL ? closestPlanarFlag : 0;
+//        matchedDir +=
+//          int((closestPL == isPlanarRef && closestPlane == planeBitRef));
+//      }
+//    }
+//  }
+//  planarRef.ctxBufPCM += matchedDir;
+//}
 
 //============================================================================
 // determine Planar mode for one direction
@@ -1796,7 +1796,7 @@ encodeGeometryOctree(
   node00.numSiblingsPlus1 = 8;
   node00.siblingOccupancy = 0;
   node00.qp = 0;
-  node00.idcmEligible = 0;
+  //node00.idcmEligible = 0;NOTE[FT]: idcmEligible is set to false at construction
 
   // local motion
   node00.hasMotion = 0;
@@ -1808,7 +1808,7 @@ encodeGeometryOctree(
   int nextDmIdx = 0;
 
   // rotating mask used to enable idcm
-  uint32_t idcmEnableMaskInit = mkIdcmEnableMask(gps);
+  uint32_t idcmEnableMaskInit = /*mkIdcmEnableMask(gps)*/ 0; //NOTE[FT] : set to 0 by construction
 
   //  Lidar angles for planar prediction
   const int numLasers = gps.numLasers();
@@ -1992,7 +1992,7 @@ encodeGeometryOctree(
 
     // reset the idcm eligibility mask at the start of each level to
     // support multiple streams
-    auto idcmEnableMask = rotateRight(idcmEnableMaskInit, depth);
+    auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
 
     auto planarDepth = gbh.rootNodeSizeLog2 - nodeSizeLog2;
     encoder.beginOctreeLevel(planarDepth);
@@ -2169,35 +2169,35 @@ encodeGeometryOctree(
       bool occupancyIsPredictable =
         predOccupancy && node0.numSiblingsMispredicted <= 5;
 
-      OctreeNodePlanar planarRef;
+      /*OctreeNodePlanar planarRef;
       if (isInter)
-        setPlanesFromOccupancy(predOccupancy, planarRef);
+        setPlanesFromOccupancy(predOccupancy, planarRef);*/
 
       DirectMode mode = DirectMode::kUnavailable;
       // At the scaling depth, it is possible for a node that has previously
       // been marked as being eligible for idcm to be fully quantised due
       // to the choice of QP.  There is therefore nothing to code with idcm.
-      if (isLeafNode(effectiveNodeSizeLog2))
-        node0.idcmEligible = false;
-      bool planar_eligibility_idcm_angular = true;
-      if (node0.idcmEligible) {
-        // todo(df): this is pessimistic in the presence of idcm quantisation,
-        // since that is eligible may only meet the point count constraint
-        // after quantisation, which is performed after the decision is taken.
-        mode = canEncodeDirectPosition(
-          gps.geom_unique_points_flag, node0, pointCloud);
-        if (gps.geom_planar_disabled_idcm_angular_flag) {
-          encoder.encodeIsIdcm(mode);
-          /*if (
-            mode != DirectMode::kUnavailable
-            && gps.geom_angular_mode_enabled_flag)
-            planar_eligibility_idcm_angular = false;*/
-        }
-      }
+      //if (isLeafNode(effectiveNodeSizeLog2))
+      //  node0.idcmEligible = false; //NOTE[FT]: already false
+      //bool planar_eligibility_idcm_angular = true;
+      //if (node0.idcmEligible) {
+      //  // todo(df): this is pessimistic in the presence of idcm quantisation,
+      //  // since that is eligible may only meet the point count constraint
+      //  // after quantisation, which is performed after the decision is taken.
+      //  mode = canEncodeDirectPosition(
+      //    gps.geom_unique_points_flag, node0, pointCloud);
+      //  //if (/*gps.geom_planar_disabled_idcm_angular_flag*/ false) { //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
+      //  //  encoder.encodeIsIdcm(mode);
+      //  //  /*if (
+      //  //    mode != DirectMode::kUnavailable
+      //  //    && gps.geom_angular_mode_enabled_flag)
+      //  //    planar_eligibility_idcm_angular = false;*/
+      //  //}
+      //}
 
-      int contextAngle = -1;
-      int contextAnglePhiX = -1;
-      int contextAnglePhiY = -1;
+      //int contextAngle = -1;
+      //int contextAnglePhiX = -1;
+      //int contextAnglePhiY = -1;
       /*if (
         gps.geom_angular_mode_enabled_flag
         && planar_eligibility_idcm_angular) {
@@ -2221,7 +2221,7 @@ encodeGeometryOctree(
       OctreeNodePlanar planar;
       if (!isLeafNode(effectiveNodeSizeLog2)) {
         // planar eligibility
-        bool planarEligible[3] = {false, false, false};
+        //bool planarEligible[3] = {false, false, false};
         //if (
         //  gps.geom_planar_mode_enabled_flag
         //  && planar_eligibility_idcm_angular) {
@@ -2251,14 +2251,14 @@ encodeGeometryOctree(
         //    planarEligible[k] &= (codedAxesCurNode >> (2 - k)) & 1;
         //}
 
-        planar.allowPCM = /*(isInter) && (occupancyIsPredictable)
-          && (planarEligible[0] || planarEligible[1] || planarEligible[2])*/ false;
-        planar.isPreDirMatch = true;
-        planar.eligible[0] = /*planarEligible[0]*/ false;
-        planar.eligible[1] = /*planarEligible[1]*/ false;
-        planar.eligible[2] = /*planarEligible[2]*/ false;
-        planar.lastDirIdx =
-          /*planarEligible[2] ? 2 : (planarEligible[1] ? 1 : 0)*/ 0;
+        //planar.allowPCM = /*(isInter) && (occupancyIsPredictable)
+        //  && (planarEligible[0] || planarEligible[1] || planarEligible[2])*/ false;
+        //planar.isPreDirMatch = true;
+        //planar.eligible[0] = /*planarEligible[0]*/ false;
+        //planar.eligible[1] = /*planarEligible[1]*/ false;
+        //planar.eligible[2] = /*planarEligible[2]*/ false;
+        //planar.lastDirIdx =
+        //  /*planarEligible[2] ? 2 : (planarEligible[1] ? 1 : 0)*/ 0;
 
         // determine planarity if eligible
         /*if (planarEligible[0] || planarEligible[1] || planarEligible[2])
@@ -2268,8 +2268,8 @@ encodeGeometryOctree(
             contextAnglePhiX, contextAnglePhiY, planarRef);*/
       }
 
-      if (node0.idcmEligible && !gps.geom_planar_disabled_idcm_angular_flag)
-        encoder.encodeIsIdcm(mode);
+      //if (node0.idcmEligible && /*!gps.geom_planar_disabled_idcm_angular_flag*/ true) //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
+      //  encoder.encodeIsIdcm(mode);
 
       if (mode != DirectMode::kUnavailable) {
         int idcmShiftBits = shiftBits;
@@ -2304,7 +2304,7 @@ encodeGeometryOctree(
           pointIdxToDmIdx[idx] = nextDmIdx++;
 
         // NB: by definition, this is the only child node present
-        if (gps.inferred_direct_coding_mode <= 1)
+        if (/*gps.inferred_direct_coding_mode*/ 0 <= 1)
           assert(node0.numSiblingsPlus1 == 1);
 
         // This node has no children, ensure that future nodes avoid
@@ -2328,8 +2328,8 @@ encodeGeometryOctree(
         bool flagWord4 = gps.neighbour_avail_boundary_log2_minus1 > 0;
         encoder.encodeOccupancyFullNeihbourgs(
           gnp, occupancy, planarMask[0], planarMask[1],
-          planarMask[2], planar.planarPossible & 1, planar.planarPossible & 2,
-          planar.planarPossible & 4, occupancyAtlas, node0.pos,
+          planarMask[2], /*planar.planarPossible & 1*/ true, /*planar.planarPossible & 2*/ true,
+          /*planar.planarPossible & 4*/ true, occupancyAtlas, node0.pos,
           codedAxesPrevLvl, flagWord4,
           gps.adjacent_child_contextualization_enabled_flag, predOccupancy | (predOccupancyStrong << 8), isInter);
       }
@@ -2441,20 +2441,20 @@ encodeGeometryOctree(
         }
 
         child.laserIndex = node0.laserIndex;
-        if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)
-          child.idcmEligible = isDirectModeEligible_Inter(
-            gps.inferred_direct_coding_mode, nodeMaxDimLog2, gnp.neighPattern,
-            node0, child, occupancyIsPredictable);
-        else
-          child.idcmEligible = isDirectModeEligible(
-            gps.inferred_direct_coding_mode, nodeMaxDimLog2, gnp.neighPattern,
-            node0, child, occupancyIsPredictable,
-            gps.geom_angular_mode_enabled_flag);
+        //if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)
+        //  child.idcmEligible = isDirectModeEligible_Inter(
+        //    /*gps.inferred_direct_coding_mode*/ 0, nodeMaxDimLog2, gnp.neighPattern,
+        //    node0, child, occupancyIsPredictable);
+        //else
+        //  child.idcmEligible = isDirectModeEligible(
+        //    /*gps.inferred_direct_coding_mode*/ 0, nodeMaxDimLog2, gnp.neighPattern,
+        //    node0, child, occupancyIsPredictable,
+        //    gps.geom_angular_mode_enabled_flag);
 
-        if (child.idcmEligible) {
-          child.idcmEligible &= idcmEnableMask & 1;
-          idcmEnableMask = rotateRight(idcmEnableMask, 1);
-        }
+        //if (child.idcmEligible) {
+        //  child.idcmEligible &= idcmEnableMask & 1; //NOTE[FT] : stays at 0, whatever the childidcmEligible status
+        //  idcmEnableMask = rotateRight(idcmEnableMask, 1);
+        //}
 
         numNodesNextLvl++;
       }
