@@ -221,8 +221,8 @@ void determineTrisoupNeighbours(
   const Vec3<int32_t> posWWW({ blockWidth, blockWidth, blockWidth });
 
   // Put all leaves' edges into a list.
-  std::vector<TrisoupSegmentNeighbours> segments;
-  segments.reserve(36 * leaves.size());
+  std::vector<TrisoupSegmentNeighbours> segments(36 * leaves.size());
+  int idx = 0;
   for (int i = 0; i < leaves.size(); i++) {
 
     const auto& leaf = leaves[i];
@@ -234,82 +234,66 @@ void determineTrisoupNeighbours(
 
     // ------------ edges along x
     // in node
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos000, posNode + posW00, ii + 0, 1 })); // far bottom edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos0W0, posNode + posWW0, ii + 2,  2 })); // far top edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos00W, posNode + posW0W, ii + 8,  4 })); // near bottom edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos0WW, posNode + posWWW, ii + 10,  8 })); // near top edge
-    // left 
+    segments[idx++] = {posNode + pos000, posNode + posW00, ii + 0, 1}; // far bottom edge
+    segments[idx++] = { posNode + pos0W0, posNode + posWW0, ii + 2,  2 }; // far top edge
+    segments[idx++] = { posNode + pos00W, posNode + posW0W, ii + 8,  4 }; // near bottom edge
+    segments[idx++] = { posNode + pos0WW, posNode + posWWW, ii + 10,  8 }; // near top edge
+    // left
     auto posLeft = posNode - posW00;
-    segments.push_back(TrisoupSegmentNeighbours({ posLeft + pos000, posLeft + posW00, ii2 + 0, 16 })); // far bottom edge
-    segments.push_back(TrisoupSegmentNeighbours({ posLeft + pos0W0, posLeft + posWW0, ii2 + 2,  32 })); // far top edge
-    segments.push_back(TrisoupSegmentNeighbours({ posLeft + pos00W, posLeft + posW0W, ii2 + 8,  64 })); // near bottom edge
-    segments.push_back(TrisoupSegmentNeighbours({ posLeft + pos0WW, posLeft + posWWW, ii2 + 10,  128 })); // near top edge
+    segments[idx++] = { posLeft + pos000, posLeft + posW00, ii2 + 0, 16 }; // far bottom edge
+    segments[idx++] = { posLeft + pos0W0, posLeft + posWW0, ii2 + 2,  32 }; // far top edge
+    segments[idx++] = { posLeft + pos00W, posLeft + posW0W, ii2 + 8,  64 }; // near bottom edge
+    segments[idx++] = { posLeft + pos0WW, posLeft + posWWW, ii2 + 10,  128 }; // near top edge
     //right
     auto posRight = posNode + posW00;
-    segments.push_back(TrisoupSegmentNeighbours({ posRight + pos000, posRight + posW00, ii3 + 0, 256 })); // far bottom edge
-    segments.push_back(TrisoupSegmentNeighbours({ posRight + pos0W0, posRight + posWW0, ii3 + 2,  512 })); // far top edge
-    segments.push_back(TrisoupSegmentNeighbours({ posRight + pos00W, posRight + posW0W, ii3 + 8,  1024 })); // near bottom edge
-    segments.push_back(TrisoupSegmentNeighbours({ posRight + pos0WW, posRight + posWWW, ii3 + 10,  2048 })); // near top edge                                                                                                       
+    segments[idx++] = { posRight + pos000, posRight + posW00, ii3 + 0, 256 }; // far bottom edge
+    segments[idx++] = { posRight + pos0W0, posRight + posWW0, ii3 + 2,  512 }; // far top edge
+    segments[idx++] = { posRight + pos00W, posRight + posW0W, ii3 + 8,  1024 }; // near bottom edge
+    segments[idx++] = { posRight + pos0WW, posRight + posWWW, ii3 + 10,  2048 }; // near top edge
 
-    // ------------ edges along y 
+    // ------------ edges along y
     // in node
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos000, posNode + pos0W0, ii + 1, 1 + (1 << 13) })); // far left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + posW00, posNode + posWW0, ii + 3,  2 + (1 << 13) })); // far right edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos00W, posNode + pos0WW, ii + 9,  4 + (1 << 13) })); // near left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + posW0W, posNode + posWWW, ii + 11,  8 + (1 << 13) })); // near right edge   
+    segments[idx++] = { posNode + pos000, posNode + pos0W0, ii + 1, 1 + (1 << 13) }; // far left edge
+    segments[idx++] = { posNode + posW00, posNode + posWW0, ii + 3,  2 + (1 << 13) }; // far right edge
+    segments[idx++] = { posNode + pos00W, posNode + pos0WW, ii + 9,  4 + (1 << 13) }; // near left edge
+    segments[idx++] = { posNode + posW0W, posNode + posWWW, ii + 11,  8 + (1 << 13) }; // near right edge
     // bottom
     auto posBottom = posNode - pos0W0;
-    segments.push_back(TrisoupSegmentNeighbours({ posBottom + pos000, posBottom + pos0W0, ii2 + 1, 16 })); // far left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posBottom + posW00, posBottom + posWW0, ii2 + 3,  32 })); // far right edge
-    segments.push_back(TrisoupSegmentNeighbours({ posBottom + pos00W, posBottom + pos0WW, ii2 + 9,  64 })); // near left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posBottom + posW0W, posBottom + posWWW, ii2 + 11,  128 })); // near right edge  
+    segments[idx++] = { posBottom + pos000, posBottom + pos0W0, ii2 + 1, 16 }; // far left edge
+    segments[idx++] = { posBottom + posW00, posBottom + posWW0, ii2 + 3,  32 }; // far right edge
+    segments[idx++] = { posBottom + pos00W, posBottom + pos0WW, ii2 + 9,  64 }; // near left edge
+    segments[idx++] = { posBottom + posW0W, posBottom + posWWW, ii2 + 11,  128 }; // near right edge
     // top
     auto posTop = posNode + pos0W0;
-    segments.push_back(TrisoupSegmentNeighbours({ posTop + pos000, posTop + pos0W0, ii3 + 1, 256 })); // far left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posTop + posW00, posTop + posWW0, ii3 + 3,  512 })); // far right edge
-    segments.push_back(TrisoupSegmentNeighbours({ posTop + pos00W, posTop + pos0WW, ii3 + 9,  1024 })); // near left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posTop + posW0W, posTop + posWWW, ii3 + 11,  2048 })); // near right edge 
+    segments[idx++] = { posTop + pos000, posTop + pos0W0, ii3 + 1, 256 }; // far left edge
+    segments[idx++] = { posTop + posW00, posTop + posWW0, ii3 + 3,  512 }; // far right edge
+    segments[idx++] = { posTop + pos00W, posTop + pos0WW, ii3 + 9,  1024 }; // near left edge
+    segments[idx++] = { posTop + posW0W, posTop + posWWW, ii3 + 11,  2048 }; // near right edge
 
-    // ------------ edges along z 
+    // ------------ edges along z
     // in node
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos000, posNode + pos00W, ii + 4, 1 + (1 << 14) })); // bottom left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + pos0W0, posNode + pos0WW, ii + 5,  2 + (1 << 14) })); // top left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + posWW0, posNode + posWWW, ii + 6,  4 + (1 << 14) })); // top right edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNode + posW00, posNode + posW0W, ii + 7,  8 + (1 << 14) })); // bottom right edge    
-    // near 
+    segments[idx++] = { posNode + pos000, posNode + pos00W, ii + 4, 1 + (1 << 14) }; // bottom left edge
+    segments[idx++] = { posNode + pos0W0, posNode + pos0WW, ii + 5,  2 + (1 << 14) }; // top left edge
+    segments[idx++] = { posNode + posWW0, posNode + posWWW, ii + 6,  4 + (1 << 14) }; // top right edge
+    segments[idx++] = { posNode + posW00, posNode + posW0W, ii + 7,  8 + (1 << 14) }; // bottom right edge
+    // near
     auto posNear = posNode - pos00W;
-    segments.push_back(TrisoupSegmentNeighbours({ posNear + pos000, posNear + pos00W, ii2 + 4, 16 })); // bottom left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNear + pos0W0, posNear + pos0WW, ii2 + 5,  32 })); // top left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNear + posWW0, posNear + posWWW, ii2 + 6,  64 })); // top right edge
-    segments.push_back(TrisoupSegmentNeighbours({ posNear + posW00, posNear + posW0W, ii2 + 7,  128 })); // bottom right edge
-    // far 
+    segments[idx++] = { posNear + pos000, posNear + pos00W, ii2 + 4, 16 }; // bottom left edge
+    segments[idx++] = { posNear + pos0W0, posNear + pos0WW, ii2 + 5,  32 }; // top left edge
+    segments[idx++] = { posNear + posWW0, posNear + posWWW, ii2 + 6,  64 }; // top right edge
+    segments[idx++] = { posNear + posW00, posNear + posW0W, ii2 + 7,  128 }; // bottom right edge
+    // far
     auto posFar = posNode + pos00W;
-    segments.push_back(TrisoupSegmentNeighbours({ posFar + pos000, posFar + pos00W, ii3 + 4, 256 })); // bottom left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posFar + pos0W0, posFar + pos0WW, ii3 + 5,  512 })); // top left edge
-    segments.push_back(TrisoupSegmentNeighbours({ posFar + posWW0, posFar + posWWW, ii3 + 6,  1024 })); // top right edge
-    segments.push_back(TrisoupSegmentNeighbours({ posFar + posW00, posFar + posW0W, ii3 + 7,  2048 })); // bottom right edge
+    segments[idx++] = { posFar + pos000, posFar + pos00W, ii3 + 4, 256 }; // bottom left edge
+    segments[idx++] = { posFar + pos0W0, posFar + pos0WW, ii3 + 5,  512 }; // top left edge
+    segments[idx++] = { posFar + posWW0, posFar + posWWW, ii3 + 6,  1024 }; // top right edge
+    segments[idx++] = { posFar + posW00, posFar + posW0W, ii3 + 7,  2048 }; // bottom right edge
   }
 
   // Sort the list and find unique segments.
   std::sort(segments.begin(), segments.end());
 
-  // find neighbourgs for unique segments
-  TrisoupSegmentNeighbours localSegment = segments[0];
-
-
-  auto it = segments.begin() + 1;
-  neighbNodes.clear();
-  std::vector<int> correspondanceUnique(segments.size(), -1);
-  if (segments.begin()->neighboursMask & 15) { // for true segments
-    // change index from 36* to 16*
-    int idx0 = segments.begin()->index;
-    int idx36 = idx0 / 36;
-    int idx = (idx36) * 12 + (idx0 - idx36 * 36);
-    segmentUniqueIndex[idx] = 0;
-  }
-
-
-
+  // neighbourhood staic tables
   // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
   static const int localEdgeindex[12][11] = {
     { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
@@ -339,6 +323,20 @@ void determineTrisoupNeighbours(
     { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
     { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
   };
+
+  // find neighbourgs for unique segments
+  TrisoupSegmentNeighbours localSegment = segments[0];
+
+  auto it = segments.begin() + 1;
+  neighbNodes.clear();
+  std::vector<int> correspondanceUnique(segments.size(), -1);
+  if (segments.begin()->neighboursMask & 15) { // for true segments
+    // change index from 36* to 16*
+    int idx0 = segments.begin()->index;
+    int idx36 = idx0 / 36;
+    int idx = (idx36) * 12 + (idx0 - idx36 * 36);
+    segmentUniqueIndex[idx] = 0;
+  }
 
   int uniqueIndex = 0;
   std::array<int, 18> pattern = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
@@ -392,9 +390,6 @@ void determineTrisoupNeighbours(
         int Vidx = correspondanceUnique[indexV];
         if (Vidx != -1)  // check if already coded
           pattern[patternIndex[indexLow][v]] = Vidx;
-        else
-          std::cout << "#" << indexLow << "/" << v << " ";
-
       }
     }
 
