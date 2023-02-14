@@ -78,7 +78,6 @@ encodeGeometryTrisoup(
   const bool isCentroidDriftActivated =
     gbh.trisoup_centroid_vertex_residual_flag;
 
-  // Determine vertices
   std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
   int distanceSearchEncoder = 1;
@@ -96,11 +95,19 @@ encodeGeometryTrisoup(
     std::cout << "distanceSearchEncoder = " << distanceSearchEncoder << "\n";
   }
 
+  // Determine neighbours
+  std::vector<uint16_t> neighbNodes;
+  std::vector<std::array<int, 18>> edgePattern;
+  std::vector<int> segmentUniqueIndex;
+  int Nunique;
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique);
+
+  // Determine vertices
   std::vector<bool> segind;
   std::vector<uint8_t> vertices;
   determineTrisoupVertices(
     nodes, segind, vertices, pointCloud, pointCloud, gps, gbh, blockWidth,
-    bitDropped, distanceSearchEncoder, false);
+    bitDropped, distanceSearchEncoder, false, segmentUniqueIndex, Nunique);
 
   // determine vertices from compensated point cloud
   std::vector<bool> segindPred;
@@ -108,14 +115,8 @@ encodeGeometryTrisoup(
   if (isInter) {
     determineTrisoupVertices(
       nodes, segindPred, verticesPred, refFrame.cloud, compensatedPointCloud,
-      gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true);
+      gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true, segmentUniqueIndex, Nunique);
   }
-
-  
-  // Determine neighbours
-  std::vector<uint16_t> neighbNodes;
-  std::vector<std::array<int, 18>> edgePattern;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth);
 
   gbh.num_unique_segments_minus1 = segind.size() - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
@@ -144,7 +145,7 @@ encodeGeometryTrisoup(
       nodes, segind, vertices, drifts, pointCloud, recPointCloud,
       compensatedPointCloud, gps, gbh, blockWidth,
       maxval, subsample, bitDropped, isCentroidDriftActivated, false,
-      haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL, ctxtMemOctree);
+      haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL, ctxtMemOctree, segmentUniqueIndex);
     std::cout << "Sub-sampling " << subsample << " gives "
               << recPointCloud.getPointCount() << " points \n";
   } else {
@@ -154,7 +155,7 @@ encodeGeometryTrisoup(
         nodes, segind, vertices, drifts, pointCloud, recPointCloud,
         compensatedPointCloud, gps, gbh, blockWidth,
         maxval, subsample, bitDropped, isCentroidDriftActivated, false,
-        haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL, ctxtMemOctree);
+        haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL, ctxtMemOctree, segmentUniqueIndex);
 
       std::cout << "Sub-sampling " << subsample << " gives "
                 << recPointCloud.getPointCount() << " points \n";
@@ -198,17 +199,21 @@ determineTrisoupVertices(
   const int defaultBlockWidth,
   const int bitDropped,
   int distanceSearchEncoder,
-  bool isCompensated)
+  bool isCompensated,
+  std::vector<int>& segmentUniqueIndex,
+  int Nunique)
 {
   Box3<int32_t> sliceBB;
   sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
   sliceBB.max = sliceBB.min + ( gbh.slice_bb_width << gbh.slice_bb_width_log2_scale );
 
-  // Put all leaves' edges into a list.
-  std::vector<TrisoupSegmentEnc> segments;
-  segments.reserve(12 * leaves.size());
-  segind.reserve(4 * leaves.size());
+  // prepare accumulators
+  std::vector<int> count(Nunique, 0);
+  std::vector<int> count2(Nunique, 0);
+  std::vector<int> distanceSum(Nunique, 0);
+  std::vector<int> distanceSum2(Nunique, 0);
 
+  // Put all leaves' edges into a list.
   const int bufferIdx0[27] = { 12, 12, 12, 12, 4, 7, 12, 5, 6, 12, 1, 3, 0, 4, 7, 2, 5, 6, 12, 9, 11, 8, 4, 7, 10, 5, 6 };
   const int voxelComp0[27] = { 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 2, 2 };
   const int bufferIdx1[27] = { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 0, 0, 12, 2, 2, 12, 12, 12, 12, 8, 8, 12, 10, 10 };
@@ -224,24 +229,6 @@ determineTrisoupVertices(
     // Size of block
     Vec3<int32_t> newP, newW, corner[8];
     nonCubicNode( gps, gbh, leaf.pos, defaultBlockWidth, sliceBB, newP, newW, corner );
-
-    // mini buffer Segment
-    // x: left to right; y: bottom to top; z: far to near
-    std::vector<TrisoupSegmentEnc> segmentsBuffer12 = {
-        { newP + corner[POS_000], newP + corner[POS_W00], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_000], newP + corner[POS_0W0], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_0W0], newP + corner[POS_WW0], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_W00], newP + corner[POS_WW0], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_000], newP + corner[POS_00W], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_0W0], newP + corner[POS_0WW], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_WW0], newP + corner[POS_WWW], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_W00], newP + corner[POS_W0W], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_00W], newP + corner[POS_W0W], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_00W], newP + corner[POS_0WW], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_0WW], newP + corner[POS_WWW], segIdx++, -1, -1, 0, 0, 0, 0 },
-        { newP + corner[POS_W0W], newP + corner[POS_WWW], segIdx++, -1, -1, 0, 0, 0, 0 },
-        {0, 0, 0, -1, -1, 0, 0, 0, 0 }  // last is foo
-    };
 
     // Each voxel votes for a position along each edge it is close to
     const int tmin = 1;
@@ -275,13 +262,21 @@ determineTrisoupVertices(
       if (check2 > 2) check2 = 1;
 
       int check = check0 + 3 * check1 + 9 * check2; // in [0,26]
-
-      segmentsBuffer12[bufferIdx0[check]].count++;
-      segmentsBuffer12[bufferIdx0[check]].distanceSum += voxel[voxelComp0[check]];
-      segmentsBuffer12[bufferIdx1[check]].count++;
-      segmentsBuffer12[bufferIdx1[check]].distanceSum += voxel[voxelComp1[check]];
-      segmentsBuffer12[bufferIdx2[check]].count++;
-      segmentsBuffer12[bufferIdx2[check]].distanceSum += voxel[voxelComp2[check]];
+      int unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
+      int unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
+      int unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
+      if (bufferIdx0[check] < 12) {
+        count[unique0]++;
+        distanceSum[unique0] += voxel[voxelComp0[check]];
+      }
+      if (bufferIdx1[check] < 12) {
+        count[unique1]++;
+        distanceSum[unique1] += voxel[voxelComp1[check]];
+      }
+      if (bufferIdx2[check] < 12) {
+        count[unique2]++;
+        distanceSum[unique2] += voxel[voxelComp2[check]];
+      }
 
 
       // parameter indicating threshold of how close voxels must be to edge
@@ -297,57 +292,33 @@ determineTrisoupVertices(
 
         check = check0 + 3 * check1 + 9 * check2; // in [0,26]
 
-        segmentsBuffer12[bufferIdx0[check]].count2++;
-        segmentsBuffer12[bufferIdx0[check]].distanceSum2 += voxel[voxelComp0[check]];
-        segmentsBuffer12[bufferIdx1[check]].count2++;
-        segmentsBuffer12[bufferIdx1[check]].distanceSum2 += voxel[voxelComp1[check]];
-        segmentsBuffer12[bufferIdx2[check]].count2++;
-        segmentsBuffer12[bufferIdx2[check]].distanceSum2 += voxel[voxelComp2[check]];
+        unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
+        unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
+        unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
+        if (bufferIdx0[check] < 12) {
+          count2[unique0]++;
+          distanceSum2[unique0] += voxel[voxelComp0[check]];
+        }
+        if (bufferIdx1[check] < 12) {
+          count2[unique1]++;
+          distanceSum2[unique1] += voxel[voxelComp1[check]];
+        }
+        if (bufferIdx2[check] < 12) {
+          count2[unique2]++;
+          distanceSum2[unique2] += voxel[voxelComp2[check]];
+        }
       }
-
-    }
-
-    // Append segments to list
-    segments.insert(segments.end(), segmentsBuffer12.begin(), segmentsBuffer12.end() - 1); // -1 removes foo at the end
-  }
-
-  // Sort the list and find unique segments.
-  std::sort(segments.begin(), segments.end());
-
-  TrisoupSegmentEnc localSegment = segments[0];
-  auto it = segments.begin() + 1;
-  int i = 0;
-  for (; it != segments.end(); it++) {
-    if (
-      localSegment.startpos != it->startpos
-      || localSegment.endpos != it->endpos) {
-      // Segment[i] is different from localSegment
-      // Start a new uniqueSegment.
-      segind.push_back(localSegment.count > 0 || localSegment.count2 > 1);
-      if (segind.back()) {  // intersects the surface
-        int temp = ((2 * localSegment.distanceSum + localSegment.distanceSum2)
-                    << (10 - bitDropped))
-          / (2 * localSegment.count + localSegment.count2);
-        int8_t vertex = (temp + (1 << 9 - bitDropped)) >> 10;
-        vertices.push_back(vertex);
-      }
-      localSegment = *it;  // unique segment
-    } else {
-      // Segment[i] is the same as localSegment
-      // Accumulate
-      localSegment.count += it->count;
-      localSegment.distanceSum += it->distanceSum;
-      localSegment.count2 += it->count2;
-      localSegment.distanceSum2 += it->distanceSum2;
     }
   }
-  segind.push_back(localSegment.count > 0 || localSegment.count2 > 1);
-  if (segind.back()) {  // intersects the surface
-    int temp = ((2 * localSegment.distanceSum + localSegment.distanceSum2)
-                << (10 - bitDropped))
-      / (2 * localSegment.count + localSegment.count2);
-    int8_t vertex = (temp + (1 << 9 - bitDropped)) >> 10;
-    vertices.push_back(vertex);
+
+  segind.resize(Nunique);
+  for (int t = 0; t < Nunique; t++) {
+    segind[t] = count[t] > 0 || count2[t] > 1;
+    if (segind[t]) {
+      int temp = ((2 * distanceSum[t] + distanceSum2[t]) << (10 - bitDropped))/ (2 * count[t] + count2[t]);
+      int8_t vertex = (temp + (1 << 9 - bitDropped)) >> 10;
+      vertices.push_back(vertex);
+    }
   }
 }
 

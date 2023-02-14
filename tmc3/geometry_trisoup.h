@@ -97,13 +97,17 @@ void determineTrisoupVertices(
   const int defaultBlockWidth,
   const int bitDropped,
   int distanceSearchEncoder,
-  bool isCompensated);
+  bool isCompensated,
+  std::vector<int>& segmentUniqueIndex,
+  int Nunique);
 
 void determineTrisoupNeighbours(
   const ringbuf<PCCOctree3Node>& leaves, 
   std::vector<uint16_t>& neighbNodes, 
   std::vector<std::array<int, 18>>& edgePattern,
-  const int defaultBlockWidth);
+  const int defaultBlockWidth,
+  std::vector<int>& segmentUniqueIndex,
+  int& Nunique);
 
 void encodeTrisoupVertices(  
   std::vector<bool>& segind,
@@ -158,7 +162,8 @@ void decodeTrisoupCommon(
   bool fineRayflag,
   int thickness,
   pcc::EntropyDecoder* arithmeticDecoder,
-  GeometryOctreeContexts& ctxtMemOctree);
+  GeometryOctreeContexts& ctxtMemOctree,
+  std::vector<int>& segmentUniqueIndex);
 
 int findDominantAxis(
   std::vector<Vertex>& leafVertices,

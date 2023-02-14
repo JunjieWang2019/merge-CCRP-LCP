@@ -146,25 +146,26 @@ decodeGeometryTrisoup(
   const int bitDropped =  std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
   const bool isCentroidDriftActivated = gbh.trisoup_centroid_vertex_residual_flag;
 
-  // determine vertices from compensated point cloud 
+  // Determine neighbours
+  std::vector<uint16_t> neighbNodes;
+  std::vector<std::array<int, 18>> edgePattern;
+  std::vector<int> segmentUniqueIndex;
+  int Nunique;
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique);
+
+  // determine vertices from compensated point cloud
   std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
-    
+
   std::vector<bool> segindPred;
   std::vector<uint8_t> verticesPred;
   if (isInter) {
     determineTrisoupVertices(
       nodes, segindPred, verticesPred, refFrame->cloud, compensatedPointCloud,
-      gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true);
+      gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true, segmentUniqueIndex, Nunique);
   }
 
-  // Determine neighbours
-  std::vector<uint16_t> neighbNodes;
-  std::vector<std::array<int, 18>> edgePattern;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth);;
-
-
-  // Decode vertex presence and position into bitstream  
+  // Decode vertex presence and position into bitstream
   std::vector<bool> segind;
   std::vector<uint8_t> vertices;
   decodeTrisoupVertices(segind, vertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped, gps, gbh, arithmeticDecoder, ctxtMemOctree);
@@ -185,7 +186,7 @@ decodeGeometryTrisoup(
     compensatedPointCloud, gps, gbh, blockWidth, maxval,
     gbh.trisoup_sampling_value_minus1 + 1, bitDropped,
     isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag, thickness,
-    &arithmeticDecoder,  ctxtMemOctree);
+    &arithmeticDecoder,  ctxtMemOctree, segmentUniqueIndex);
 
   pointCloud.resize(0);
   pointCloud = std::move(recPointCloud);
@@ -201,7 +202,9 @@ void determineTrisoupNeighbours(
   const ringbuf<PCCOctree3Node>& leaves,
   std::vector<uint16_t>& neighbNodes,
   std::vector<std::array<int, 18>>& edgePattern,
-  const int defaultBlockWidth) {
+  const int defaultBlockWidth,
+  std::vector<int>& segmentUniqueIndex,
+  int& Nunique) {
 
   // Width of block.
   // in future, may override with leaf blockWidth
@@ -297,10 +300,50 @@ void determineTrisoupNeighbours(
   auto it = segments.begin() + 1;
   neighbNodes.clear();
   std::vector<int> correspondanceUnique(segments.size(), -1);
+  if (segments.begin()->neighboursMask & 15) { // for true segments
+    // change index from 36* to 16*
+    int idx0 = segments.begin()->index;
+    int idx36 = idx0 / 36;
+    int idx = (idx36) * 12 + (idx0 - idx36 * 36);
+    segmentUniqueIndex[idx] = 0;
+  }
+
+
+
+  // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
+  static const int localEdgeindex[12][11] = {
+    { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
+    { 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
+    { 1,  5,  4,  9,  0,  8, -1, -1, -1, -1, -1}, // vertex 2
+    { 0,  7,  4,  8,  2, 10,  1,  9, -1, -1, -1}, // vertex 3
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
+    { 1,  0,  9,  4, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
+    { 3,  2,  0, 10, 11,  9,  8,  7,  5,  4, -1}, // vertex 6
+    { 0,  1,  2,  8, 10,  4,  5, -1, -1, -1, -1}, // vertex 7
+    { 4,  9,  1,  0, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
+    { 4,  0,  1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
+    { 5,  9,  1,  2,  8,  0, -1, -1, -1, -1, -1}, // vertex 10
+    { 7,  8,  0, 10,  5,  2,  3,  9,  1, -1, -1}  // vertex 11
+  };
+  static const int patternIndex[12][11] = {
+    { 3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
+    { 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
+    { 2,  3,  5,  8, 15, 17, -1, -1, -1, -1, -1}, // vertex 2
+    { 2,  3,  5,  8,  9, 12, 15, 17, -1, -1, -1}, // vertex 3
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
+    { 1,  7, 10, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
+    { 1,  2,  6,  9, 10, 11, 13, 14, 15, 16, -1}, // vertex 6
+    { 2,  5,  8,  9, 12, 15, 17, -1, -1, -1, -1}, // vertex 7
+    { 1,  4,  7, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
+    { 1,  7, 14, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
+    { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
+    { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
+  };
 
   int uniqueIndex = 0;
   std::array<int, 18> pattern = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 
+  segmentUniqueIndex.resize(12 * leaves.size());
   for (; it != segments.end(); it++) {
     if (localSegment.startpos != it->startpos || localSegment.endpos != it->endpos) {
 
@@ -322,6 +365,14 @@ void determineTrisoupNeighbours(
     }
     correspondanceUnique[it->index] = uniqueIndex;
 
+    if (it->neighboursMask & 15) { // for true segments
+    // change index from 36* to 16*
+      int idx0 = it->index;
+      int idx36 = idx0 / 36;
+      int idx = (idx36) * 12 + (idx0 - idx36 * 36);
+      segmentUniqueIndex[idx] = uniqueIndex;
+    }
+
     // ---------- neighbouring vertex parallel before
     if (it->neighboursMask >= 256 && it->neighboursMask <= 2048) { // lookinbg for vertex before (x left or y front or z below)
       int indexBefore = it->index - 24;
@@ -330,36 +381,6 @@ void determineTrisoupNeighbours(
         pattern[0] = correspondanceUnique[indexBefore];
       }
     }
-
-    // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
-    static const int localEdgeindex[12][11] = {
-      { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
-      { 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
-      { 1,  5,  4,  9,  0,  8, -1, -1, -1, -1, -1}, // vertex 2
-      { 0,  7,  4,  8,  2, 10,  1,  9, -1, -1, -1}, // vertex 3
-      {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
-      { 1,  0,  9,  4, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
-      { 3,  2,  0, 10, 11,  9,  8,  7,  5,  4, -1}, // vertex 6
-      { 0,  1,  2,  8, 10,  4,  5, -1, -1, -1, -1}, // vertex 7
-      { 4,  9,  1,  0, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
-      { 4,  0,  1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
-      { 5,  9,  1,  2,  8,  0, -1, -1, -1, -1, -1}, // vertex 10
-      { 7,  8,  0, 10,  5,  2,  3,  9,  1, -1, -1}  // vertex 11
-    };
-    static const int patternIndex[12][11] = {
-      { 3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
-      { 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
-      { 2,  3,  5,  8, 15, 17, -1, -1, -1, -1, -1}, // vertex 2
-      { 2,  3,  5,  8,  9, 12, 15, 17, -1, -1, -1}, // vertex 3
-      {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
-      { 1,  7, 10, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
-      { 1,  2,  6,  9, 10, 11, 13, 14, 15, 16, -1}, // vertex 6
-      { 2,  5,  8,  9, 12, 15, 17, -1, -1, -1, -1}, // vertex 7
-      { 1,  4,  7, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
-      { 1,  7, 14, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
-      { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
-      { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
-    };
 
     if ((it->neighboursMask & 4095) <= 8) { // true edge, not a copy; so done as many times a nodes for the  true edge
       int indexLow = it->index % 12;   // true edge index within node
@@ -382,6 +403,9 @@ void determineTrisoupNeighbours(
     neighbNodes.push_back(localSegment.neighboursMask);
     edgePattern.push_back(pattern);
   }
+
+
+  Nunique = uniqueIndex;
 }
 //============================================================================
 
@@ -535,7 +559,8 @@ decodeTrisoupCommon(
   bool fineRayflag,
   int thickness,
   pcc::EntropyDecoder* arithmeticDecoder,
-  GeometryOctreeContexts& ctxtMemOctree)
+  GeometryOctreeContexts& ctxtMemOctree,
+  std::vector<int>& segmentUniqueIndex)
 {
   // clear drifst vecause of encoder multi pass 
   drifts.clear();
@@ -544,88 +569,29 @@ decodeTrisoupCommon(
   sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
   sliceBB.max = sliceBB.min + ( gbh.slice_bb_width << gbh.slice_bb_width_log2_scale );
 
-  // Put all leaves' sgements into a list.
-  std::vector<TrisoupSegment> segments;
-  segments.resize(12*leaves.size());
-
-  // Width of block.
-  // in future, may override with leaf blockWidth
+  // Width of block. In future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  for (int i = 0; i < leaves.size(); i++) {
-    Vec3<int32_t> nodepos, nodew, corner[8];
-    nonCubicNode( gps, gbh, leaves[i].pos, defaultBlockWidth, sliceBB, nodepos, nodew, corner );
-
-    int ii = 12 * i;
-    for (int j = 0; j < 12; j++) {
-      int iii = ii + j;
-      segments[iii] = { nodepos, nodepos, iii,-1,-1 };
-    }
-    segments[ii + 0].startpos += corner[POS_000]; // far bottom edge
-    segments[ii + 0].endpos += corner[POS_W00];
-    segments[ii + 1].startpos += corner[POS_000]; // far left edge
-    segments[ii + 1].endpos += corner[POS_0W0];
-    segments[ii + 2].startpos += corner[POS_0W0]; // far top edge
-    segments[ii + 2].endpos += corner[POS_WW0];
-    segments[ii + 3].startpos += corner[POS_W00]; // far right edge
-    segments[ii + 3].endpos += corner[POS_WW0];
-    segments[ii + 4].startpos += corner[POS_000]; //bottom left edge
-    segments[ii + 4].endpos += corner[POS_00W];
-    segments[ii + 5].startpos += corner[POS_0W0]; // top left edge
-    segments[ii + 5].endpos += corner[POS_0WW];
-    segments[ii + 6].startpos += corner[POS_WW0]; //top right edge
-    segments[ii + 6].endpos += corner[POS_WWW];
-    segments[ii + 7].startpos += corner[POS_W00]; // bottom right edge
-    segments[ii + 7].endpos += corner[POS_W0W];
-    segments[ii + 8].startpos += corner[POS_00W]; // near bottom edge
-    segments[ii + 8].endpos += corner[POS_W0W];
-    segments[ii + 9].startpos += corner[POS_00W]; // near left edge
-    segments[ii + 9].endpos += corner[POS_0WW];
-    segments[ii + 10].startpos += corner[POS_0WW]; // near top edge
-    segments[ii + 10].endpos += corner[POS_WWW];
-    segments[ii + 11].startpos += corner[POS_W0W]; // near right edge
-    segments[ii + 11].endpos += corner[POS_WWW];
-  }
-
-  // Copy list of segments to another list to be sorted.
-  std::vector<TrisoupSegment> sortedSegments = segments;
-
-  // Sort the list and find unique segments.
-  std::sort(sortedSegments.begin(), sortedSegments.end());
-  std::vector<TrisoupSegment> uniqueSegments;
-  uniqueSegments.push_back(sortedSegments[0]);
-  segments[sortedSegments[0].index].uniqueIndex = 0;
-  for (int i = 1; i < sortedSegments.size(); i++) {
-    if (
-      uniqueSegments.back().startpos != sortedSegments[i].startpos
-      || uniqueSegments.back().endpos != sortedSegments[i].endpos) {
-      // sortedSegment[i] is different from uniqueSegments.back().
-      // Start a new uniqueSegment.
-      uniqueSegments.push_back(sortedSegments[i]);
-    }
-    segments[sortedSegments[i].index].uniqueIndex = uniqueSegments.size() - 1;
-  }
-
-  // Get vertex for each unique segment that intersects the surface.
+  std::vector<int> vertexList(segind.size());
   int vertexCount = 0;
-  for (int i = 0; i < uniqueSegments.size(); i++) {
-    if (segind[i]) {  // intersects the surface
-      uniqueSegments[i].vertex = vertices[vertexCount++];
-    } else {  // does not intersect the surface
-      uniqueSegments[i].vertex = -1;
-    }
-  }
+  for (int i = 0; i < segind.size(); i++) {
 
-  // Copy vertices back to original (non-unique, non-sorted) segments.
-  for (int i = 0; i < segments.size(); i++) {
-    segments[i].vertex = uniqueSegments[segments[i].uniqueIndex].vertex;
+    if (segind[i]) {  // intersects the surface
+      vertexList[i]= vertices[vertexCount++];
+    }
+    else {  // does not intersect the surface
+      vertexList[i] = -1;
+    }
   }
 
   // Create list of refined vertices, one leaf at a time.
   std::vector<Vec3<int32_t>> refinedVertices;
   refinedVertices.reserve(blockWidth * blockWidth * 4 * leaves.size());
+  const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
+  const int endCorner[12] =   { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
 
   // ----------- loop on leaf nodes ----------------------
+  int idxSegment = 0;
   for (int i = 0; i < leaves.size(); i++) {
     Vec3<int32_t> nodepos, nodew, corner[8];
     nonCubicNode( gps, gbh, leaves[i].pos, defaultBlockWidth, sliceBB, nodepos, nodew, corner );
@@ -636,24 +602,28 @@ decodeTrisoupCommon(
     refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
 
     for (int j = 0; j < 12; j++) {
-      TrisoupSegment& segment = segments[i * 12 + j];
-      if (segment.vertex < 0)
+      int uniqueIndex = segmentUniqueIndex[idxSegment++];
+      int vertex = vertexList[uniqueIndex];
+
+      if (vertex < 0)
         continue;  // skip segments that do not intersect the surface
+      auto startSegment = corner[startCorner[j]];
+      auto endSegment = corner[endCorner[j]];
 
       // Get distance along edge of vertex.
       // Vertex code is the index of the voxel along the edge of the block
       // of surface intersection./ Put decoded vertex at center of voxel,
       // unless voxel is first or last along the edge, in which case put the
       // decoded vertex at the start or endpoint of the segment.
-      Vec3<int32_t> direction = segment.endpos - segment.startpos;
+      Vec3<int32_t> direction = endSegment - startSegment;
       uint32_t segment_len = direction.max();
 
-      // Get 3D position of point of intersection.      
-      Vec3<int32_t> point = (segment.startpos - nodepos) << kTrisoupFpBits;
-      point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3 
+      // Get 3D position of point of intersection.
+      Vec3<int32_t> point = startSegment << kTrisoupFpBits;
+      point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3
 
       // points on edges are located at integer values
-      int32_t distance = (segment.vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
+      int32_t distance = (vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
       if (direction[0])
         point[0] += distance; // in {0,1,...,B-1}
       else if (direction[1])
