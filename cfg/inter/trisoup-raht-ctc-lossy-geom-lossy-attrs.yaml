@@ -23,8 +23,6 @@ categories:
      - GoFGeometryEntropyContinuationEnabled: 1
      # disable qtbt, local motion may support it
      - qtbtEnabled: 0
-     # disable planar for dense contents
-     - planarEnabled: 0
 
      - neighbourAvailBoundaryLog2: 8
      - intra_pred_max_node_size_log2: 6

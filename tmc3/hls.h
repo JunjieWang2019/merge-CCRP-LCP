@@ -536,12 +536,6 @@ struct GeometryParameterSet {
 
   // Controls the use of planar mode
   bool geom_planar_mode_enabled_flag{false}; //NOTE[FT] : explicitely FORCING geom_planar_mode_enabled_flag=false
-  bool geom_octree_depth_planar_eligibiity_enabled_flag;
-  bool geom_multiple_planar_mode_enable_flag;
-  int geom_planar_threshold0;
-  int geom_planar_threshold1;
-  int geom_planar_threshold2;
-  int geom_idcm_rate_minus1;
 
   // Enables angular coding in octree/predgeom
   bool geom_angular_mode_enabled_flag = false;

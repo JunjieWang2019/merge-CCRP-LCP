@@ -793,39 +793,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gps.intra_pred_max_node_size_log2, 0,
     "octree nodesizes eligible for occupancy intra prediction")
 
-  ("planarEnabled",
-    params.encoder.gps.geom_planar_mode_enabled_flag, true,
-    "Use planar mode for geometry coding")
-
-  ("octreeDepthPlanarEligibilityEnabled",
-    params.encoder.gps.geom_octree_depth_planar_eligibiity_enabled_flag, true,
-    "Determine the eligibility for planar mode per octree depth")
-
-  ("multiplePlanarEnabled",
-    params.encoder.gps.geom_multiple_planar_mode_enable_flag, true,
-    "Use multiple planar mode for geometry coding")
-
-  ("planarModeThreshold0",
-    params.encoder.gps.geom_planar_threshold0, 77,
-    "Activation threshold (0-127) of first planar mode when the eligibility is not determined per octree depth. "
-    "Lower values imply more use of the first planar mode")
-
-  ("planarModeThreshold1",
-    params.encoder.gps.geom_planar_threshold1, 99,
-    "Activation threshold (0-127) of second planar mode when the eligibility is not determined per octree depth. "
-    "Lower values imply more use of the first planar mode")
-
-  ("planarModeThreshold2",
-    params.encoder.gps.geom_planar_threshold2, 113,
-    "Activation threshold (0-127) of third planar mode when the eligibility is not determined per octree depth. "
-    "Lower values imply more use of the third planar mode")
-
-   ("planarModeIdcmUse",
-    // NB: this is adjusted by minus1 after thearguments are parsed
-    params.encoder.gps.geom_idcm_rate_minus1, 0,
-    "Degree (1/32%) of IDCM activation when planar mode is enabled\n"
-    "  0 => never, 32 => always")
-
   ("trisoupNodeSizeLog2",
     params.encoder.trisoupNodeSizesLog2, {0},
     "Node size for surface triangulation\n"
@@ -1300,7 +1267,6 @@ sanitizeEncoderOpts(
 
   // fix the representation of various options
   params.encoder.gbh.geom_stream_cnt_minus1--;
-  params.encoder.gps.geom_idcm_rate_minus1--;
   params.encoder.gps.neighbour_avail_boundary_log2_minus1 =
     std::max(0, params.encoder.gps.neighbour_avail_boundary_log2_minus1 - 1);
   for (auto& attr_sps : params.encoder.sps.attributeSets) {
@@ -1315,21 +1281,6 @@ sanitizeEncoderOpts(
   // Config options are absolute, but signalling is relative
   params.encoder.gbh.geom_qp_offset_intvl_log2_delta -=
     params.encoder.gps.geom_qp_offset_intvl_log2;
-
-  // If idcm rate is configured as 0, disable idcm
-  // NB: if user has requested less contrained idcm, warn
-  if (params.encoder.gps.geom_idcm_rate_minus1 < 0) {
-    //if (params.encoder.gps.inferred_direct_coding_mode == 1) //NOTE[FT] forcing inferred_direct_coding_mode to 0
-    //  params.encoder.gps.inferred_direct_coding_mode = 0;
-  }
-
-  if (params.encoder.gps.geom_idcm_rate_minus1 < 31) {
-    //if (params.encoder.gps.inferred_direct_coding_mode > 1) { //NOTE[FT] forcing inferred_direct_coding_mode to 0
-    //  params.encoder.gps.geom_idcm_rate_minus1 = 31;
-    //  err.warn() << "ignoring planarModeIdcmUse < 32: "
-    //                "contradicts inferredDirectCodingMode > 1\n";
-    //}
-  }
 
   // convert coordinate systems if the coding order is different from xyz
   convertXyzToStv(&params.encoder.sps);
@@ -1383,8 +1334,6 @@ sanitizeEncoderOpts(
   }
 
   if (params.encoder.gps.interPredictionEnabledFlag) {
-    params.encoder.gps.geom_multiple_planar_mode_enable_flag = false;
-
     params.encoder.sps.inter_frame_prediction_enabled_flag = true;
   }
 

@@ -17,8 +17,6 @@ categories:
 
      # disable qtbt, to be comparable with inter
      - qtbtEnabled: 0
-     # disable planar for dense contents
-     - planarEnabled: 0
 
      - neighbourAvailBoundaryLog2: 8
      - intra_pred_max_node_size_log2: 6

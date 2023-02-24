@@ -628,13 +628,9 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
     }
 
     bs.write(gps.geom_planar_mode_enabled_flag);
-    /*if (gps.geom_planar_mode_enabled_flag) {
-      bs.writeUe(gps.geom_planar_threshold0);
-      bs.writeUe(gps.geom_planar_threshold1);
-      bs.writeUe(gps.geom_planar_threshold2);
-      if (gps.inferred_direct_coding_mode == 1)
-        bs.writeUn(5, gps.geom_idcm_rate_minus1);
-    }*/
+    if (gps.geom_planar_mode_enabled_flag) {
+      throw std::runtime_error("Planar mode shall not be enabled");
+    }
   }
 
   bs.write(gps.geom_angular_mode_enabled_flag);
@@ -684,11 +680,6 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
     }
-
-    bs.write(gps.geom_octree_depth_planar_eligibiity_enabled_flag);
-
-    /*if (gps.geom_planar_mode_enabled_flag)
-      bs.write(gps.geom_multiple_planar_mode_enable_flag);*/
   }
   bs.byteAlign();
 
@@ -712,9 +703,7 @@ parseGps(const PayloadBuffer& buf)
 
   bs.read(&gps.geom_unique_points_flag);
 
-  gps.geom_planar_mode_enabled_flag = false;
   gps.octree_point_count_list_present_flag = false;
-  gps.geom_multiple_planar_mode_enable_flag = false;
   bs.read(&gps.predgeom_enabled_flag);
   if (gps.predgeom_enabled_flag) {
     throw std::runtime_error("Predictive Geometry shall not be enabled");
@@ -741,13 +730,9 @@ parseGps(const PayloadBuffer& buf)
     }
 
     bs.read(&gps.geom_planar_mode_enabled_flag);
-    /*if (gps.geom_planar_mode_enabled_flag) {
-      bs.readUe(&gps.geom_planar_threshold0);
-      bs.readUe(&gps.geom_planar_threshold1);
-      bs.readUe(&gps.geom_planar_threshold2);
-      if (gps.inferred_direct_coding_mode == 1)
-        bs.readUn(5, &gps.geom_idcm_rate_minus1);
-    }*/
+    if (gps.geom_planar_mode_enabled_flag) {
+      throw std::runtime_error("Planar mode shall not be enabled");
+    }
   }
 
   bs.read(&gps.geom_angular_mode_enabled_flag);
@@ -768,7 +753,6 @@ parseGps(const PayloadBuffer& buf)
   gps.interPredictionEnabledFlag = false;
   gps.globalMotionEnabled = false;
   gps.localMotionEnabled = false;
-  gps.geom_octree_depth_planar_eligibiity_enabled_flag = false;
   bool gps_extension_flag = bs.read();
   if (gps_extension_flag) {
     if(true)
@@ -801,12 +785,6 @@ parseGps(const PayloadBuffer& buf)
 
       bs.read(&gps.gof_geom_entropy_continuation_enabled_flag);
     }
-
-    /*if (gps.geom_planar_mode_enabled_flag)
-      bs.read(&gps.geom_octree_depth_planar_eligibiity_enabled_flag);*/
-
-    /*if (gps.geom_planar_mode_enabled_flag)
-      bs.read(&gps.geom_multiple_planar_mode_enable_flag);*/
   }
   bs.byteAlign();
 

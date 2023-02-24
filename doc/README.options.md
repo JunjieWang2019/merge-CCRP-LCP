@@ -453,28 +453,6 @@ its occupancy.  The prediction mode is enabled for octree nodes smaller
 than or equal to the configured size.  A value of 0 disables intra
 occupancy prediction.
 
-### `--planarEnabled=0|1`
-Controls the use of planar coding mode for geometry occupancy.
-
-### `--planarModeIdcmUse=0--32`
-Controls the frequency in 1/32 percent of IDCM eligibility.  Set to zero,
-IDCM is disabled.  Set to 32, IDCM is unconstrained.
-
-### `--planarModeThreshold0=0--127`
-Controls the eligibility threshold of the first planar mode based upon
-local child node density when the eligibility is not determined based 
-on octree depth.
-
-### `--planarModeThreshold1=0--127`
-Controls the eligibility threshold of the second planar mode based upon
-local child node density when the eligibility is not determined based 
-on octree depth.
-
-### `--planarModeThreshold2=0--127`
-Controls the eligibility threshold of the third planar mode based upon
-local child node density when the eligibility is not determined based 
-on octree depth.
-
 ### `--numOctreeEntropyStreams=INT-VALUE`
 The number of geometry sub-streams (suitable for parallel coding) used
 to encode the geometry octree.  For example, a value of eight generates
@@ -551,12 +529,6 @@ Identical to `positionBaseQpFreqLog2`, but controls per-slice configuration.
 ### `--pointCountMetadata=0|1`
 Controls the addition of per octree layer point count metadata to each
 geometry slice.
-
-### `--octreeDepthPlanarEligibilityEnabled=0|1`
-Controls the determination of planar mode eligibility based on octree depth.
-
-### `--multiplePlanarEnabled=0|1`
-Controls the enabling of signalling of planar mode for multiple directions.
 
 ### `--randomAccessPeriod=INT-VALUE`
 Specifies the distance (in frames) between random access points when 
