@@ -72,7 +72,6 @@ struct PCCOctree3Node {
   , siblingOccupancy(cp.siblingOccupancy)
   , idcmEligible(cp.idcmEligible)
   , qp(cp.qp)
-  , laserIndex(cp.laserIndex)
   {
   }
   // 3D position of the current node's origin (local x,y,z = 0).
@@ -109,9 +108,6 @@ struct PCCOctree3Node {
   // The qp used for geometry quantisation.
   // NB: this qp value always uses a step size doubling interval of 8 qps
   int8_t qp;
-
-  // angular
-  uint8_t laserIndex = 255;
 };
 
 //============================================================================
@@ -168,14 +164,13 @@ isDirectModeEligible(
   int nodeNeighPattern,
   const PCCOctree3Node& node,
   const PCCOctree3Node& child,
-  bool occupancyIsPredictable,
-  bool isAngularModeEnabled
+  bool occupancyIsPredictable
 
 )
 {
   if (!intensity)
     return false;
-  if (occupancyIsPredictable && !isAngularModeEnabled)
+  if (occupancyIsPredictable)
     return false;
 
   if (intensity == 1)
@@ -781,32 +776,6 @@ int maskPlanarZ(const OctreeNodePlanar& planar);
 
 void maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes);
 
-//int determineContextAngleForPlanar(
-//  PCCOctree3Node& node,
-//  const Vec3<int>& nodeSizeLog2,
-//  const Vec3<int>& angularOrigin,
-//  const int* zLaser,
-//  const int* thetaLaser,
-//  const int numLasers,
-//  int deltaAngle,
-//  const AzimuthalPhiZi& phiZi,
-//  int* phiBuffer,
-//  int* contextAnglePhiX,
-//  int* contextAnglePhiY,
-//  Vec3<uint32_t> quantMasks);
-
-//---------------------------------------------------------------------------
-
-inline int
-determineContextIndexForAngularPhiIDCM(int deltaPhi, int phiLRDiff)
-{
-  return (3 * deltaPhi < phiLRDiff << 2) + (deltaPhi < phiLRDiff << 1);
-}
-
-//----------------------------------------------------------------------------
-
-int findLaser(point_t point, const int* thetaList, const int numTheta);
-
 //============================================================================
 
 class GeometryOctreeContexts {
@@ -851,16 +820,6 @@ protected:
   AdaptiveBitModel _ctxSameBitHighx[5];
   AdaptiveBitModel _ctxSameBitHighy[5];
   AdaptiveBitModel _ctxSameBitHighz[5];
-
-  // residual laser index
-  AdaptiveBitModel _ctxThetaRes[2][3];
-  AdaptiveBitModel _ctxThetaResSign[3];
-  AdaptiveBitModel _ctxThetaResExp;
-
-  // residual z
-  AdaptiveBitModel _ctxZRes[3];
-  AdaptiveBitModel _ctxZResSign;
-  AdaptiveBitModel _ctxZResExp;
 
   AdaptiveBitModel _ctxQpOffsetAbsGt0;
   AdaptiveBitModel _ctxQpOffsetSign;

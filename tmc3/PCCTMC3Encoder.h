@@ -115,18 +115,6 @@ struct EncoderParams {
   // attribute recolouring parameters
   RecolourParams recolour;
 
-  // LiDAR head position
-  Vec3<int> lidarHeadPosition;
-
-  // number of expected lasers
-  int numLasers;
-
-  // floating Lasers' theta (have to be converted to fixed point in gps)
-  std::vector<double> lasersTheta;
-
-  // floating Lasers' H (have to be converted to fixed point in gps)
-  std::vector<double> lasersZ;
-
   // per-slice trisoup node sizes
   std::vector<int> trisoupNodeSizesLog2;
 

@@ -634,52 +634,10 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
     }*/
   }
 
-  bs.write(/*gps.geom_angular_mode_enabled_flag*/ false);
-  /*if (gps.geom_angular_mode_enabled_flag) {
-    bs.write(gps.geom_slice_angular_origin_present_flag);
-    if (!gps.geom_slice_angular_origin_present_flag) {
-      auto gps_angular_origin =
-        toXyz(sps.geometry_axis_order, gps.gpsAngularOrigin);
-
-      int gps_angular_origin_bits_minus1 =
-        numBits(gps_angular_origin.abs().max()) - 1;
-
-      bs.writeUe(gps_angular_origin_bits_minus1);
-      bs.writeSn(gps_angular_origin_bits_minus1 + 1, gps_angular_origin.x());
-      bs.writeSn(gps_angular_origin_bits_minus1 + 1, gps_angular_origin.y());
-      bs.writeSn(gps_angular_origin_bits_minus1 + 1, gps_angular_origin.z());
-    }
-
-    int geom_angular_num_lidar_lasers_minus1 = gps.numLasers() - 1;
-    bs.writeUe(geom_angular_num_lidar_lasers_minus1);
-    int geom_angular_theta0 = gps.angularTheta[0];
-    int geom_angular_z0 = gps.angularZ[0];
-    bs.writeSe(geom_angular_theta0);
-    bs.writeSe(geom_angular_z0);
-    if (true) {
-      int geom_angular_num_phi_per_turn0_minus1 =
-        gps.angularNumPhiPerTurn[0] - 1;
-      bs.writeUe(geom_angular_num_phi_per_turn0_minus1);
-    }
-
-    for (int i = 1; i <= geom_angular_num_lidar_lasers_minus1; i++) {
-      int geom_angular_theta_laser_diff =
-        gps.angularTheta[i] - gps.geomAngularThetaPred(i);
-
-      int geom_angular_z_laser_diff = gps.angularZ[i] - gps.angularZ[i - 1];
-
-      int geom_angular_num_phi_laser_diff =
-        gps.angularNumPhiPerTurn[i] - gps.angularNumPhiPerTurn[i - 1];
-
-      bs.writeSe(geom_angular_theta_laser_diff);
-      bs.writeSe(geom_angular_z_laser_diff);
-      if (true)
-        bs.writeSe(geom_angular_num_phi_laser_diff);
-    }
-
-    if (gps.geom_planar_mode_enabled_flag)
-      bs.write(gps.planar_buffer_disabled_flag);
-  }*/
+  bs.write(gps.geom_angular_mode_enabled_flag);
+  if (gps.geom_angular_mode_enabled_flag) {
+    throw std::runtime_error("Angular mode shall not be enabled");
+  }
 
   bs.write(gps.geom_scaling_enabled_flag);
   if (gps.geom_scaling_enabled_flag) {
@@ -702,9 +660,6 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
       bs.write(gps.non_cubic_node_end_edge);
     }
 
-    /*if (gps.geom_planar_mode_enabled_flag && gps.geom_angular_mode_enabled_flag && gps.inferred_direct_coding_mode)
-      bs.write(gps.geom_planar_disabled_idcm_angular_flag);*/
-
     if (true)
       bs.write(gps.interPredictionEnabledFlag);
 
@@ -726,9 +681,6 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
     }
-
-    /*if (gps.geom_angular_mode_enabled_flag)
-      bs.write(gps.octree_angular_extension_flag);*/
 
     bs.write(gps.geom_octree_depth_planar_eligibiity_enabled_flag);
 
@@ -792,60 +744,10 @@ parseGps(const PayloadBuffer& buf)
     }*/
   }
 
-  gps.planar_buffer_disabled_flag = false;
-  gps.geom_slice_angular_origin_present_flag = false;
   bs.read(&gps.geom_angular_mode_enabled_flag);
-  //if (gps.geom_angular_mode_enabled_flag) {
-  //  bs.read(&gps.geom_slice_angular_origin_present_flag);
-  //  if (!gps.geom_slice_angular_origin_present_flag) {
-  //    int gps_angular_origin_bits_minus1;
-  //    bs.readUe(&gps_angular_origin_bits_minus1);
-
-  //    // NB: this is in XYZ axis order until the GPS is converted to STV
-  //    Vec3<int>& gps_angular_origin = gps.gpsAngularOrigin;
-  //    bs.readSn(gps_angular_origin_bits_minus1 + 1, &gps_angular_origin.x());
-  //    bs.readSn(gps_angular_origin_bits_minus1 + 1, &gps_angular_origin.y());
-  //    bs.readSn(gps_angular_origin_bits_minus1 + 1, &gps_angular_origin.z());
-  //  }
-
-  //  int geom_angular_num_lidar_lasers_minus1;
-  //  bs.readUe(&geom_angular_num_lidar_lasers_minus1);
-  //  gps.angularTheta.resize(geom_angular_num_lidar_lasers_minus1 + 1);
-  //  gps.angularZ.resize(geom_angular_num_lidar_lasers_minus1 + 1);
-  //  gps.angularNumPhiPerTurn.resize(geom_angular_num_lidar_lasers_minus1 + 1);
-
-  //  int& geom_angular_theta0 = gps.angularTheta[0];
-  //  int& geom_angular_z0 = gps.angularZ[0];
-  //  bs.readSe(&geom_angular_theta0);
-  //  bs.readSe(&geom_angular_z0);
-  //  if (true) {
-  //    int geom_angular_num_phi_per_turn0_minus1;
-  //    bs.readUe(&geom_angular_num_phi_per_turn0_minus1);
-  //    gps.angularNumPhiPerTurn[0] = geom_angular_num_phi_per_turn0_minus1 + 1;
-  //  }
-
-  //  for (int i = 1; i <= geom_angular_num_lidar_lasers_minus1; i++) {
-  //    int geom_angular_theta_laser_diff;
-  //    int geom_angular_z_laser_diff;
-  //    bs.readSe(&geom_angular_theta_laser_diff);
-  //    bs.readSe(&geom_angular_z_laser_diff);
-
-  //    gps.angularZ[i] = gps.angularZ[i - 1] + geom_angular_z_laser_diff;
-  //    gps.angularTheta[i] =
-  //      gps.geomAngularThetaPred(i) + geom_angular_theta_laser_diff;
-
-  //    if (true) {
-  //      int geom_angular_num_phi_laser_diff;
-  //      bs.readSe(&geom_angular_num_phi_laser_diff);
-
-  //      gps.angularNumPhiPerTurn[i] =
-  //        gps.angularNumPhiPerTurn[i - 1] + geom_angular_num_phi_laser_diff;
-  //    }
-  //  }
-
-  //  if (gps.geom_planar_mode_enabled_flag)
-  //    bs.read(&gps.planar_buffer_disabled_flag);
-  //}
+  if (gps.geom_angular_mode_enabled_flag) {
+    throw std::runtime_error("Angular mode shall not be enabled");
+  }
 
   gps.geom_base_qp = 0;
   gps.geom_qp_multiplier_log2 = 0;
@@ -857,11 +759,9 @@ parseGps(const PayloadBuffer& buf)
   }
 
   gps.trisoup_enabled_flag = false;
-  gps.octree_angular_extension_flag = false;
   gps.interPredictionEnabledFlag = false;
   gps.globalMotionEnabled = false;
   gps.localMotionEnabled = false;
-  //gps.geom_planar_disabled_idcm_angular_flag = false; //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false at construction
   gps.geom_octree_depth_planar_eligibiity_enabled_flag = false;
   bool gps_extension_flag = bs.read();
   if (gps_extension_flag) {
@@ -872,11 +772,6 @@ parseGps(const PayloadBuffer& buf)
       bs.read(&gps.non_cubic_node_start_edge);
       bs.read(&gps.non_cubic_node_end_edge);
     }
-
-    /*if (
-      gps.geom_planar_mode_enabled_flag && gps.geom_angular_mode_enabled_flag
-      && gps.inferred_direct_coding_mode)
-      bs.read(&gps.geom_planar_disabled_idcm_angular_flag);*/
 
     if (true)
       bs.read(&gps.interPredictionEnabledFlag);
@@ -901,9 +796,6 @@ parseGps(const PayloadBuffer& buf)
       bs.read(&gps.gof_geom_entropy_continuation_enabled_flag);
     }
 
-    /*if (gps.geom_angular_mode_enabled_flag)
-      bs.read(&gps.octree_angular_extension_flag);*/
-
     /*if (gps.geom_planar_mode_enabled_flag)
       bs.read(&gps.geom_octree_depth_planar_eligibiity_enabled_flag);*/
 
@@ -920,8 +812,6 @@ parseGps(const PayloadBuffer& buf)
 void
 convertXyzToStv(const SequenceParameterSet& sps, GeometryParameterSet* gps)
 {
-  gps->gpsAngularOrigin =
-    fromXyz(sps.geometry_axis_order, gps->gpsAngularOrigin);
 }
 
 //============================================================================
@@ -1003,18 +893,11 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     bs.write(aps.raw_attr_variable_len_flag);
 
   if (!aps.scalable_lifting_enabled_flag)
-    bs.write(/*aps.spherical_coord_flag*/ false);
-  /*if (aps.spherical_coord_flag) {
-    assert(!aps.scalable_lifting_enabled_flag);
-    for (int k = 0; k < 3; k++) {
-      int attr_coord_scale_bits_minus1 = numBits(aps.attr_coord_scale[k]) - 1;
-      bs.writeUn(5, attr_coord_scale_bits_minus1);
-      bs.writeUn(attr_coord_scale_bits_minus1 + 1, aps.attr_coord_scale[k]);
-    }
-  }*/
- 
+    bs.write(aps.spherical_coord_flag);
+  if (aps.spherical_coord_flag) {
+    throw std::runtime_error("Spherical coordinates shall not be enabled");
+  }
 
-  
   // NB: bitstreams conforming to the first edition must set
   // aps_extension_flag equal to 0.
   bool aps_extension_flag = sps.profile.isDraftProfile();
@@ -1147,16 +1030,12 @@ parseAps(const PayloadBuffer& buf)
   if (aps.attr_encoding == AttributeEncoding::kRaw)
     bs.read(&aps.raw_attr_variable_len_flag);
 
-  //aps.spherical_coord_flag = false;
+  aps.spherical_coord_flag = false;
   if (!aps.scalable_lifting_enabled_flag)
     bs.read(&aps.spherical_coord_flag);
-  /*if (aps.spherical_coord_flag) {
-    for (int k = 0; k < 3; k++) {
-      int attr_coord_scale_bits_minus1;
-      bs.readUn(5, &attr_coord_scale_bits_minus1);
-      bs.readUn(attr_coord_scale_bits_minus1 + 1, &aps.attr_coord_scale[k]);
-    }
-  }*/
+  if (aps.spherical_coord_flag) {
+    throw std::runtime_error("Spherical coordinates shall not be enabled");
+  }
 
   bool aps_extension_flag = bs.read();
   aps.max_points_per_sort_log2_plus1 = 0;
@@ -1248,19 +1127,6 @@ write(
     bs.writeUn(originBits, geom_box_origin.x());
     bs.writeUn(originBits, geom_box_origin.y());
     bs.writeUn(originBits, geom_box_origin.z());
-  }
-
-  if (gps.geom_slice_angular_origin_present_flag) {
-    auto gbh_angular_origin =
-      toXyz(sps.geometry_axis_order, gbh.gbhAngularOrigin);
-
-    int gbh_angular_origin_bits_minus1 =
-      numBits(gbh_angular_origin.abs().max()) - 1;
-
-    bs.writeUe(gbh_angular_origin_bits_minus1);
-    bs.writeSn(gbh_angular_origin_bits_minus1 + 1, gbh_angular_origin.x());
-    bs.writeSn(gbh_angular_origin_bits_minus1 + 1, gbh_angular_origin.y());
-    bs.writeSn(gbh_angular_origin_bits_minus1 + 1, gbh_angular_origin.z());
   }
 
   if (true) {
@@ -1362,19 +1228,6 @@ parseGbh(
   }
   gbh.geomBoxOrigin = fromXyz(sps.geometry_axis_order, geom_box_origin);
   gbh.geomBoxOrigin *= 1 << gbh.geomBoxLog2Scale(gps);
-
-  if (gps.geom_slice_angular_origin_present_flag) {
-    int gbh_angular_origin_bits_minus1;
-    bs.readUe(&gbh_angular_origin_bits_minus1);
-
-    Vec3<int> gbh_angular_origin;
-    bs.readSn(gbh_angular_origin_bits_minus1 + 1, &gbh_angular_origin.x());
-    bs.readSn(gbh_angular_origin_bits_minus1 + 1, &gbh_angular_origin.y());
-    bs.readSn(gbh_angular_origin_bits_minus1 + 1, &gbh_angular_origin.z());
-
-    gbh.gbhAngularOrigin =
-      fromXyz(sps.geometry_axis_order, gbh_angular_origin);
-  }
 
   gbh.geom_stream_cnt_minus1 = 0;
   if (true) {

@@ -542,33 +542,9 @@ struct GeometryParameterSet {
   int geom_planar_threshold1;
   int geom_planar_threshold2;
   int geom_idcm_rate_minus1;
-  bool geom_planar_disabled_idcm_angular_flag{false}; //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
 
   // Enables angular coding in octree/predgeom
-  bool geom_angular_mode_enabled_flag;
-
-  // Indicates whether the angualed origin is signalled in the gps or slice
-  bool geom_slice_angular_origin_present_flag;
-
-  // Origin for angular mode computations relative to sequence bounding box
-  // (in stv axis order).
-  Vec3<int> gpsAngularOrigin;
-
-  int numLasers() const { return angularTheta.size(); }
-
-  std::vector<int> angularTheta;
-  std::vector<int> angularZ;
-  std::vector<int> angularNumPhiPerTurn;
-
-  int geomAngularThetaPred(int i) const
-  {
-    if (!--i)
-      return angularTheta[i];
-    return 2 * angularTheta[i] - angularTheta[i - 1];
-  }
-
-  // disable the use of planar buffer when angular mode is enabled
-  bool planar_buffer_disabled_flag;
+  bool geom_angular_mode_enabled_flag = false;
 
   // block size (i.e. number of points per block) in predictive geometry coding
   int geom_qp_offset_intvl_log2;
@@ -577,8 +553,6 @@ struct GeometryParameterSet {
   // in each octree level.
   bool octree_point_count_list_present_flag;
 
-  // Enable octree angular extension
-  bool octree_angular_extension_flag;
   // Enable inter prediction
   bool interPredictionEnabledFlag;
   bool globalMotionEnabled = false;
@@ -627,18 +601,6 @@ struct GeometryBrickHeader {
 
   // Number of bits to represent geomBoxOrigin >> geom_box_log2_scale
   int geom_box_origin_bits_minus1;
-
-  // Per-slice version of gpsAngularOrigin, but relative to slice bounding box
-  // (in stv axis order).
-  Vec3<int> gbhAngularOrigin;
-
-  // Origin for angular mode computations relative to slice bounding box
-  Vec3<int> geomAngularOrigin(const GeometryParameterSet& gps) const
-  {
-    if (gps.geom_slice_angular_origin_present_flag)
-      return gbhAngularOrigin;
-    return gps.gpsAngularOrigin - geomBoxOrigin;
-  }
 
   // the size of the root geometry node
   // NB: this is only needed for the initial node size determination at

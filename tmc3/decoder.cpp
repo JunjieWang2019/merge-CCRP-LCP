@@ -42,7 +42,6 @@
 #include "AttributeCommon.h"
 #include "PayloadBuffer.h"
 #include "PCCPointSet.h"
-#include "coordinate_conversion.h"
 #include "geometry.h"
 #include "geometry_octree.h"
 #include "hls.h"
@@ -561,39 +560,7 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 
   clock_user.start();
 
-  // Convert cartesian positions to spherical for use in attribute coding.
-  // NB: this retains the original cartesian positions to restore afterwards
-  std::vector<pcc::point_t> altPositions;
-  //if (attr_aps.spherical_coord_flag) {
-  //  // If predgeom was used, re-use the internal positions rather than
-  //  // calculating afresh.
-  //  Box3<int> bboxRpl;
-
-  //  pcc::point_t minPos = 0;
-
-  //  {
-  //    altPositions.resize(_currentPointCloud.getPointCount());
-
-  //    auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
-  //    bboxRpl = convertXyzToRpl(
-  //      laserOrigin, _gps->angularTheta.data(), _gps->angularTheta.size(),
-  //      &_currentPointCloud[0],
-  //      &_currentPointCloud[0] + _currentPointCloud.getPointCount(),
-  //      altPositions.data());
-
-  //    if(!attr_aps.attrInterPredictionEnabled){
-  //      minPos = bboxRpl.min;
-  //    }
-  //  }
-
-  //  offsetAndScale(
-  //    minPos, attr_aps.attr_coord_scale, altPositions.data(),
-  //    altPositions.data() + altPositions.size());
-
-  //  _currentPointCloud.swapPoints(altPositions);
-  //}
-
-  if (/*!attr_aps.spherical_coord_flag*/ true)
+  if (true)
     for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
       _currentPointCloud[i] += _sliceOrigin;
 
@@ -604,18 +571,11 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     ctxtMemAttr, _currentPointCloud
     , attrInterPredParams);
 
-  if (/*!attr_aps.spherical_coord_flag*/ true)
+  if (true)
     for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
       _currentPointCloud[i] -= _sliceOrigin;
 
-  /*if (attr_aps.spherical_coord_flag)
-    _currentPointCloud.swapPoints(altPositions);*/
-
   attrInterPredParams.referencePointCloud.clear();
-  /*if (attr_aps.spherical_coord_flag) {
-    attrInterPredParams.referencePointCloud = _currentPointCloud;
-    attrInterPredParams.referencePointCloud.swapPoints(altPositions);
-  }*/
 
   // Note the current sliceID for loss detection
   _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;

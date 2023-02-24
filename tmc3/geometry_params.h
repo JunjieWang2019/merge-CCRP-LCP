@@ -47,10 +47,6 @@ struct QtBtParameters {
   int minQtbtSizeLog2;
 
   bool trisoupEnabled;
-
-  bool angularTweakEnabled;
-  int angularMaxNodeMinDimLog2ToSplitV;
-  int angularMaxDiffToSplitZ;
 };
 
 //----------------------------------------------------------------------------

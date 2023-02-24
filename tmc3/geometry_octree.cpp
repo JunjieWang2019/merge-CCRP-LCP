@@ -55,8 +55,6 @@ oneQtBtDecision(
   int maxNumQtbtBeforeOt,
   int minDepthQtbt)
 {
-  int maxNodeMinDimLog2ToSplitZ = qtbt.angularMaxNodeMinDimLog2ToSplitV;
-  int maxDiffToSplitZ = qtbt.angularMaxDiffToSplitZ;
   int nodeMinDimLog2 = nodeSizeLog2.min();
 
   if (maxNumQtbtBeforeOt || nodeMinDimLog2 == minDepthQtbt) {
@@ -65,22 +63,7 @@ oneQtBtDecision(
       if (nodeSizeLog2[k] == nodeMaxDimLog2)
         nodeSizeLog2[k]--;
     }
-  } else if (
-    qtbt.angularTweakEnabled && minDepthQtbt >= 0
-    && nodeSizeLog2[2] <= maxNodeMinDimLog2ToSplitZ
-    && (maxNodeMinDimLog2ToSplitZ + maxDiffToSplitZ > 0)) {
-    // do not split z
-    int nodeXYMaxDimLog2 = std::max(nodeSizeLog2[0], nodeSizeLog2[1]);
-    for (int k = 0; k < 2; k++) {
-      if (nodeSizeLog2[k] == nodeXYMaxDimLog2)
-        nodeSizeLog2[k]--;
-    }
-    if (
-      (nodeMinDimLog2 <= maxNodeMinDimLog2ToSplitZ
-       && nodeSizeLog2[2] >= nodeXYMaxDimLog2 + maxDiffToSplitZ)
-      || (nodeXYMaxDimLog2 >= maxNodeMinDimLog2ToSplitZ + maxDiffToSplitZ && nodeSizeLog2[2] >= nodeXYMaxDimLog2))
-      nodeSizeLog2[2]--;
-  } else  // octree partition
+  } else // octree partition
     nodeSizeLog2 = nodeSizeLog2 - 1;
 
   return nodeSizeLog2;
@@ -380,7 +363,7 @@ mkIdcmEnableMask(const GeometryParameterSet& gps)
 //OctreePlanarState::OctreePlanarState(const GeometryParameterSet& gps)
 //{
 //  _planarBufferEnabled =
-//    /*gps.geom_planar_mode_enabled_flag && !gps.planar_buffer_disabled_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
+//    /*gps.geom_planar_mode_enabled_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
 //  _geom_multiple_planar_mode_enable_flag = /*gps.geom_planar_mode_enabled_flag
 //    && gps.geom_multiple_planar_mode_enable_flag*/ false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
 //  _rateThreshold[0] = gps.geom_planar_threshold0 << 4;
@@ -552,145 +535,6 @@ maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes)
   mask[0] = maskPlanarX(planar);
   mask[1] = maskPlanarY(planar);
   mask[2] = maskPlanarZ(planar);
-}
-
-//----------------------------------------------------------------------------
-// determine angular context for planar integer implementation.
-
-//int
-//determineContextAngleForPlanar(
-//  PCCOctree3Node& node,
-//  const Vec3<int>& nodeSizeLog2,
-//  const Vec3<int>& angularOrigin,
-//  const int* zLaser,
-//  const int* thetaLaser,
-//  const int numLasers,
-//  int deltaAngle,
-//  const AzimuthalPhiZi& phiZi,
-//  int* phiBuffer,
-//  int* contextAnglePhiX,
-//  int* contextAnglePhiY,
-//  Vec3<uint32_t> quantMasks)
-//{
-//  Vec3<int> nodePos = node.pos << nodeSizeLog2;
-//  Vec3<int> midNode = (1 << nodeSizeLog2) >> 1;
-//  Vec3<int> nodeSize = 1 << nodeSizeLog2;
-//
-//  if (node.qp) {
-//    OctreeAngPosScaler quant(node.qp, quantMasks);
-//    nodePos = quant.scaleNs(nodePos);
-//    midNode = quant.scaleNs(midNode);
-//    nodeSize = quant.scaleNs(nodeSize);
-//  }
-//
-//  // eligibility
-//  auto nodePosLidar = nodePos - angularOrigin;
-//  uint64_t xLidar = std::abs(((nodePosLidar[0] + midNode[0]) << 8) - 128);
-//  uint64_t yLidar = std::abs(((nodePosLidar[1] + midNode[1]) << 8) - 128);
-//
-//  uint64_t rL1 = (xLidar + yLidar) >> 1;
-//  uint64_t deltaAngleR = deltaAngle * rL1;
-//  if (numLasers > 1 && deltaAngleR <= uint64_t(midNode[2]) << 26)
-//    return -1;
-//
-//  // determine inverse of r  (1/sqrt(r2) = irsqrt(r2))
-//  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
-//  uint64_t rInv = irsqrt(r2);
-//
-//  // determine non-corrected theta
-//  int64_t zLidar = ((nodePosLidar[2] + midNode[2]) << 1) - 1;
-//  int64_t theta = zLidar * rInv;
-//  int theta32 = theta >= 0 ? theta >> 15 : -((-theta) >> 15);
-//
-//  // determine laser
-//  int laserIndex = int(node.laserIndex);
-//  if (numLasers == 1)
-//    laserIndex = 0;
-//  else if (laserIndex == 255 || deltaAngleR <= uint64_t(midNode[2]) << 28) {
-//    auto end = thetaLaser + numLasers - 1;
-//    auto it = std::upper_bound(thetaLaser + 1, end, theta32);
-//    if (theta32 - *std::prev(it) <= *it - theta32)
-//      --it;
-//
-//    laserIndex = std::distance(thetaLaser, it);
-//    node.laserIndex = uint8_t(laserIndex);
-//  }
-//
-//  // -- PHI  --
-//  //angles
-//  int posx = nodePosLidar[0];
-//  int posy = nodePosLidar[1];
-//  int phiNode = iatan2(posy + midNode[1], posx + midNode[0]);
-//  int phiNode0 = iatan2(posy, posx);
-//
-//  // find predictor
-//  int predPhi = phiBuffer[laserIndex];
-//  if (predPhi == 0x80000000)
-//    predPhi = phiNode;
-//
-//  // use predictor
-//  if (predPhi != 0x80000000) {
-//    // elementary shift predictor
-//    int Nshift =
-//      ((predPhi - phiNode) * phiZi.invDelta(laserIndex) + (1 << 29)) >> 30;
-//    predPhi -= phiZi.delta(laserIndex) * Nshift;
-//
-//    // ctx azimutal x or y
-//    int angleL = phiNode0 - predPhi;
-//    int angleR = phiNode - predPhi;
-//    int contextAnglePhi =
-//      (angleL >= 0 && angleR >= 0) || (angleL < 0 && angleR < 0) ? 2 : 0;
-//    angleL = std::abs(angleL);
-//    angleR = std::abs(angleR);
-//    if (angleL > angleR) {
-//      contextAnglePhi++;
-//      std::swap(angleL, angleR);
-//    }
-//    if (angleR > (angleL << 2))
-//      contextAnglePhi += 4;
-//
-//    if (std::abs(posx) <= std::abs(posy))
-//      *contextAnglePhiX = contextAnglePhi;
-//    else
-//      *contextAnglePhiY = contextAnglePhi;
-//  }
-//
-//  // -- THETA --
-//  int thetaLaserDelta = thetaLaser[laserIndex] - theta32;
-//  int64_t hr = zLaser[laserIndex] * rInv;
-//  thetaLaserDelta += hr >= 0 ? -(hr >> 17) : ((-hr) >> 17);
-//
-//  int64_t zShift = (rInv * nodeSize[2]) >> 20;
-//  int thetaLaserDeltaBot = thetaLaserDelta + zShift;
-//  int thetaLaserDeltaTop = thetaLaserDelta - zShift;
-//  int contextAngle = thetaLaserDelta >= 0 ? 0 : 1;
-//  if (thetaLaserDeltaTop >= 0)
-//    contextAngle += 2;
-//  else if (thetaLaserDeltaBot < 0)
-//    contextAngle += 2;
-//
-//  return contextAngle;
-//}
-
-//============================================================================
-
-int
-findLaser(pcc::point_t point, const int* thetaList, const int numTheta)
-{
-  if (numTheta == 1)
-    return 0;
-
-  int64_t xLidar = int64_t(point[0]) << 8;
-  int64_t yLidar = int64_t(point[1]) << 8;
-  int64_t rInv = irsqrt(xLidar * xLidar + yLidar * yLidar);
-  int theta32 = (point[2] * rInv) >> 14;
-
-  auto end = thetaList + numTheta - 1;
-  auto it = std::upper_bound(thetaList + 1, end, theta32);
-  if (theta32 - *std::prev(it) <= *it - theta32)
-    --it;
-
-  return std::distance(thetaList, it);
 }
 
 //============================================================================

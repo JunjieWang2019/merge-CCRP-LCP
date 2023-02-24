@@ -479,46 +479,6 @@ Controls the eligibility threshold of the third planar mode based upon
 local child node density when the eligibility is not determined based 
 on octree depth.
 
-### `--angularEnabled=0|1`
-Controls the use of the angular coding mode in geometry occupancy
-contextualisation.  Angular coding mode uses a LiDaR head model prior to
-improve the compression of a LiDaR acquired point cloud.  The angular
-mode requires that planar mode is enabled.
-
-### `--lidarHeadPosition=x,y,z`
-Specifies the LiDaR head position for use by the angular mode in terms
-of the input (unquantised) point cloud co-ordinate system.
-
-### `--numLasers=0--255`
-The number of known laser angles and positions for use in angular mode.
-
-### `--lasersTheta=FLOAT-VALUE-LIST`
-The elevation angle, theta, of each known laser used by the angular
-mode.  Each elevation angle is expressed in radians relative to the x-y
-plane (range: $\left[-\pi, \pi\right]$.  The zero angle describes a
-horizontal laser.  Positive angles represent an elevation above the
-horizontal.  Negative angles represent an elevation below the
-horizontal.
-
-The software will convert the floating point angles to an 18 bit fixed
-point representation.
-
-### `--lasersZ=FLOAT-VALUE-LIST`
-The vertical offset of each known laser used by the angular mode.
-Each offset is expressed along the z axis in the input point cloud
-co-ordinate system, corresponding to a vertical offset relative to
-the LiDAR head position.
-
-The software will convert the floating point offsets to a three bit
-fixed point representation.
-
-### `--lasersNumPhiPerTurn=INT-VALUE-LIST`
-The maximum number of samples that can be acquired during a full rotation of
-each known laser used by the angular mode.
-
-### `--planarBufferDisabled=0|1`
-Controls the deactivation of the planar mode buffer for angular mode.
-
 ### `--numOctreeEntropyStreams=INT-VALUE`
 The number of geometry sub-streams (suitable for parallel coding) used
 to encode the geometry octree.  For example, a value of eight generates
@@ -601,13 +561,6 @@ Controls the determination of planar mode eligibility based on octree depth.
 
 ### `--multiplePlanarEnabled=0|1`
 Controls the enabling of signalling of planar mode for multiple directions.
-
-### `--octreeAngularExtension=0|1`
-Controls the enabling of extending angular mode in octree geometry.
-
-### `--disable_planar_IDCM_angular=0|1`
-Controls the disabling of planar mode for geometry coding of IDCM coded nodes
-when angular coding is enabled.
 
 ### `--randomAccessPeriod=INT-VALUE`
 Specifies the distance (in frames) between random access points when 
@@ -827,10 +780,6 @@ decoding order) is usable only with LoD attribute coding and
   |:-----:| ---------------------------------- |
   | 0     | Morton order                       |
   | 1     | Decoded geometry (canonical) order |
-
-### `--spherical_coord_flag=0|1`
-Controls the conversion of point co-ordinates used in attribute coding from
-the Cartesian domain to a scaled spherical domain.
 
 ### `--lod_neigh_bias=INT-VALUE-LIST`
 A set of three bias factors corresponding to the first, second and third

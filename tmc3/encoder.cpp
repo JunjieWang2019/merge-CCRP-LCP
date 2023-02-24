@@ -43,7 +43,6 @@
 
 #include "Attribute.h"
 #include "AttributeCommon.h"
-#include "coordinate_conversion.h"
 #include "geometry_params.h"
 #include "hls.h"
 #include "pointset_processing.h"
@@ -157,32 +156,6 @@ PCCTMC3Encoder3::compress(
     params->sps.sps_bounding_box_size_bits = bboxSizeDefined
       ? numBits(params->sps.seqBoundingBoxSize.abs().max())
       : 0;
-
-    // Determine the lidar head position in coding coordinate system
-    params->gps.gpsAngularOrigin *= _srcToCodingScale;
-    params->gps.gpsAngularOrigin -= _originInCodingCoords;
-
-    // determine the scale factors based on a characteristic of the
-    // acquisition system
-    //if (params->gps.geom_angular_mode_enabled_flag) {
-    //  auto gs = Rational(params->sps.globalScale);
-    //  int maxX = (params->sps.seqBoundingBoxSize[0] - 1) / double(gs);
-    //  int maxY = (params->sps.seqBoundingBoxSize[1] - 1) / double(gs);
-    //  auto& origin = params->gps.gpsAngularOrigin;
-    //  int rx = std::max(std::abs(origin[0]), std::abs(maxX - origin[0]));
-    //  int ry = std::max(std::abs(origin[1]), std::abs(maxY - origin[1]));
-    //  int r = std::max(rx, ry);
-    //  int twoPi = 25735;
-    //  int maxLaserIdx = params->gps.numLasers() - 1;
-    //
-    //  // todo(df): handle the single laser case better
-    //  Box3<int> sphBox{0, {r, twoPi, maxLaserIdx}};
-    //  int refScale = 0;
-    //  auto attr_coord_scale = normalisedAxesWeights(sphBox, refScale);
-    //  for (auto& aps : params->aps)
-    //    if (aps.spherical_coord_flag)
-    //      aps.attr_coord_scale = attr_coord_scale;
-    //}
 
     // Allocate storage for attribute contexts
     _ctxtMemAttrs.resize(params->sps.attributeSets.size());
@@ -481,9 +454,6 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
   // slice origin parameters used by this encoder implementation
   params->gps.geom_box_log2_scale_present_flag = true;
   params->gps.gps_geom_box_log2_scale = 0;
-
-  // don't code per-slice angular origin
-  params->gps.geom_slice_angular_origin_present_flag = false;
 
   // derive the idcm qp offset from cli
   params->gps.geom_idcm_qp_offset = params->idcmQp - params->gps.geom_base_qp;
@@ -805,38 +775,6 @@ PCCTMC3Encoder3::compressPartition(
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
     abh.attrInterPredSearchRange = attr_aps.attrInterPredSearchRange;
 
-    // Convert cartesian positions to spherical for use in attribute coding.
-    // NB: this retains the original cartesian positions to restore afterwards
-    std::vector<pcc::point_t> altPositions;
-    //if (attr_aps.spherical_coord_flag) {
-    //  // If predgeom was used, re-use the internal positions rather than
-    //  // calculating afresh.
-    //  Box3<int> bboxRpl;
-
-    //  pcc::point_t minPos = 0;
-
-    //  {
-    //    altPositions.resize(pointCloud.getPointCount());
-
-    //    auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
-    //    bboxRpl = convertXyzToRpl(
-    //      laserOrigin, _gps->angularTheta.data(), _gps->angularTheta.size(),
-    //      &pointCloud[0], &pointCloud[0] + pointCloud.getPointCount(),
-    //      altPositions.data());
-
-    //    if(!attr_aps.attrInterPredictionEnabled){
-    //      minPos = bboxRpl.min;
-    //    }
-    //  }
-
-    //  offsetAndScale(
-    //    minPos, attr_aps.attr_coord_scale, altPositions.data(),      
-    //    //bboxRpl.min, attr_aps.attr_coord_scale, altPositions.data(),
-    //    altPositions.data() + altPositions.size());
-
-    //  pointCloud.swapPoints(altPositions);
-    //}
-
     // calculate dist2 for this slice
     abh.attr_dist2_delta = 0;
     if (attr_aps.aps_slice_dist2_deltas_present_flag) {
@@ -849,28 +787,20 @@ PCCTMC3Encoder3::compressPartition(
     // replace the attribute encoder if not compatible
     /*if (!attrEncoder->isReusable(attr_aps, abh)) //NOTE[FT] :always true
       attrEncoder = makeAttributeEncoder();*/
-    
-	if (/*!attr_aps.spherical_coord_flag*/ true)
+
+	if (true)
       for (auto i = 0; i < pointCloud.getPointCount(); i++)
-        pointCloud[i] += _sliceOrigin; 
+        pointCloud[i] += _sliceOrigin;
 
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
     attrEncoder->encode(
       *_sps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud, &payload, attrInterPredParams);
 
-    if (/*!attr_aps.spherical_coord_flag*/ true)
+    if (true)
       for (auto i = 0; i < pointCloud.getPointCount(); i++)
-        pointCloud[i] -= _sliceOrigin;    
+        pointCloud[i] -= _sliceOrigin;
 
-   /* if (attr_aps.spherical_coord_flag){
-      pointCloud.swapPoints(altPositions);
-    }*/
-
-    /*if(attr_aps.spherical_coord_flag){
-      attrInterPredParams.referencePointCloud = pointCloud;
-      attrInterPredParams.referencePointCloud.swapPoints(altPositions);     
-    }
-    else*/{
+    {
       attrInterPredParams.referencePointCloud.clear();
     }
 
@@ -925,7 +855,6 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.slice_tag = std::max(0, _tileId);
   gbh.frame_ctr_lsb = _frameCounter & ((1 << _sps->frame_ctr_bits) - 1);
   gbh.geomBoxOrigin = _sliceOrigin;
-  gbh.gbhAngularOrigin = _gps->gpsAngularOrigin - _sliceOrigin;
   gbh.geom_box_origin_bits_minus1 = numBits(gbh.geomBoxOrigin.max()) - 1;
   gbh.geom_box_log2_scale = 0;
   gbh.geom_slice_qp_offset = params->gbh.geom_slice_qp_offset;

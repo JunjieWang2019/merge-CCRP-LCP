@@ -41,35 +41,6 @@ namespace pcc {
 
 //============================================================================
 
-Box3<int>
-convertXyzToRpl(
-  Vec3<int> laserOrigin,
-  const int* laserThetaList,
-  int numTheta,
-  const Vec3<int>* begin,
-  const Vec3<int>* end,
-  Vec3<int>* dst)
-{
-  Box3<int> bbox(INT32_MAX, INT32_MIN);
-
-  for (auto it = begin; it != end; it++, dst++) {
-    auto pos = *it - laserOrigin;
-    auto laser = findLaser(pos, laserThetaList, numTheta);
-
-    int64_t xLaser = pos[0] << 8;
-    int64_t yLaser = pos[1] << 8;
-    (*dst)[0] = isqrt(xLaser * xLaser + yLaser * yLaser) >> 8;
-    (*dst)[1] = (iatan2(yLaser, xLaser) + 3294199) >> 8;
-    (*dst)[2] = laser;
-
-    bbox.insert(*dst);
-  }
-
-  return bbox;
-}
-
-//----------------------------------------------------------------------------
-
 Vec3<int>
 normalisedAxesWeights(Box3<int>& bbox, int forcedMaxLog2)
 {

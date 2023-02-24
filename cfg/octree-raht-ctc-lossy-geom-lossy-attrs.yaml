@@ -39,9 +39,6 @@ categories:
      #  - scale 16bit reflectance data to 8bit
      - convertPlyColourspace: 1
      - transformType: 0
-     -
-       - !conditional '${numLasers}'
-       - spherical_coord_flag: 1
 
      ##
      # attribute coding -- reflectance

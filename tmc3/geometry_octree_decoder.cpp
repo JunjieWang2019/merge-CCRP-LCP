@@ -76,7 +76,6 @@ public:
     int dist,
     int adjPlanes,
     int planeId,
-    int contextAngle,
     bool* multiPlanarFlag,
     bool* multiPlanarEligible, 
     OctreeNodePlanar& planarRef
@@ -103,7 +102,6 @@ public:
     const GeometryNeighPattern& gnp,
     uint8_t siblingOccupancy,
     int planarRate[3],
-    int contextAngle,
     bool* multiPlanarFlag,
     bool* multiPlanarEligible,
     OctreeNodePlanar& planarRef
@@ -117,10 +115,7 @@ public:
     const GeometryNeighPattern& gnp,
     PCCOctree3Node& child,
     OctreeNodePlanar& planar,
-    int contextAngle,
-    int contextAnglePhiX,
-    int contextAnglePhiY
-    , OctreeNodePlanar& planarRef
+    OctreeNodePlanar& planarRef
   );*/
 
   uint32_t decodeOccupancyFullNeihbourgsNZ(
@@ -162,35 +157,6 @@ public:
     Vec3<int>& nodeSizeLog2AfterUnordered,
     Vec3<int32_t> deltaUnordered[2]);
 
- /* Vec3<int32_t> decodePointPositionAngular(
-    const OctreeAngPosScaler& quant,
-    const Vec3<int>& nodeSizeLog2Rem,
-    const Vec3<int>& angularOrigin,
-    const int* zLaser,
-    const int* thetaLaser,
-    int laserIdx,
-    const Vec3<int>& nodePos,
-    Vec3<int> posXyz,
-    Vec3<int> delta);*/
-
-  /*inline int32_t decodePointPositionZAngular(
-    const OctreeAngPosScaler& quant,
-    const Vec3<int>& nodeSizeLog2Rem,
-    const int* zLaser,
-    const int* thetaLaser,
-    int laserIdx,
-    Vec3<int>& posXyz,
-    int& deltaZ);*/
-
-  /*inline int32_t decodePointPositionZAngularExtension(
-    const Vec3<int>& angularOrigin,
-    const Vec3<int>& nodePos,
-    const int* zLaser,
-    const int* thetaLaser,
-    int laserIdx,
-    int maskz,
-    Vec3<int>& posXyz);*/
-
   bool decodeNodeQpOffsetsPresent();
   int decodeQpOffset();
 
@@ -200,19 +166,11 @@ public:
   int decodeDirectPosition(
     bool geom_unique_points_flag,
     bool joint_2pt_idcm_enabled_flag,
-    bool geom_angular_mode_enabled_flag,
     const Vec3<int>& nodeSizeLog2,
     const Vec3<int>& posQuantBitMasks,
     const PCCOctree3Node& node,
     const OctreeNodePlanar& planar,
-    const Vec3<int>& headPos,
-    const int* zLaser,
-    const int* thetaLaser,
-    int numLasers,
     OutputIt outputPoints);
-
-  //int decodeThetaRes(int prevThetaRes);
-  //int decodeZRes();
 
   const GeometryOctreeContexts& getCtx() const { return *this; }
 
@@ -226,18 +184,6 @@ public:
 
   // Planar state
   //OctreePlanarState _planar;
-
-  // Azimuthal buffer
-  //std::vector<int> _phiBuffer;
-
-  // last previously coded laser index residual for a given node laser index
-  //std::vector<int> _prevLaserIndexResidual;
-
-  // azimuthal elementary shifts
-  //AzimuthalPhiZi _phiZi;
-
-  // Octree extensions
-  //bool _angularExtension;
 };
 
 //============================================================================
@@ -252,10 +198,6 @@ GeometryOctreeDecoder::GeometryOctreeDecoder(
   , _neighPattern64toR1(neighPattern64toR1(gps))
   , _arithmeticDecoder(arithmeticDecoder)
   /*, _planar(gps)*/
-  /*, _phiBuffer(gps.numLasers(), 0x80000000)*/
-  /*, _prevLaserIndexResidual(gps.numLasers(), 0x00000000)*/
-  /*, _phiZi(gps.numLasers(), gps.angularNumPhiPerTurn)*/
-  /*, _angularExtension(gps.octree_angular_extension_flag)*/
 {
   if (!_useBitwiseOccupancyCoder && !gbh.entropy_continuation_flag) {
     for (int i = 0; i < 10; i++)
@@ -297,7 +239,6 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //  int dist,
 //  int adjPlanes,
 //  int planeId,
-//  int contextAngle,
 //  bool* multiPlanarFlag,
 //  bool* multiPlanarEligible,
 //  OctreeNodePlanar& planarRef)
@@ -379,7 +320,7 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //    return planeBit;
 //  }
 //
-//  if (contextAngle == -1) {  // angular mode off
+//  {
 //    static const int kAdjPlaneCtx[4] = {0, 1, 2, 0};
 //    int planePosCtx = kAdjPlaneCtx[adjPlanes];
 //    if (planeZ < 0) {
@@ -400,16 +341,6 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //      planeBit = _arithmeticDecoder->decode(
 //        _ctxPlanarPlaneLastIndex[refPlane][planeId][planePosCtx]
 //                                [lastIndexPlane2d]);
-//    }
-//  } else {  // angular mode on
-//    int refPlane = isPlanarRef ? (1 + planeBitRef) : 0;
-//
-//    if (planeId == 2) {  // angular
-//      planeBit = _arithmeticDecoder->decode(
-//        _ctxPlanarPlaneLastIndexAngular[refPlane][contextAngle]);
-//    } else {  // azimuthal
-//      planeBit = _arithmeticDecoder->decode(
-//        _ctxPlanarPlaneLastIndexAngularPhi[refPlane][contextAngle]);
 //    }
 //  }
 //
@@ -483,7 +414,6 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //  const GeometryNeighPattern& gnp,
 //  uint8_t siblingOccupancy,
 //  int planarRate[3],
-//  int contextAngle,
 //  bool* multiPlanarFlag,
 //  bool* multiPlanarEligible,
 //  OctreeNodePlanar& planarRef)
@@ -539,7 +469,7 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //  int adjPlanes = (highAdjPlaneOccupied << 1) | lowAdjPlaneOccupied;
 //
 //  int planeBit = decodePlanarMode(
-//    planar, closestPlanarFlag, closestDist, adjPlanes, planeId, contextAngle,
+//    planar, closestPlanarFlag, closestDist, adjPlanes, planeId,
 //    multiPlanarFlag, multiPlanarEligible, planarRef);
 //  bool isPlanar = (planar.planarMode & planeSelector);
 //
@@ -567,10 +497,7 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //  const GeometryNeighPattern& gnp,
 //  PCCOctree3Node& child,
 //  OctreeNodePlanar& planar,
-//  int contextAngle,
-//  int contextAnglePhiX,
-//  int contextAnglePhiY
-//  , OctreeNodePlanar& planarRef
+//  OctreeNodePlanar& planarRef
 //)
 //{
 //  int xx = child.pos[0];
@@ -625,7 +552,7 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //    determinePlanarMode(
 //      adjacent_child_contextualization_enabled_flag, 0, planar,
 //      planeBuffer.getBuffer(0), yy, zz, xx, posInParent, gnp,
-//      child.siblingOccupancy, _planar._rate.data(), contextAnglePhiX,
+//      child.siblingOccupancy, _planar._rate.data(),
 //      multiPlanarFlag, multiPlanarEligible, planarRef);
 //  }
 //  // planar y
@@ -633,7 +560,7 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //    determinePlanarMode(
 //      adjacent_child_contextualization_enabled_flag, 1, planar,
 //      planeBuffer.getBuffer(1), xx, zz, yy, posInParent, gnp,
-//      child.siblingOccupancy, _planar._rate.data(), contextAnglePhiY,
+//      child.siblingOccupancy, _planar._rate.data(),
 //      multiPlanarFlag, multiPlanarEligible, planarRef
 //
 //    );
@@ -643,7 +570,7 @@ GeometryOctreeDecoder::decodePositionLeafNumPoints()
 //    determinePlanarMode(
 //      adjacent_child_contextualization_enabled_flag, 2, planar,
 //      planeBuffer.getBuffer(2), xx, yy, zz, posInParent, gnp,
-//      child.siblingOccupancy, _planar._rate.data(), contextAngle,
+//      child.siblingOccupancy, _planar._rate.data(),
 //      multiPlanarFlag, multiPlanarEligible, planarRef);
 //  }
 //}
@@ -988,245 +915,6 @@ GeometryOctreeDecoder::decodeOrdered2ptPrefix(
 }
 
 //-------------------------------------------------------------------------
-// Decode a position of a point in a given volume, using elevation angle prior
-
-//Vec3<int32_t>
-//GeometryOctreeDecoder::decodePointPositionAngular(
-//  const OctreeAngPosScaler& quant,
-//  const Vec3<int>& nodeSizeLog2Rem,
-//  const Vec3<int>& angularOrigin,
-//  const int* zLaser,
-//  const int* thetaLaser,
-//  int nodeLaserIdx,
-//  const Vec3<int>& nodePos,
-//  Vec3<int> posXyz,
-//  Vec3<int> delta)
-//{
-//  // -- PHI --
-//  // code x or y directly and compute phi of node
-//  bool directAxis = std::abs(posXyz[0]) <= std::abs(posXyz[1]);
-//  for (int i = nodeSizeLog2Rem[directAxis]; i > 0; i--) {
-//    delta[directAxis] <<= 1;
-//    delta[directAxis] |= _arithmeticDecoder->decode();
-//  }
-//
-//  posXyz += quant.scaleEns(delta << nodeSizeLog2Rem);
-//  posXyz[directAxis] =
-//    quant.scaleEns(directAxis, nodePos[directAxis] + delta[directAxis])
-//    - angularOrigin[directAxis];
-//
-//  // laser residual
-//  int resLaser = decodeThetaRes(_prevLaserIndexResidual[nodeLaserIdx]);
-//  int laserIdx = nodeLaserIdx + resLaser;
-//
-//  if (_angularExtension)
-//    _prevLaserIndexResidual[nodeLaserIdx] = resLaser;
-//
-//  // find predictor
-//  const int thInterp = 1 << 13;
-//
-//  int phiNode = iatan2(posXyz[1], posXyz[0]);
-//  int phiTop = directAxis
-//    ? iatan2(posXyz[1], posXyz[0] + (1 << nodeSizeLog2Rem[!directAxis]))
-//    : iatan2(posXyz[1] + (1 << nodeSizeLog2Rem[!directAxis]), posXyz[0]);
-//  int phiMiddle = (phiNode + phiTop) >> 1;
-//  if (_angularExtension && !(std::abs(phiNode - phiTop) < thInterp))
-//    phiMiddle = directAxis
-//      ? iatan2(
-//          posXyz[1], posXyz[0] + ((1 << nodeSizeLog2Rem[!directAxis]) >> 1))
-//      : iatan2(
-//          posXyz[1] + ((1 << nodeSizeLog2Rem[!directAxis]) >> 1), posXyz[0]);
-//
-//  int predPhi = _phiBuffer[laserIdx];
-//  int phiRef = _angularExtension ? phiMiddle : phiNode;
-//  if (predPhi == 0x80000000)
-//    predPhi = phiRef;
-//
-//  // elementary shift predictor
-//  int nShift =
-//    ((predPhi - phiRef) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
-//  predPhi -= _phiZi.delta(laserIdx) * nShift;
-//
-//  // azimuthal code x or y
-//  const int phiAxis = !directAxis;
-//  for (int mask = (1 << nodeSizeLog2Rem[phiAxis]) >> 1,
-//           shiftBits = nodeSizeLog2Rem[phiAxis];
-//       mask; mask >>= 1, shiftBits--) {
-//    // angles left and right
-//    int scaledMask = quant.scaleEns(phiAxis, mask);
-//
-//    int phiL, phiR;
-//
-//    if (_angularExtension) {
-//      const int offset = scaledMask - 1;
-//      const int offset2 = shiftBits > 1 ? (shiftBits > 2 ? 0 : 1) : 2;
-//
-//      phiL =
-//        phiNode + ((offset - offset2) * (phiMiddle - phiNode) >> (shiftBits));
-//      phiR = phiMiddle
-//        + ((offset + offset2) * (phiMiddle - phiNode) >> (shiftBits));
-//    } else {
-//      phiL = phiNode;
-//      phiR = directAxis ? iatan2(posXyz[1], posXyz[0] + scaledMask)
-//                        : iatan2(posXyz[1] + scaledMask, posXyz[0]);
-//    }
-//
-//    // ctx azimutal
-//    int angleL = phiL - predPhi;
-//    int angleR = phiR - predPhi;
-//    int contextAnglePhi =
-//      (angleL >= 0 && angleR >= 0) || (angleL < 0 && angleR < 0) ? 2 : 0;
-//    angleL = std::abs(angleL);
-//    angleR = std::abs(angleR);
-//    if (angleL > angleR) {
-//      contextAnglePhi++;
-//      std::swap(angleL, angleR);
-//    }
-//    if (angleR > (angleL << 1))
-//      contextAnglePhi += 4;
-//
-//    // entropy coding
-//    int ctxIndex = 0;
-//    if (_angularExtension)
-//      ctxIndex = determineContextIndexForAngularPhiIDCM(
-//        _phiZi.delta(laserIdx), std::abs(phiL - phiR));
-//    auto& ctx =
-//      _ctxPlanarPlaneLastIndexAngularPhiIDCM[contextAnglePhi][ctxIndex];
-//    bool bit = _arithmeticDecoder->decode(ctx);
-//    delta[phiAxis] <<= 1;
-//    if (bit) {
-//      delta[phiAxis] |= 1;
-//      posXyz[phiAxis] += scaledMask;
-//      if (_angularExtension)
-//        phiNode = phiMiddle;
-//      else {
-//        phiNode = phiR;
-//        predPhi = _phiBuffer[laserIdx];
-//        if (predPhi == 0x80000000)
-//          predPhi = phiNode;
-//
-//        // elementary shift predictor
-//        int nShift =
-//          ((predPhi - phiNode) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
-//        predPhi -= _phiZi.delta(laserIdx) * nShift;
-//      }
-//    } else if (_angularExtension)
-//      phiTop = phiMiddle;
-//
-//    if (_angularExtension) {
-//      // update Phi middle
-//      if (std::abs(phiNode - phiTop) < thInterp)
-//        phiMiddle = (phiNode + phiTop) >> 1;
-//      else
-//        phiMiddle = directAxis
-//          ? iatan2(posXyz[1], posXyz[0] + (scaledMask >> 1))
-//          : iatan2(posXyz[1] + (scaledMask >> 1), posXyz[0]);
-//
-//      // update elementary shift predictor
-//      int nShift =
-//        ((predPhi - phiMiddle) * _phiZi.invDelta(laserIdx) + (1 << 29)) >> 30;
-//      predPhi -= _phiZi.delta(laserIdx) * nShift;
-//    }
-//  }
-//
-//  // update buffer phi
-//  _phiBuffer[laserIdx] = phiNode;
-//
-//  // -- THETA --
-//  int maskz = (1 << nodeSizeLog2Rem[2]) >> 1;
-//  if (!maskz)
-//    return delta;
-//
-//  // Since x and y are known,
-//  // r is known too and does not depend on the bit for z
-//  if (_angularExtension)
-//    delta[2] = decodePointPositionZAngularExtension(
-//      angularOrigin, nodePos, zLaser, thetaLaser, laserIdx, maskz, posXyz);
-//  else
-//    delta[2] = decodePointPositionZAngular(
-//      quant, nodeSizeLog2Rem, zLaser, thetaLaser, laserIdx, posXyz, delta[2]);
-//
-//  return delta;
-//}
-//
-//int32_t
-//GeometryOctreeDecoder::decodePointPositionZAngular(
-//  const OctreeAngPosScaler& quant,
-//  const Vec3<int>& nodeSizeLog2Rem,
-//  const int* zLaser,
-//  const int* thetaLaser,
-//  int laserIdx,
-//  Vec3<int>& posXyz,
-//  int& deltaZ)
-//{
-//  uint64_t xLidar = (int64_t(posXyz[0]) << 8) - 128;
-//  uint64_t yLidar = (int64_t(posXyz[1]) << 8) - 128;
-//  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
-//  int64_t rInv = irsqrt(r2);
-//
-//  // code bits for z using angular. Eligility is implicit. Laser is known.
-//  int64_t hr = zLaser[laserIdx] * rInv;
-//  int fixedThetaLaser =
-//    thetaLaser[laserIdx] + int(hr >= 0 ? -(hr >> 17) : ((-hr) >> 17));
-//
-//  int maskz = (1 << nodeSizeLog2Rem[2]) >> 1;
-//  int zShift = (rInv * quant.scaleEns(2, 1 << nodeSizeLog2Rem[2])) >> 18;
-//  for (int bitIdxZ = nodeSizeLog2Rem[2]; bitIdxZ > 0;
-//       bitIdxZ--, maskz >>= 1, zShift >>= 1) {
-//    // determine non-corrected theta
-//    int scaledMaskZ = quant.scaleEns(2, maskz);
-//    int64_t zLidar = ((posXyz[2] + scaledMaskZ) << 1) - 1;
-//    int64_t theta = zLidar * rInv;
-//    int theta32 = theta >= 0 ? theta >> 15 : -((-theta) >> 15);
-//    int thetaLaserDelta = fixedThetaLaser - theta32;
-//
-//    int thetaLaserDeltaBot = thetaLaserDelta + zShift;
-//    int thetaLaserDeltaTop = thetaLaserDelta - zShift;
-//    int contextAngle = thetaLaserDelta >= 0 ? 0 : 1;
-//    if (thetaLaserDeltaTop >= 0)
-//      contextAngle += 2;
-//    else if (thetaLaserDeltaBot < 0)
-//      contextAngle += 2;
-//
-//    auto& ctx = _ctxPlanarPlaneLastIndexAngularIdcm[contextAngle];
-//    deltaZ <<= 1;
-//    deltaZ |= _arithmeticDecoder->decode(ctx);
-//    if (deltaZ & 1)
-//      deltaZ += scaledMaskZ;
-//  }
-//
-//  return deltaZ;
-//}
-//
-//int32_t
-//GeometryOctreeDecoder::decodePointPositionZAngularExtension(
-//  const Vec3<int>& angularOrigin,
-//  const Vec3<int>& nodePos,
-//  const int* zLaser,
-//  const int* thetaLaser,
-//  int laserIdx,
-//  int maskz,
-//  Vec3<int>& posXyz)
-//{
-//  uint64_t xLidar = (int64_t(posXyz[0]) << 8);
-//  uint64_t yLidar = (int64_t(posXyz[1]) << 8);
-//  uint64_t r2 = xLidar * xLidar + yLidar * yLidar;
-//  int64_t r = isqrt(r2);
-//
-//  // decode z
-//  int64_t zRec26 = thetaLaser[laserIdx] * r;
-//  zRec26 -= int64_t(zLaser[laserIdx]) << 23;
-//  int32_t zRec = divExp2RoundHalfInf(zRec26, 26);
-//
-//  zRec = std::max(zRec, posXyz[2]);
-//  zRec = std::min(zRec, posXyz[2] + (2 * maskz - 1));
-//
-//  int32_t zRes = decodeZRes();
-//
-//  return zRes + zRec + angularOrigin[2] - nodePos[2];
-//}
-
-//-------------------------------------------------------------------------
 
 bool
 GeometryOctreeDecoder::decodeIsIdcm()
@@ -1244,15 +932,10 @@ int
 GeometryOctreeDecoder::decodeDirectPosition(
   bool geom_unique_points_flag,
   bool joint_2pt_idcm_enabled_flag,
-  bool geom_angular_mode_enabled_flag,
   const Vec3<int>& nodeSizeLog2,
   const Vec3<int>& posQuantBitMask,
   const PCCOctree3Node& node,
   const OctreeNodePlanar& planar,
-  const Vec3<int>& angularOrigin,
-  const int* zLaser,
-  const int* thetaLaser,
-  int numLasers,
   OutputIt outputPoints)
 {
   int numPoints = 1;
@@ -1287,41 +970,15 @@ GeometryOctreeDecoder::decodeDirectPosition(
   // Indicates which components are directly coded
   Vec3<bool> directIdcm = true;
 
-  // Position of the node relative to the angular origin
-  //point_t posNodeLidar;
-  /*if (geom_angular_mode_enabled_flag) {
-    posNodeLidar = quant.scaleEns(node.pos << nodeSizeLog2) - angularOrigin;
-    bool directAxis = std::abs(posNodeLidar[0]) <= std::abs(posNodeLidar[1]);
-    directIdcm = false;
-    directIdcm[directAxis] = true;
-  }*/
-
   // decode (ordred) two points
   Vec3<int32_t> deltaPos[2] = {deltaPlanar, deltaPlanar};
   if (numPoints == 2 && joint_2pt_idcm_enabled_flag)
     decodeOrdered2ptPrefix(directIdcm, nodeSizeLog2Rem, deltaPos);
 
-  //int laserIdx;
-  /*if (geom_angular_mode_enabled_flag) {
-    auto delta = (deltaPos[0] << nodeSizeLog2Rem);
-    delta += (1 << nodeSizeLog2Rem) >> 1;
-    delta = quant.scaleEns(delta);
-    if (_angularExtension)
-      laserIdx =
-        findLaserPrecise(posNodeLidar + delta, thetaLaser, zLaser, numLasers);
-    else
-      laserIdx = findLaser(posNodeLidar + delta, thetaLaser, numLasers);
-  }*/
-
   Vec3<int32_t> pos;
   for (int i = 0; i < numPoints; i++) {
-    /*if (geom_angular_mode_enabled_flag)
-      *(outputPoints++) = pos = decodePointPositionAngular(
-        quant, nodeSizeLog2Rem, angularOrigin, zLaser, thetaLaser, laserIdx,
-        node.pos << nodeSizeLog2, posNodeLidar, deltaPos[i]);
-    else*/
-      *(outputPoints++) = pos =
-        decodePointPosition(nodeSizeLog2Rem, deltaPos[i]);
+    *(outputPoints++) = pos =
+      decodePointPosition(nodeSizeLog2Rem, deltaPos[i]);
   }
 
   for (int i = 0; i < numDuplicatePoints; i++)
@@ -1329,47 +986,6 @@ GeometryOctreeDecoder::decodeDirectPosition(
 
   return numPoints + numDuplicatePoints;
 }
-
-//-------------------------------------------------------------------------
-
-//int
-//GeometryOctreeDecoder::decodeThetaRes(int prevThetaRes)
-//{
-//  int ctx = prevThetaRes != 0;
-//
-//  if (!_arithmeticDecoder->decode(_ctxThetaRes[ctx][0]))
-//    return 0;
-//
-//  int absVal = 1;
-//  absVal += _arithmeticDecoder->decode(_ctxThetaRes[ctx][1]);
-//  if (absVal > 1)
-//    absVal += _arithmeticDecoder->decode(_ctxThetaRes[ctx][2]);
-//  if (absVal == 3)
-//    absVal += _arithmeticDecoder->decodeExpGolomb(1, _ctxThetaResExp);
-//
-//  int ctxSign = (prevThetaRes > 0) + 2 * (prevThetaRes < 0);
-//  bool sign = _arithmeticDecoder->decode(_ctxThetaResSign[ctxSign]);
-//  return sign ? -absVal : absVal;
-//}
-
-//-------------------------------------------------------------------------
-
-//int
-//GeometryOctreeDecoder::decodeZRes()
-//{
-//  if (!_arithmeticDecoder->decode(_ctxZRes[0]))
-//    return 0;
-//
-//  int absVal = 1;
-//  absVal += _arithmeticDecoder->decode(_ctxZRes[1]);
-//  if (absVal > 1)
-//    absVal += _arithmeticDecoder->decode(_ctxZRes[2]);
-//  if (absVal == 3)
-//    absVal += _arithmeticDecoder->decodeExpGolomb(1, _ctxZResExp);
-//
-//  bool sign = _arithmeticDecoder->decode(_ctxZResSign);
-//  return sign ? -absVal : absVal;
-//}
 
 //-------------------------------------------------------------------------
 // Helper to inverse quantise positions
@@ -1439,22 +1055,6 @@ decodeGeometryOctree(
 
   // rotating mask used to enable idcm
   uint32_t idcmEnableMaskInit = /*mkIdcmEnableMask(gps)*/ 0; //NOTE[FT] : set to 0 by construction
-
-  // Lidar angles for planar prediction
-  const int numLasers = gps.numLasers();
-  const int* thetaLaser = gps.angularTheta.data();
-  const int* zLaser = gps.angularZ.data();
-
-  // Lidar position relative to slice origin
-  auto angularOrigin = gbh.geomAngularOrigin(gps);
-
-  int deltaAngle = 128 << 18;
-  for (int i = 0; i < numLasers - 1; i++) {
-    int d = std::abs(thetaLaser[i] - thetaLaser[i + 1]);
-    if (deltaAngle > d) {
-      deltaAngle = d;
-    }
-  }
 
   MortonMap3D occupancyAtlas;
   if (gps.neighbour_avail_boundary_log2_minus1) {
@@ -1570,9 +1170,7 @@ decodeGeometryOctree(
   int numPointsCodedByIdcm = 0;
   const bool checkPlanarEligibilityBasedOnOctreeDepth = false; //NOTE[FT] : FORCING geom_planar_mode_enabled_flag=false
     //gps.geom_planar_mode_enabled_flag
-    //&& gps.geom_octree_depth_planar_eligibiity_enabled_flag
-    //&& /*!gps.geom_angular_mode_enabled_flag*/ true;
-
+    //&& gps.geom_octree_depth_planar_eligibiity_enabled_flag;
 
   for (int depth = 0; depth < maxDepth; depth++) {
     int numSubnodes = 0;
@@ -1790,71 +1388,11 @@ decodeGeometryOctree(
       // to the choice of QP.  There is therefore nothing to code with idcm.
       /*if (isLeafNode(effectiveNodeSizeLog2))
         node0.idcmEligible = false;*/ //NOTE[FT]: always false
-      //bool planar_eligibility_idcm_angular = true;
-
-      //if (node0.idcmEligible) {
-      //  if (/*gps.geom_planar_disabled_idcm_angular_flag*/ false) { //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
-      //    isDirectMode = decoder.decodeIsIdcm();
-      //    /*if (isDirectMode && gps.geom_angular_mode_enabled_flag)
-      //      planar_eligibility_idcm_angular = false;*/
-      //  }
-      //}
-
-      //int contextAngle = -1;
-      //int contextAnglePhiX = -1;
-      //int contextAnglePhiY = -1;
-      /*if (
-        gps.geom_angular_mode_enabled_flag
-        && planar_eligibility_idcm_angular) {
-        contextAngle = determineContextAngleForPlanar(
-          node0, nodeSizeLog2, angularOrigin, zLaser, thetaLaser, numLasers,
-          deltaAngle, decoder._phiZi, decoder._phiBuffer.data(),
-          &contextAnglePhiX, &contextAnglePhiY, posQuantBitMasks);
-      }*/
-
-      //if (
-      //  gps.geom_planar_mode_enabled_flag && planar_eligibility_idcm_angular
-      //  && !gps.geom_octree_depth_planar_eligibiity_enabled_flag) {
-      //  // update the plane rate depending on the occupancy and local density
-      //  auto occupancy = node0.siblingOccupancy;
-      //  auto numOccupied = node0.numSiblingsPlus1;
-      //  if (!nodesBeforePlanarUpdate--) {
-      //    decoder._planar.updateRate(occupancy, numOccupied);
-      //    nodesBeforePlanarUpdate = numOccupied - 1;
-      //  }
-      //}
 
       OctreeNodePlanar planar;
       //if (!isLeafNode(effectiveNodeSizeLog2)) {
       //  // planar eligibility
       //  bool planarEligible[3] = {false, false, false};
-      //  //if (
-      //  //  gps.geom_planar_mode_enabled_flag
-      //  //  && planar_eligibility_idcm_angular) {
-      //  //  if (gps.geom_octree_depth_planar_eligibiity_enabled_flag) {
-      //  //    /*if (gps.geom_angular_mode_enabled_flag) {
-      //  //      if (contextAngle != -1)
-      //  //        planarEligible[2] = true;
-      //  //      planarEligible[0] = (contextAnglePhiX != -1);
-      //  //      planarEligible[1] = (contextAnglePhiY != -1);
-      //  //    } else*/ if (planarEligibleKOctreeDepth) {
-      //  //      planarEligible[0] = true;
-      //  //      planarEligible[1] = true;
-      //  //      planarEligible[2] = true;
-      //  //    }
-      //  //  } else {
-      //  //    decoder._planar.isEligible(planarEligible);
-      //  //    /*if (gps.geom_angular_mode_enabled_flag) {
-      //  //      if (contextAngle != -1)
-      //  //        planarEligible[2] = true;
-      //  //      planarEligible[0] = (contextAnglePhiX != -1);
-      //  //      planarEligible[1] = (contextAnglePhiY != -1);
-      //  //    }*/
-      //  //  }
-
-      //  //  for (int k = 0; k < 3; k++)
-      //  //    planarEligible[k] &= (codedAxesCurNode >> (2 - k)) & 1;
-      //  //}
 
       //  planar.allowPCM = /*(isInter) && (occupancyIsPredictable)
       //    && (planarEligible[0] || planarEligible[1] || planarEligible[2])*/ false;
@@ -1867,12 +1405,11 @@ decodeGeometryOctree(
 
       //  /*decoder.determinePlanarMode(
       //    gps.adjacent_child_contextualization_enabled_flag, planarEligible,
-      //    posInParent, gnp, node0, planar, contextAngle, contextAnglePhiX,
-      //    contextAnglePhiY, planarRef);*/
+      //    posInParent, gnp, node0, planar, planarRef);*/
       //}
 
       //if (node0.idcmEligible) {
-      //  if (/*!gps.geom_planar_disabled_idcm_angular_flag*/ true) //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
+      //  if (true) //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false
       //    isDirectMode = decoder.decodeIsIdcm();
       //  if (isDirectMode) {
       //    auto idcmSize = effectiveNodeSizeLog2;
@@ -1883,8 +1420,8 @@ decodeGeometryOctree(
 
       //    int numPoints = decoder.decodeDirectPosition(
       //      gps.geom_unique_points_flag, gps.joint_2pt_idcm_enabled_flag,
-      //      gps.geom_angular_mode_enabled_flag, idcmSize, posQuantBitMasks,
-      //      node0, planar, angularOrigin, zLaser, thetaLaser, numLasers,
+      //      idcmSize, posQuantBitMasks,
+      //      node0, planar,
       //      &pointCloud[processedPointCount]);
 
       //    // calculating the number of points coded by IDCM for determining eligibility of planar mode
@@ -2005,7 +1542,6 @@ decodeGeometryOctree(
         child.pos[2] = (node0.pos[2] << !!(codedAxesCurLvl & 1)) + z;
         child.numSiblingsPlus1 = numOccupied;
         child.siblingOccupancy = occupancy;
-        child.laserIndex = node0.laserIndex;
         child.numSiblingsMispredicted = predFailureCount;
         child.predStart = predPointsStartIdx;
         child.predEnd = predPointsStartIdx + predCounts[i];
@@ -2015,15 +1551,14 @@ decodeGeometryOctree(
         child.hasMotion = node0.hasMotion;
         child.isCompensated = node0.isCompensated;
 
-        //if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)
+        //if (isInter)
         //  child.idcmEligible = isDirectModeEligible_Inter(
         //    /*gps.inferred_direct_coding_mode*/ 0, nodeMaxDimLog2, gnp.neighPattern,
         //    node0, child, occupancyIsPredictable);
         //else
         //  child.idcmEligible = isDirectModeEligible(
         //    /*gps.inferred_direct_coding_mode*/ 0, nodeMaxDimLog2, gnp.neighPattern,
-        //    node0, child, occupancyIsPredictable,
-        //    gps.geom_angular_mode_enabled_flag);
+        //    node0, child, occupancyIsPredictable);
 
         //if (child.idcmEligible) {
         //  child.idcmEligible &= idcmEnableMask & 1; //NOTE[FT] : stays at 0, whatever the childidcmEligible status

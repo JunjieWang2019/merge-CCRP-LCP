@@ -162,9 +162,6 @@ protected:
 private:
   ply::PropertyNameMap _plyAttrNames;
 
-  // The raw origin used for input sorting
-  Vec3<int> _angularOrigin;
-
   PCCTMC3Encoder3 encoder;
 
   std::ofstream bytestreamFile;
@@ -929,44 +926,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gbh.geom_qp_offset_intvl_log2_delta, 0,
     "Frequency of sending QP offsets in predictive geometry coding")
 
-  ("angularEnabled",
-    params.encoder.gps.geom_angular_mode_enabled_flag, false,
-    "Controls angular contextualisation of occupancy")
-
-  // NB: the underlying variable is in STV order.
-  //     Conversion happens during argument sanitization.
-  ("lidarHeadPosition",
-    params.encoder.gps.gpsAngularOrigin, {0, 0, 0},
-    "laser head position (x,y,z) in angular mode")
-
-  ("numLasers",
-    params.encoder.numLasers, 0,
-    "Number of lasers in angular mode")
-
-  ("lasersTheta",
-    params.encoder.lasersTheta, {},
-    "Vertical laser angle in angular mode")
-
-  ("lasersZ",
-    params.encoder.lasersZ, {},
-    "Vertical laser offset in angular mode")
-
-  ("lasersNumPhiPerTurn",
-    params.encoder.gps.angularNumPhiPerTurn, {},
-    "Number of sampling poisitions in a complete laser turn in angular mode")
-
-  ("planarBufferDisabled",
-    params.encoder.gps.planar_buffer_disabled_flag, false,
-    "Disable planar buffer (when angular mode is enabled)")
-
-  ("octreeAngularExtension",
-    params.encoder.gps.octree_angular_extension_flag, true,
-    "Enable extension for octree angular")
-
-  ("disable_planar_IDCM_angluar",
-    params.encoder.gps.geom_planar_disabled_idcm_angular_flag, true,
-    "Disable planar mode for geometry coding of IDCM coded nodes when angular coding is enabled")
-
   ("randomAccessPeriod",
     params.encoder.randomAccessPeriod, 1,
     "Distance (in pictures) between random access points when "
@@ -1151,10 +1110,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("max_points_per_sort_log2_plus1",
     params_attr.aps.max_points_per_sort_log2_plus1, 0,
     "max number of points per sort based on morton code in case of number of LoD equal to 1")
-
-  ("spherical_coord_flag",
-     params_attr.aps.spherical_coord_flag, false,
-     "Code attributes in spherical domain")
 
   ("aps_scalable_enable_flag",
     params_attr.aps.scalable_lifting_enabled_flag, false,
@@ -1574,81 +1529,14 @@ sanitizeEncoderOpts(
       }
     }
 
-    //if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true) {
-    //  if (attr_aps.spherical_coord_flag)
-    //    err.warn() << it.first
-    //               << ".spherical_coord_flag=1 requires angularEnabled=1, "
-    //                  "disabling\n";
-    //  attr_aps.spherical_coord_flag = false;
-    //}
-
     if (!params.encoder.gps.interPredictionEnabledFlag)
       attr_aps.attrInterPredictionEnabled = false;
   }
-
-  // convert floating point values of Lasers' Theta and H to fixed point
-  /*if (params.encoder.gps.geom_angular_mode_enabled_flag) {
-    if (params.encoder.numLasers == 0)
-      err.error() << "numLasers must be at least 1\n";
-
-    for (auto val : params.encoder.lasersTheta) {
-      int one = 1 << 18;
-      params.encoder.gps.angularTheta.push_back(round(val * one));
-    }
-
-    for (auto val : params.encoder.lasersZ) {
-      int one = 1 << 3;
-      auto scale = params.encoder.codedGeomScale;
-
-      params.encoder.gps.angularZ.push_back(round(val * scale * one));
-    }
-
-    if (params.encoder.gps.angularTheta.size() != params.encoder.numLasers)
-      err.error() << "lasersZ.size() != numLasers\n";
-
-    if (params.encoder.gps.angularZ.size() != params.encoder.numLasers)
-      err.error() << "lasersTheta.size() != numLasers\n";
-
-    if (
-      params.encoder.gps.angularNumPhiPerTurn.size()
-      != params.encoder.numLasers)
-      err.error() << "lasersNumPhiPerTurn.size() != numLasers\n";
-
-    if (params.encoder.gps.qtbt_enabled_flag) {
-      params.encoder.geom.qtbt.angularMaxNodeMinDimLog2ToSplitV =
-        std::max<int>(0, 8 + log2(params.encoder.codedGeomScale));
-      params.encoder.geom.qtbt.angularMaxDiffToSplitZ =
-        std::max<int>(0, 1 + log2(params.encoder.codedGeomScale));
-    }
-
-  } else*/ { // Angular disabled
-  }
-
-  // tweak qtbt when angular is / isn't enabled
-  params.encoder.geom.qtbt.angularTweakEnabled =
-    /*params.encoder.gps.geom_angular_mode_enabled_flag*/ false;
-
-  if (!params.encoder.geom.qtbt.angularTweakEnabled) {
-    // NB: these aren't used in this condition
-    params.encoder.geom.qtbt.angularMaxNodeMinDimLog2ToSplitV = 0;
-    params.encoder.geom.qtbt.angularMaxDiffToSplitZ = 0;
-  }
-
-  // 
-  //if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
-  //  params.encoder.gps.geom_planar_disabled_idcm_angular_flag = false; //NOTE[FT]: FORCING geom_planar_disabled_idcm_angular_flag to false at construction
 
   // sanity checks
 
   if (params.encoder.gps.geom_qp_multiplier_log2 & ~3)
     err.error() << "positionQpMultiplierLog2 must be in the range 0..3\n";
-
-  if (/*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true) {
-    if (params.encoder.gps.planar_buffer_disabled_flag) {
-      params.encoder.gps.planar_buffer_disabled_flag = 0;
-      err.warn() << "ignoring planarBufferDisabled without angularEnabled\n";
-    }
-  }
 
   // The following featues depend upon the occupancy atlas
   if (!params.encoder.gps.neighbour_avail_boundary_log2_minus1) {
@@ -1776,9 +1664,6 @@ SequenceEncoder::SequenceEncoder(Parameters* params) : SequenceCodec(params)
   // determine the naming (ordering) of ply properties
   _plyAttrNames.position =
     axisOrderToPropertyNames(params->encoder.sps.geometry_axis_order);
-
-  // NB: this is the raw origin before the encoder tweaks it
-  _angularOrigin = params->encoder.gps.gpsAngularOrigin;
 }
 
 //----------------------------------------------------------------------------
