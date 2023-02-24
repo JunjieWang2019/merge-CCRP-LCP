@@ -461,6 +461,7 @@ write(const SequenceParameterSet& sps)
   bs.write(sps_extension_flag);
 
   bs.write(sps.inter_frame_prediction_enabled_flag);
+  bs.write(sps.bypass_bin_coding_without_prob_update);
 
   bs.byteAlign();
 
@@ -564,9 +565,11 @@ parseSps(const PayloadBuffer& buf)
     assert(sps.profile.slice_reordering_constraint_flag);
 
   sps.inter_frame_prediction_enabled_flag = false;
+  sps.bypass_bin_coding_without_prob_update = false;
   bool sps_extension_flag = bs.read();
   if (sps_extension_flag) {
     bs.read(&sps.inter_frame_prediction_enabled_flag);
+    bs.read(&sps.bypass_bin_coding_without_prob_update);
   }
   bs.byteAlign();
 
