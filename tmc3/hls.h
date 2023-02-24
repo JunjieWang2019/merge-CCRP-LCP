@@ -497,7 +497,7 @@ struct GeometryParameterSet {
   bool joint_2pt_idcm_enabled_flag;
 
   // Selects between bitwise and bytewise occupancy coding
-  bool bitwise_occupancy_coding_flag;
+  bool bitwise_occupancy_coding_flag = true;
 
   // Controlls contextualization of occupancy bits and refinement of
   // the neighbour pattern according to the occupancy of adjacent

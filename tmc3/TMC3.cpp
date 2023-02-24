@@ -767,12 +767,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gbh.geom_stream_cnt_minus1, 1,
     "Number of entropy streams for octree coding")
 
-  ("bitwiseOccupancyCoding",
-    params.encoder.gps.bitwise_occupancy_coding_flag, true,
-    "Selects between bitwise and bytewise occupancy coding:\n"
-    "  0: bytewise\n"
-    "  1: bitwise")
-
   ("neighbourAvailBoundaryLog2",
     // NB: this is adjusted by minus 1 after the arguments are parsed
     params.encoder.gps.neighbour_avail_boundary_log2_minus1, 0,
@@ -1382,13 +1376,6 @@ sanitizeEncoderOpts(
   // tweak qtbt generation when trisoup is /isn't enabled
   params.encoder.geom.qtbt.trisoupEnabled =
     params.encoder.gps.trisoup_enabled_flag;
-
-  // Planar coding mode is not available for bytewise coding
-  if (!params.encoder.gps.bitwise_occupancy_coding_flag) {
-    if (params.encoder.gps.geom_planar_mode_enabled_flag)
-      err.warn() << "Bytewise geometry coding does not support planar mode\n";
-    params.encoder.gps.geom_planar_mode_enabled_flag = false;
-  }
 
   if (!params.encoder.gps.interPredictionEnabledFlag) {
     params.encoder.gps.globalMotionEnabled = false;

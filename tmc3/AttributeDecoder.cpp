@@ -36,7 +36,6 @@
 #include "AttributeDecoder.h"
 
 #include "AttributeCommon.h"
-#include "DualLutCoder.h"
 #include "attribute_raw.h"
 #include "constants.h"
 #include "entropy.h"

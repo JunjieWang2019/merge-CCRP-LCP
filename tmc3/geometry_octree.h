@@ -37,7 +37,6 @@
 
 #include <cstdint>
 #  include <cstring>
-#include "DualLutCoder.h"
 #include "PCCMath.h"
 #include "PCCPointSet.h"
 #include "entropy.h"
@@ -843,8 +842,6 @@ protected:
   CtxModelOctreeOccupancy _ctxOccupancy;
   CtxMapOctreeOccupancy _ctxIdxMaps[24];
 
-  // For bytewise occupancy coding
-  DualLutCoder<true> _bytewiseOccupancyCoder[10];
   // OBUF somplified
   CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
 

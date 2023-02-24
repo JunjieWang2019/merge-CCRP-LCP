@@ -623,6 +623,9 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
       bs.writeUe(gps.intra_pred_max_node_size_log2);
     }
     bs.write(gps.bitwise_occupancy_coding_flag);
+    if (!gps.bitwise_occupancy_coding_flag) {
+      throw std::runtime_error("Bitwise coding shall not be disabled");
+    }
 
     bs.write(gps.geom_planar_mode_enabled_flag);
     /*if (gps.geom_planar_mode_enabled_flag) {
@@ -733,6 +736,9 @@ parseGps(const PayloadBuffer& buf)
       bs.readUe(&gps.intra_pred_max_node_size_log2);
     }
     bs.read(&gps.bitwise_occupancy_coding_flag);
+    if (!gps.bitwise_occupancy_coding_flag) {
+      throw std::runtime_error("Bitwise coding shall not be disabled");
+    }
 
     bs.read(&gps.geom_planar_mode_enabled_flag);
     /*if (gps.geom_planar_mode_enabled_flag) {

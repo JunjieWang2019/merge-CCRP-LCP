@@ -35,7 +35,6 @@
 
 #include "geometry.h"
 
-#include "DualLutCoder.h"
 #include "OctreeNeighMap.h"
 #include "geometry_octree.h"
 //#include "geometry_intra_pred.h"
@@ -175,9 +174,6 @@ public:
   const GeometryOctreeContexts& getCtx() const { return *this; }
 
 public:
-  // selects between the bitwise and bytewise occupancy coders
-  bool _useBitwiseOccupancyCoder;
-
   const uint8_t* _neighPattern64toR1;
 
   EntropyDecoder* _arithmeticDecoder;
@@ -194,25 +190,16 @@ GeometryOctreeDecoder::GeometryOctreeDecoder(
   const GeometryOctreeContexts& ctxtMem,
   EntropyDecoder* arithmeticDecoder)
   : GeometryOctreeContexts(ctxtMem)
-  , _useBitwiseOccupancyCoder(gps.bitwise_occupancy_coding_flag)
   , _neighPattern64toR1(neighPattern64toR1(gps))
   , _arithmeticDecoder(arithmeticDecoder)
   /*, _planar(gps)*/
 {
-  if (!_useBitwiseOccupancyCoder && !gbh.entropy_continuation_flag) {
-    for (int i = 0; i < 10; i++)
-      _bytewiseOccupancyCoder[i].init(kDualLutOccupancyCoderInit[i]);
-  }
 }
 //============================================================================
 
 void
 GeometryOctreeDecoder::beginOctreeLevel(const Vec3<int>& planarDepth)
 {
-  for (int i = 0; i < 10; i++) {
-    _bytewiseOccupancyCoder[i].resetLut();
-  }
-
   //_planar.initPlanes(planarDepth);
 }
 

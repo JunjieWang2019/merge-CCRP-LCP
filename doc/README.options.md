@@ -417,10 +417,6 @@ the first octree partition.
 ### `--minQtbtSizeLog2=INT-VALUE`
 Specifies the minimum size of quadtree and binary tree partitions.
 
-### `--bitwiseOccupancyCoding=0|1`
-In octree geometry coding, there are both byte-wise and bit-wise tools to
-encode the occupancy data.  This option selects between the two methods.
-
 ### `--neighbourAvailBoundaryLog2=INT-VALUE`
 Defines the volume within which octree nodes are considered available
 for use in occupancy contextualisation and intra occupancy prediction.
