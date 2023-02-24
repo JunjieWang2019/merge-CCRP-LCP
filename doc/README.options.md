@@ -232,11 +232,6 @@ Controls the ability to code duplicate points.  When duplicate point
 merging is enabled, bitstream syntax related to duplicate points is
 disabled and a pre-filtering process is used to remove co-located points.
 
-### `--sortInputByAzimuth=0|1`
-Pre-sort the input point cloud according to azimuth angle with the
-origin `lidarHeadPosition`.  Pre-sorting occurs prior to tile/slice
-partitioning.
-
 Input partitioning (slices & tiles)
 -----------------------------------
 
@@ -349,14 +344,6 @@ enables to reduce some complexity in coding the bypass bins.
 
 Geometry coding
 ---------------
-
-### `--geomTreeType=0|1`
-Selects the geometry tree coding method.
-
-  | Value | Description              |
-  |:-----:| -------------------------|
-  | 0     | Octree                   |
-  | 1     | Predictive geometry tree |
 
 ### `--positionQuantisationEnabled=0|1`
 Enables in-loop quantisation and reconstruction of geometry positions.
@@ -596,29 +583,6 @@ Controls the activation of improved determination of trisoup vertex position.
 ### `--trisoupThickness=INT-VALUE`
 Controls the thickness for point reconstruction with rasterization.
 
-### `--predGeomSort=INT-VALUE`
-Point order used to construct predictive geometry trees.
-Requires `geomTreeType=1`.
-
- | Value | Description                            |
- |:-----:| -------------------------------------- |
- | 0     | none                                   |
- | 1     | morton order                           |
- | 2     | azimuth angle                          |
- | 3     | radial distance                        |
- | 4     | source azimuth angle (ply: laserangle) |
-
-### `--predGeomAzimuthSortPrecision=INT-VALUE`
-Controls the precision used in azimuthal sorting of points prior to
-predictive tree construction.  A value of 0 represents full-precision,
-otherwise larger values represent increasing precision.
-Requires `predGeomSort=2`.
-
-### `--predGeomTreePtsMax=INT-VALUE`
-Maximum number of points per predictive geometry tree.  A slice may contain
-more than one predictive geometry tree.
-Requires `geomTreeType=1`.
-
 ### `--positionBaseQpFreqLog2=INT-VALUE`
 Controls the number of predictive geometry tree nodes scaled by the same
 QP offset instance.  QP offsets are signalled every $2^n$ nodes in tree
@@ -627,25 +591,6 @@ Requires `positionQuantisationEnabled=1`.
 
 ### `--positionSliceQpFreqLog2=INT-VALUE`
 Identical to `positionBaseQpFreqLog2`, but controls per-slice configuration.
-
-### `--positionAzimuthScaleLog2=INT-VALUE`
-Number of additional bits used to represent predictive geometry azimuth
-angles.  Requires `angularEnabled=1`.
-
-### `--positionRadiusInvScaleLog2=INT-VALUE`
-Degree of quantisation applied in the representation of angular predictive
-geometry radial distances.
-Requires `angularEnabled=1`.
-
-### `--positionAzimuthSpeed=INT-VALUE`
-Step size used to linearly model progression of per-laser azimuthal angles
-during angular predictive geometry coding.
-Requires `angularEnabled=1`.
-
-### `--predGeomAzimuthQuantization=1|0`
-Controls the use of radius dependent azimuth quantization in predictive
-geometry coding.
-Requires `angularEnabled=1` and `geomTreeType=1`.
 
 ### `--pointCountMetadata=0|1`
 Controls the addition of per octree layer point count metadata to each
@@ -670,22 +615,6 @@ encoding a sequence.
 
 ### `--interPredictionEnabled=0|1`
 Controls the enabling of inter prediction coding.
-
-### `--predGeomMaxPredIdxTested=0|1`
-(Encoder only)
-Specifies the maximum prediction index tested by encoder in prediction 
-list. A value lower than 0 or higher than predGeomMaxPredIdx implies 
-that the maximum prediction index is set equal to predGeomMaxPredIdx.
-The default value is set to -1.
-
-### `--predGeomRadiusPredThreshold=0|1`
-Specifies the threshold for consider new predictor in the prediction 
-list for intra prediction in predictive geometry coding. The threshold
-effectively used is predGeomRadiusPredThreshold scaled by 
-positionRadiusInvScaleLog2.
-
-### `--secondaryResidualDisabled=1|0`
-Controls the disabling of quantized cartesian residual in lossy pred tree geometry coding.
 
 Attribute coding
 ----------------
@@ -902,18 +831,6 @@ decoding order) is usable only with LoD attribute coding and
 ### `--spherical_coord_flag=0|1`
 Controls the conversion of point co-ordinates used in attribute coding from
 the Cartesian domain to a scaled spherical domain.
-
-### `--attrSphericalMaxLog2=INT-VALUE`
-Override spherical co-ordinate normalization factor.  This may be used to
-compensate any increased azimuth resolution when
-`predGeomAzimuthQuantization=1`.
-
-  | Value | Description                        |
-  |:-----:| ---------------------------------- |
-  | 0     | Automatic calculation              |
-  | 1     | Override max value                 |
-
-Applies when `angularEnabled=1` and `predGeomAzimuthQuantization=1`.
 
 ### `--lod_neigh_bias=INT-VALUE-LIST`
 A set of three bias factors corresponding to the first, second and third

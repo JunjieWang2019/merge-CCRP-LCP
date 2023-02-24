@@ -49,7 +49,6 @@
 #include "pointset_processing.h"
 #include "geometry.h"
 #include "geometry_octree.h"
-//#include "geometry_predictive.h"
 #include "io_hls.h"
 #include "osspecific.h"
 #include "partitioning.h"
@@ -73,7 +72,6 @@ PCCPointSet3 getPartition(
 PCCTMC3Encoder3::PCCTMC3Encoder3() : _frameCounter(-1)
 {
   _ctxtMemOctreeGeom.reset(new GeometryOctreeContexts);
-  //_ctxtMemPredGeom.reset(new PredGeomContexts);
 }
 
 //----------------------------------------------------------------------------
@@ -98,12 +96,6 @@ PCCTMC3Encoder3::compress(
     //  - sequence scaling is replaced by decimation of the input
     //  - any user-specified global scaling is honoured
     _inputDecimationScale = 1.;
-    /*if (params->gps.predgeom_enabled_flag
-        && params->gps.geom_angular_mode_enabled_flag) {
-      _inputDecimationScale = params->codedGeomScale;
-      params->codedGeomScale /= params->seqGeomScale;
-      params->seqGeomScale = 1.;
-    }*/
 
     deriveParameterSets(params);
     fixupParameterSets(params);
@@ -183,17 +175,9 @@ PCCTMC3Encoder3::compress(
     //  int twoPi = 25735;
     //  int maxLaserIdx = params->gps.numLasers() - 1;
     //
-    //  if (params->gps.predgeom_enabled_flag) {
-    //    auto& gps = params->gps;
-    //    twoPi = 1 << (gps.geom_angular_azimuth_scale_log2_minus11 + 12);
-    //    r >>= params->gps.geom_angular_radius_inv_scale_log2;
-    //  }
-    //
     //  // todo(df): handle the single laser case better
     //  Box3<int> sphBox{0, {r, twoPi, maxLaserIdx}};
-    //  int refScale = params->gps.azimuth_scaling_enabled_flag
-    //    ? params->attrSphericalMaxLog2
-    //    : 0;
+    //  int refScale = 0;
     //  auto attr_coord_scale = normalisedAxesWeights(sphBox, refScale);
     //  for (auto& aps : params->aps)
     //    if (aps.spherical_coord_flag)
@@ -509,9 +493,6 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
     params->gps.adjacent_child_contextualization_enabled_flag = 0;
     params->gps.intra_pred_max_node_size_log2 = 0;
   }
-
-  /*if (params->gps.predgeom_enabled_flag)
-    params->gps.geom_planar_mode_enabled_flag = false;*/
 
   // fixup attribute parameters
   for (auto it : params->attributeIdxMap) {
@@ -834,24 +815,7 @@ PCCTMC3Encoder3::compressPartition(
 
     //  pcc::point_t minPos = 0;
 
-    //  if (_gps->predgeom_enabled_flag) {
-    //    altPositions = _posSph;
-    //    bboxRpl = Box3<int>(altPositions.begin(), altPositions.end());
-    //    minPos = bboxRpl.min;
-    //    if (attrInterPredParams.enableAttrInterPred) {
-    //      for (auto i = 0; i < 3; i++)
-    //        minPos[i] = minPos[i] < minPos_ref[i] ? minPos[i] : minPos_ref[i];
-    //      auto minPos_shift = minPos_ref - minPos;
-
-    //      if (minPos_shift[0] || minPos_shift[1] || minPos_shift[2])
-    //        offsetAndScaleShift(
-    //          minPos_shift, attr_aps.attr_coord_scale,
-    //          &attrInterPredParams.referencePointCloud[0],
-    //          &attrInterPredParams.referencePointCloud[0]
-    //            + attrInterPredParams.getPointCount());
-    //    }
-    //    minPos_ref = minPos;
-    //  } else {
+    //  {
     //    altPositions.resize(pointCloud.getPointCount());
 
     //    auto laserOrigin = _gbh.geomAngularOrigin(*_gps);
@@ -935,12 +899,6 @@ PCCTMC3Encoder3::compressPartition(
     callback->onOutputBuffer(payload);
   }
 
-  if (_gps->interPredictionEnabledFlag) {
-    /*if (_gps->predgeom_enabled_flag){
-      _refFrameSph.insert(_posSph);
-    }*/
-  }
-
   // Note the current slice id for loss detection with entropy continuation
   _prevSliceId = _sliceId;
 
@@ -1016,7 +974,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.maxRootNodeDimLog2 = gbh.rootNodeSizeLog2.max();
 
   // use a cubic node if qtbt is disabled
-  if (/*!_gps->predgeom_enabled_flag*/ true && !_gps->qtbt_enabled_flag)
+  if (!_gps->qtbt_enabled_flag)
     gbh.rootNodeSizeLog2 = gbh.maxRootNodeDimLog2;
 
   // todo(df): remove estimate when arithmetic codec is replaced
@@ -1038,18 +996,12 @@ PCCTMC3Encoder3::encodeGeometryBrick(
       !_gps->gof_geom_entropy_continuation_enabled_flag
       || !gbh.interPredictionEnabledFlag) {
       _ctxtMemOctreeGeom->reset();
-      //_ctxtMemPredGeom->reset();
     }
     for (auto& ctxtMem : _ctxtMemAttrs)
       ctxtMem.reset();
   }
 
-  /*if (_gps->predgeom_enabled_flag) {
-      _refFrameSph.setInterEnabled(gbh.interPredictionEnabledFlag);
-    encodePredictiveGeometry(
-      params->predGeom, *_gps, gbh, pointCloud, &_posSph, _refFrameSph,
-      *_ctxtMemPredGeom, arithmeticEncoders[0].get());
-  } else*/ if (!_gps->trisoup_enabled_flag) {
+  if (!_gps->trisoup_enabled_flag) {
     PCCPointSet3 compensatedPointCloud;
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,

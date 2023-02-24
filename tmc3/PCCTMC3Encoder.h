@@ -109,9 +109,6 @@ struct EncoderParams {
   // Encoder specific parameters for trisoup
   TrisoupEncOpts trisoup;
 
-  // Options for the predictive geometry coder
-  PredGeomEncOpts predGeom;
-
   // Parameters that control partitioning
   PartitionParams partition;
 
@@ -138,10 +135,6 @@ struct EncoderParams {
 
   // Qp used for IDCM quantisation (used to derive HLS values)
   int idcmQp;
-
-  // precision expected for attributes after scaling with predgeom
-  // and spherical coordinates
-  int attrSphericalMaxLog2;
 
   // Period of random access points (managed by SequenceEncoder)
   int randomAccessPeriod;
@@ -242,13 +235,10 @@ private:
 
   // Memorized context buffers
   std::unique_ptr<GeometryOctreeContexts> _ctxtMemOctreeGeom;
-  //std::unique_ptr<PredGeomContexts> _ctxtMemPredGeom;
   std::vector<AttributeContexts> _ctxtMemAttrs;
   std::vector<int> _ctxtMemAttrSliceIds;
   // Code current picture as inter prediction
   bool _codeCurrFrameAsInter;
-  // Point positions in spherical coordinates of the reference frame
-  //PredGeomPredictor _refFrameSph;
 
   AttributeInterPredParams attrInterPredParams;
   bool movingState;

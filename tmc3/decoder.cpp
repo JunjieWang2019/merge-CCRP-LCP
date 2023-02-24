@@ -45,7 +45,6 @@
 #include "coordinate_conversion.h"
 #include "geometry.h"
 #include "geometry_octree.h"
-//#include "geometry_predictive.h"
 #include "hls.h"
 #include "io_hls.h"
 #include "io_tlv.h"
@@ -77,7 +76,6 @@ PCCTMC3Decoder3::init()
   _refFrameSeq.clear();
 
   _ctxtMemOctreeGeom.reset(new GeometryOctreeContexts);
-  //_ctxtMemPredGeom.reset(new PredGeomContexts);
 }
 
 //----------------------------------------------------------------------------
@@ -419,7 +417,6 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
       !_gps->gof_geom_entropy_continuation_enabled_flag
       || !_gbh.interPredictionEnabledFlag) {
       _ctxtMemOctreeGeom->reset();
-      //_ctxtMemPredGeom->reset();
     }
     for (auto& ctxtMem : _ctxtMemAttrs)
       ctxtMem.reset();
@@ -478,12 +475,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
   aec.setBypassBinCodingWithoutProbUpdate(_sps->bypass_bin_coding_without_prob_update);
   aec.start();
 
-  /*if (_gps->predgeom_enabled_flag) {
-    _refFrameSph.setInterEnabled(_gbh.interPredictionEnabledFlag);
-    decodePredictiveGeometry(
-      *_gps, _gbh, _currentPointCloud, &_posSph, _refFrameSph,
-      *_ctxtMemPredGeom, aec);
-  } else*/ if (!_gps->trisoup_enabled_flag) {
+  if (!_gps->trisoup_enabled_flag) {
     if (!_params.minGeomNodeSizeLog2) {
       PCCPointSet3 compensatedPointCloud;
       decodeGeometryOctree(
@@ -504,10 +496,6 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
       _refFrame, _sps->seqBoundingBoxOrigin);
   }
-
-  /*if (_gps->interPredictionEnabledFlag)
-    if (_gps->predgeom_enabled_flag)
-      _refFrameSph.insert(_posSph);*/
 
   // At least the first slice's geometry has been decoded
   _firstSliceInFrame = false;
@@ -583,24 +571,7 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 
   //  pcc::point_t minPos = 0;
 
-  //  if (_gps->predgeom_enabled_flag) {
-  //    altPositions = _posSph;
-  //    bboxRpl = Box3<int>(altPositions.begin(), altPositions.end());
-  //    minPos = bboxRpl.min;
-  //    if (attrInterPredParams.enableAttrInterPred) {
-  //      for (auto i = 0; i < 3; i++)
-  //        minPos[i] = minPos[i] < minPos_ref[i] ? minPos[i] : minPos_ref[i];
-  //      auto minPos_shift = minPos_ref - minPos;
-
-  //      if (minPos_shift[0] || minPos_shift[1] || minPos_shift[2])
-  //        offsetAndScaleShift(
-  //          minPos_shift, attr_aps.attr_coord_scale,
-  //          &attrInterPredParams.referencePointCloud[0],
-  //          &attrInterPredParams.referencePointCloud[0]
-  //            + attrInterPredParams.getPointCount());
-  //    }
-  //    minPos_ref = minPos;
-  //  } else {
+  //  {
   //    altPositions.resize(_currentPointCloud.getPointCount());
 
   //    auto laserOrigin = _gbh.geomAngularOrigin(*_gps);

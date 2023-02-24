@@ -165,15 +165,11 @@ private:
 
   // Memorized context buffers
   std::unique_ptr<GeometryOctreeContexts> _ctxtMemOctreeGeom;
-  //std::unique_ptr<PredGeomContexts> _ctxtMemPredGeom;
   std::vector<AttributeContexts> _ctxtMemAttrs;
   std::vector<int> _ctxtMemAttrSliceIds;
 
   // Attribute decoder for reuse between attributes of same slice
   std::unique_ptr<AttributeDecoderIntf> _attrDecoder;
-
-  // Point positions in spherical coordinates of the reference frame
-  //PredGeomPredictor _refFrameSph;
 
   AttributeInterPredParams attrInterPredParams;
 

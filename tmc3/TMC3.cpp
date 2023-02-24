@@ -109,9 +109,6 @@ struct Parameters {
 
   // perform attribute colourspace conversion on ply input/output.
   bool convertColourspace;
-
-  // resort the input points by azimuth angle
-  bool sortInputByAzimuth;
 };
 
 //----------------------------------------------------------------------------
@@ -344,14 +341,6 @@ operator>>(std::istream& in, PartitionMethod& val)
 
 namespace pcc {
 static std::istream&
-operator>>(std::istream& in, PredGeomEncOpts::SortMode& val)
-{
-  return readUInt(in, val);
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::istream&
 operator>>(std::istream& in, OctreeEncOpts::QpMethod& val)
 {
   return readUInt(in, val);
@@ -460,23 +449,6 @@ operator<<(std::ostream& out, const PartitionMethod& val)
   case PartitionMethod::kOctreeUniform: out << "3 (UniformOctree)"; break;
   case PartitionMethod::kUniformSquare: out << "4 (UniformSquare)"; break;
   case PartitionMethod::kNpoints: out << "5 (NPointSpans)"; break;
-  default: out << int(val) << " (Unknown)"; break;
-  }
-  return out;
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::ostream&
-operator<<(std::ostream& out, const PredGeomEncOpts::SortMode& val)
-{
-  switch (val) {
-    using SortMode = PredGeomEncOpts::SortMode;
-  case SortMode::kNoSort: out << int(val) << " (None)"; break;
-  case SortMode::kSortMorton: out << int(val) << " (Morton)"; break;
-  case SortMode::kSortAzimuth: out << int(val) << " (Azimuth)"; break;
-  case SortMode::kSortRadius: out << int(val) << " (Radius)"; break;
-  case SortMode::kSortLaserAngle: out << int(val) << " (LaserAngle)"; break;
   default: out << int(val) << " (Unknown)"; break;
   }
   return out;
@@ -688,10 +660,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
 
   (po::Section("Encoder"))
 
-  ("sortInputByAzimuth",
-    params.sortInputByAzimuth, false,
-    "Sort input points by azimuth angle")
-
   ("geometry_axis_order",
     params.encoder.sps.geometry_axis_order, AxisOrder::kXYZ,
     "Sets the geometry axis coding order:\n"
@@ -784,12 +752,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Abort if level limits exceeded")
 
   (po::Section("Geometry"))
-
-  ("geomTreeType",
-    params.encoder.gps.predgeom_enabled_flag, false,
-    "Selects the tree coding method:\n"
-    "  0: octree\n"
-    "  1: predictive")
 
   ("qtbtEnabled",
     params.encoder.gps.qtbt_enabled_flag, true,
@@ -971,10 +933,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gps.geom_angular_mode_enabled_flag, false,
     "Controls angular contextualisation of occupancy")
 
-  ("secondaryResidualDisabled",
-    params.encoder.gps.residual2_disabled_flag, false,
-    "Controls disabling of quantized cartesian residual in lossy pred tree")
-
   // NB: the underlying variable is in STV order.
   //     Conversion happens during argument sanitization.
   ("lidarHeadPosition",
@@ -1005,23 +963,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gps.octree_angular_extension_flag, true,
     "Enable extension for octree angular")
 
-  ("predGeomAzimuthQuantization",
-    params.encoder.gps.azimuth_scaling_enabled_flag, true,
-    "Quantize azimuth according to radius in predictive geometry coding")
-
-  ("positionAzimuthScaleLog2",
-    params.encoder.gps.geom_angular_azimuth_scale_log2_minus11, 5,
-    "Additional bits to represent azimuth angle in predictive geometry coding")
-
-  // NB: this will be corrected to be minus 1 later
-  ("positionAzimuthSpeed",
-    params.encoder.gps.geom_angular_azimuth_speed_minus1, 363,
-    "Scale factor applied to azimuth angle in predictive geometry coding")
-
-  ("positionRadiusInvScaleLog2",
-    params.encoder.gps.geom_angular_radius_inv_scale_log2, 0,
-    "Inverse scale factor applied to radius in predictive geometry coding")
-
   ("disable_planar_IDCM_angluar",
     params.encoder.gps.geom_planar_disabled_idcm_angular_flag, true,
     "Disable planar mode for geometry coding of IDCM coded nodes when angular coding is enabled")
@@ -1045,41 +986,9 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "  1: Large scale point clouds\n"
     "  2: Small voxelised point clouds")
 
-  ("predGeomSort",
-    params.encoder.predGeom.sortMode, PredGeomEncOpts::kSortMorton,
-    "Predictive geometry tree construction order")
-
-  ("predGeomAzimuthSortPrecision",
-    params.encoder.predGeom.azimuthSortRecipBinWidth, 0.0f,
-    "Reciprocal precision used in azimuthal sorting for tree construction")
-
-  ("predGeomTreePtsMax",
-    params.encoder.predGeom.maxPtsPerTree, 5000000,
-    "Maximum number of points per predictive geometry tree")
-
   ("pointCountMetadata",
     params.encoder.gps.octree_point_count_list_present_flag, false,
     "Add octree layer point count metadata")
-
-  ("predGeomMaxPredIdx",
-    params.encoder.gps.predgeom_max_pred_index, 3,
-    "Maximum prediction index usable in the prediction list,\n"
-    " default is 3, maximum allowed is 7."
-  )
-
-  ("predGeomMaxPredIdxTested",
-    params.encoder.predGeom.maxPredIdxTested, -1,
-    "Maximum prediction index tested by encoder in prediction list,\n"
-    " a value lower than 0 or higher than predGeomMaxPredIdx implies\n"
-    " the maximum prediction index is set equal to predGeomMaxPredIdx;\n"
-    " default is -1."
-  )
-
-  ("predGeomRadiusPredThreshold",
-    params.encoder.predGeom.radiusThresholdForNewPred, 2048,
-    "Threshold for considering new predictor in the list,\n"
-    " the threshold effectively used is predGeomRadiusPredThreshold,\n"
-    " scaled accordingly to positionRadiusInvScaleLog2.")
 
   (po::Section("Attributes"))
 
@@ -1246,10 +1155,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("spherical_coord_flag",
      params_attr.aps.spherical_coord_flag, false,
      "Code attributes in spherical domain")
-
-  ("attrSphericalMaxLog2",
-    params.encoder.attrSphericalMaxLog2, 0,
-    "Override spherical coordinate normalisation factor")
 
   ("aps_scalable_enable_flag",
     params_attr.aps.scalable_lifting_enabled_flag, false,
@@ -1447,7 +1352,6 @@ sanitizeEncoderOpts(
   // fix the representation of various options
   params.encoder.gbh.geom_stream_cnt_minus1--;
   params.encoder.gps.geom_idcm_rate_minus1--;
-  params.encoder.gps.geom_angular_azimuth_speed_minus1--;
   params.encoder.gps.neighbour_avail_boundary_log2_minus1 =
     std::max(0, params.encoder.gps.neighbour_avail_boundary_log2_minus1 - 1);
   for (auto& attr_sps : params.encoder.sps.attributeSets) {
@@ -1502,10 +1406,6 @@ sanitizeEncoderOpts(
   params.encoder.gps.trisoup_enabled_flag =
     !params.encoder.trisoupNodeSizesLog2.empty();
 
-  if (params.encoder.gps.predgeom_enabled_flag
-      && params.encoder.gps.trisoup_enabled_flag)
-    err.error() << "trisoup cannot be used with predictive geometry\n";
-
   // Certain coding modes are not available when trisoup is enabled.
   // Disable them, and warn if set (they may be set as defaults).
   if (params.encoder.gps.trisoup_enabled_flag) {
@@ -1534,11 +1434,6 @@ sanitizeEncoderOpts(
       err.warn() << "Bytewise geometry coding does not support planar mode\n";
     params.encoder.gps.geom_planar_mode_enabled_flag = false;
   }
-
-  if (
-    /*params.encoder.gps.predgeom_enabled_flag*/ false
-    && /*!params.encoder.gps.geom_angular_mode_enabled_flag*/ true)
-    params.encoder.gps.interPredictionEnabledFlag = false;
 
   if (!params.encoder.gps.interPredictionEnabledFlag) {
     params.encoder.gps.globalMotionEnabled = false;
@@ -1704,8 +1599,6 @@ sanitizeEncoderOpts(
     for (auto val : params.encoder.lasersZ) {
       int one = 1 << 3;
       auto scale = params.encoder.codedGeomScale;
-      if (params.encoder.gps.predgeom_enabled_flag)
-        scale = params.encoder.codedGeomScale / params.encoder.seqGeomScale;
 
       params.encoder.gps.angularZ.push_back(round(val * scale * one));
     }
@@ -1728,27 +1621,7 @@ sanitizeEncoderOpts(
         std::max<int>(0, 1 + log2(params.encoder.codedGeomScale));
     }
 
-    if (params.encoder.gps.predgeom_enabled_flag) {
-      auto& gps = params.encoder.gps;
-      int maxSpeed = 1 << (gps.geom_angular_azimuth_scale_log2_minus11 + 12);
-      if (params.encoder.gps.geom_angular_azimuth_speed_minus1 + 1 > maxSpeed)
-        err.error() << "positionAzimuthSpeed > max (" << maxSpeed << ")\n";
-    }
-
-    if (params.encoder.gps.azimuth_scaling_enabled_flag) {
-      params.encoder.gps.predgeom_radius_threshold_for_pred_list
-        = params.encoder.predGeom.radiusThresholdForNewPred
-          >> params.encoder.gps.geom_angular_radius_inv_scale_log2;
-
-      if (params.encoder.predGeom.maxPredIdxTested < 0
-          || params.encoder.predGeom.maxPredIdxTested
-              > params.encoder.gps.predgeom_max_pred_index)
-        params.encoder.predGeom.maxPredIdxTested
-          = params.encoder.gps.predgeom_max_pred_index;
-    }
   } else*/ { // Angular disabled
-    params.sortInputByAzimuth = false;
-    params.encoder.gps.azimuth_scaling_enabled_flag = false;
   }
 
   // tweak qtbt when angular is / isn't enabled
@@ -1796,13 +1669,6 @@ sanitizeEncoderOpts(
     < params.encoder.partition.sliceMinPoints)
     err.error()
       << "sliceMaxPoints must be greater than or equal to sliceMinPoints\n";
-
-  if (params.encoder.gps.azimuth_scaling_enabled_flag
-      && params.encoder.gps.predgeom_max_pred_index > kPTEMaxPredictorIndex)
-    err.error()
-      << "predGeomMaxPredIdx must be lower than or equal to "
-      << kPTEMaxPredictorIndex
-      << "\n";
 
   for (const auto& it : params.encoder.attributeIdxMap) {
     const auto& attr_sps = params.encoder.sps.attributeSets[it.second];
@@ -1952,17 +1818,6 @@ SequenceEncoder::compressOneFrame(Stopwatch* clock)
     cout << "Error: can't open input file!" << endl;
     return -1;
   }
-
-  // Some evaluations wish to scan the points in azimuth order to simulate
-  // real-time acquisition (since the input has lost its original order).
-  // NB: because this is trying to emulate the input order, binning is disabled
-  if (params->sortInputByAzimuth)
-    sortByAzimuth(
-      pointCloud, 0, pointCloud.getPointCount(), 0., _angularOrigin,
-      params->encoder.gps.geom_angular_azimuth_scale_log2_minus11 + 12,
-      params->encoder.gps.geom_angular_azimuth_speed_minus1 + 1,
-      params->encoder.gps.angularTheta,
-      params->encoder.gps.angularZ);
 
   // Sanitise the input point cloud
   // todo(df): remove the following with generic handling of properties

@@ -90,7 +90,6 @@ file(GLOB PROJECT_INC_FILES
   "geometry.h"
   "geometry_octree.h"
   "geometry_params.h"
-  "geometry_predictive.h"
   "geometry_trisoup.h"
   "hls.h"
   "io_hls.h"

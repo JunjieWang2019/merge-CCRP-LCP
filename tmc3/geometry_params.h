@@ -79,29 +79,6 @@ struct TrisoupEncOpts {
   bool improvedVertexDetermination;
 };
 
-//----------------------------------------------------------------------------
-
-struct PredGeomEncOpts {
-  enum SortMode
-  {
-    kNoSort,
-    kSortMorton,
-    kSortAzimuth,
-    kSortRadius,
-    kSortLaserAngle
-  } sortMode;
-
-  // limit on number of points per tree
-  int maxPtsPerTree;
-
-  // Reciprocal bin width used in azimuthal sorting.
-  //  0 => full precision
-  float azimuthSortRecipBinWidth;
-
-  int maxPredIdxTested;
-  int radiusThresholdForNewPred;
-};
-
 //=============================================================================
 
 }  // namespace pcc

@@ -43,14 +43,12 @@
 #include "entropy.h"
 #include "hls.h"
 #include "partitioning.h"
-#include "geometry_predictive.h"
 #include "TMC3.h"
 namespace pcc {
 
 //============================================================================
 
 struct GeometryOctreeContexts;
-//struct PredGeomContexts;
 struct CloudFrame;
 
 //============================================================================
@@ -106,27 +104,6 @@ void decodeGeometryTrisoup(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position);
-
-//----------------------------------------------------------------------------
-
-//void encodePredictiveGeometry(
-//  const PredGeomEncOpts& opt,
-//  const GeometryParameterSet& gps,
-//  GeometryBrickHeader& gbh,
-//  PCCPointSet3& pointCloud,
-//  std::vector<Vec3<int32_t>>* reconPosSph,
-//  PredGeomPredictor& refFrameSph,
-//  PredGeomContexts& ctxtMem,
-//  EntropyEncoder* arithmeticEncoder);
-
-//void decodePredictiveGeometry(
-//  const GeometryParameterSet& gps,
-//  const GeometryBrickHeader& gbh,
-//  PCCPointSet3& pointCloud,
-//  std::vector<Vec3<int32_t>>* reconPosSph,
-//  PredGeomPredictor& refFrameSph,
-//  PredGeomContexts& ctxtMem,
-//  EntropyDecoder& arithmeticDecoder);
 
 //============================================================================
 
