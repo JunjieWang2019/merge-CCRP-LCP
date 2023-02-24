@@ -112,9 +112,6 @@ struct EncoderParams {
   // Options for the predictive geometry coder
   PredGeomEncOpts predGeom;
 
-  // Options for geometry interprediction
-  InterGeomEncOpts interGeom;
-
   // Parameters that control partitioning
   PartitionParams partition;
 
@@ -185,7 +182,6 @@ public:
   static void deriveParameterSets(EncoderParams* params);
   static void fixupParameterSets(EncoderParams* params);
   void setInterForCurrPic(bool x) { _codeCurrFrameAsInter = x; }
-  void setMotionVectorFileName(std::string s) { motionVectorFileName = s; }
   static void deriveMotionParams(EncoderParams* params);
 
 private:
@@ -253,7 +249,6 @@ private:
   bool _codeCurrFrameAsInter;
   // Point positions in spherical coordinates of the reference frame
   //PredGeomPredictor _refFrameSph;
-  std::string motionVectorFileName;
 
   AttributeInterPredParams attrInterPredParams;
   bool movingState;

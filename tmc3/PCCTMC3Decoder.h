@@ -89,7 +89,6 @@ public:
   void storeTileInventory(TileInventory&& inventory);
 
   //==========================================================================
-  void setMotionVectorFileName(std::string s) { motionVectorFileName = s; }
 
 private:
   void activateParameterSets(const AttributeParamInventoryHdr& gbh);
@@ -175,7 +174,6 @@ private:
 
   // Point positions in spherical coordinates of the reference frame
   //PredGeomPredictor _refFrameSph;
-  std::string motionVectorFileName;
 
   AttributeInterPredParams attrInterPredParams;
 

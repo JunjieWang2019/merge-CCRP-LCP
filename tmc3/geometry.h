@@ -64,7 +64,6 @@ void encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoder,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams,
   PCCPointSet3& compensatedPointCloud);
 
 void decodeGeometryOctree(
@@ -97,8 +96,7 @@ void encodeGeometryTrisoup(
   GeometryOctreeContexts& ctxtMem,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoder,
   const CloudFrame& refFrame,
-  const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams);
+  const SequenceParameterSet& sps);
 
 void decodeGeometryTrisoup(
   const GeometryParameterSet& gps,

@@ -202,67 +202,6 @@ PCCTMC3Encoder3::compress(
 
     // Allocate storage for attribute contexts
     _ctxtMemAttrs.resize(params->sps.attributeSets.size());
-    
-    if (params->gps.globalMotionEnabled) {
-      /*if (params->gps.predgeom_enabled_flag) {
-        _refFrameSph.parseMotionParams(motionVectorFileName, 1.0);
-      } else*/ if (!params->gps.trisoup_enabled_flag) {
-        params->interGeom.motionParams.parseFile(
-          motionVectorFileName, params->codedGeomScale);
-        deriveMotionParams(params);
-      }
-    }
-  }
-  if (params->gps.globalMotionEnabled && params->interGeom.deriveGMThreshold) {
-    const auto pointCount = inputPointCloud.getPointCount();
-    const auto bbox = inputPointCloud.computeBoundingBox();
-    const int histScale = params->interGeom.gmThresholdHistScale;
-
-    const int minZ = std::max(bbox.min.z(), params->interGeom.gmThresholdMinZ);
-    const int maxZ = std::min(bbox.max.z(), params->interGeom.gmThresholdMaxZ);
-
-    const int histRange = (maxZ - minZ) / histScale;
-    std::vector<int> histInp(histRange), midVals(histRange);
-    std::vector<float> probs(histRange);
-
-    for (auto i = 0; i < pointCount; i++) {
-      auto scaledZ = (inputPointCloud[i].z() - minZ) / histScale;
-      if (scaledZ >= 0 && scaledZ < histRange)
-        histInp[scaledZ]++;
-    }
-
-    for (size_t i = 0; i < histRange; ++i)
-      midVals[i] = minZ + int((i + 0.5) * histScale);
-
-    const float sum = std::accumulate(histInp.begin(), histInp.end(), 0.);
-
-    for (size_t i = 0; i < histRange; ++i)
-      probs[i] = histInp[i] / sum;
-
-    const float mean =
-      std::inner_product(probs.begin(), probs.end(), midVals.begin(), 0.);
-
-    float variance = 0.0;
-    for (size_t i = 0; i < histRange; ++i)
-      variance += probs[i] * pow((midVals[i] - mean), 2);
-
-    const int topIdx =
-      std::max_element(histInp.begin(), histInp.end()) - histInp.begin();
-    const int top = midVals[topIdx];
-
-    const int deltaLeft =
-      params->interGeom.gmThresholdLeftScale * std::sqrt(variance);
-    const int deltaRight =
-      params->interGeom.gmThresholdRightScale * std::sqrt(variance);
-    const int leftOffset =
-      std::max(minZ, top - deltaLeft) * params->codedGeomScale;
-    const int rightOffset =
-      std::min(maxZ, top + deltaRight) * params->codedGeomScale;
-    /*if (params->gps.predgeom_enabled_flag)
-      _refFrameSph.updateThresholds(_frameCounter, leftOffset, rightOffset);
-    else */if (!params->gps.trisoup_enabled_flag)
-      params->interGeom.motionParams.updateThresholds(
-        _frameCounter, leftOffset, rightOffset);
   }
 
   // placeholder to "activate" the parameter sets
@@ -451,16 +390,6 @@ PCCTMC3Encoder3::compress(
     }
     std::cout << "Slice number: " << partitions.slices.size() << std::endl;
   } while (0);
- 
-  if (_frameCounter){
-    if (params->gps.predgeom_enabled_flag) {
-      /*_refFrameSph.updateFrame(*_gps);*/
-    } else if (!params->gps.trisoup_enabled_flag) {
-      params->interGeom.motionParams.AdvanceFrame();
-    }
-  } else {
-    /*_refFrameSph.setGlobalMotionEnabled(_gps->globalMotionEnabled);*/
-  }
 
   // Encode each partition:
   //  - create a pointset comprising just the partitioned points
@@ -666,19 +595,6 @@ void
 PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
 {
   auto scaleFactor = params->codedGeomScale;
-  params->interGeom.th_dist = int(1000 * scaleFactor);
-  params->gbh.motion_block_size = {0, 0, 0};
-  for (int i = 0; i < 3; i++) {
-    if (params->interGeom.motion_block_size[i] > 0)
-      params->gbh.motion_block_size[i] = std::max(
-        64,
-        int(std::round(params->interGeom.motion_block_size[i] * scaleFactor)));
-    else
-      params->gbh.motion_block_size[i] = 0;
-  }
-  params->interGeom.motion_window_size = std::max(
-    2, int(std::round(params->interGeom.motion_window_size * scaleFactor)));
-
 
   // local
   auto& motion = params->gps.motion;
@@ -1080,14 +996,6 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.geom_qp_offset_intvl_log2_delta =
     params->gbh.geom_qp_offset_intvl_log2_delta;
 
-  gbh.gm_matrix = {65536, 0, 0, 0, 65536, 0, 0, 0, 65536};
-  gbh.gm_trans = 0;
-  gbh.gm_thresh = {0, 0};
-  if (gbh.interPredictionEnabledFlag && /*!_gps->predgeom_enabled_flag*/ true) {
-    gbh.lpu_type = params->interGeom.lpuType;
-    gbh.motion_block_size = params->gbh.motion_block_size;
-  }
-
   // Entropy continuation is not permitted in the first slice of a frame
   gbh.entropy_continuation_flag = false;
   if (_sps->entropy_continuation_enabled_flag)
@@ -1146,7 +1054,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
       arithmeticEncoders, _refFrame, *_sps,
-      params->interGeom, compensatedPointCloud);
+      compensatedPointCloud);
   }
   else
   {
@@ -1156,39 +1064,14 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryTrisoup(
       params->trisoup, params->geom, *_gps, gbh, pointCloud,
       *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
-      *_sps, params->interGeom);
+      *_sps);
   }
 
   // signal the actual number of points coded
   gbh.footer.geom_num_points_minus1 = pointCloud.getPointCount() - 1;
 
-  /*if (
-    _gps->predgeom_enabled_flag && gbh.interPredictionEnabledFlag
-    && _gps->globalMotionEnabled)
-    _refFrameSph.getMotionParams(gbh.gm_thresh, gbh.gm_matrix, gbh.gm_trans);*/
-
   attrInterPredParams.frameDistance = 1;
   movingState = false;
-
-  if (gbh.interPredictionEnabledFlag && _gps->globalMotionEnabled) {
-    const double scale = 65536.;
-    const double thr1_pre = 0.1 / attrInterPredParams.frameDistance;
-    const double thr2_pre = params->attrInterPredTranslationThreshold;
-
-    const double thr1_tan_pre = tan(M_PI * thr1_pre / 180);
-    const double thr1_sin_pre = sin(M_PI * thr1_pre / 180);
-
-    double Rx,Ry,Rz,Sx,Sy,Sz;
-
-    Rx = std::abs((gbh.gm_matrix[5] / scale) / (1. + gbh.gm_matrix[8] / scale));
-    Ry = std::abs(gbh.gm_matrix[2] / scale);
-    Rz = std::abs((gbh.gm_matrix[1] / scale) / (1. + gbh.gm_matrix[0] / scale));
-    Sx = std::abs(gbh.gm_trans[0]);
-    Sy = std::abs(gbh.gm_trans[1]);
-    Sz = std::abs(gbh.gm_trans[2]);
-
-    movingState =(Rx < thr1_tan_pre && Ry < thr1_sin_pre && Rz < thr1_tan_pre && Sx < thr2_pre && Sy < thr2_pre && Sz < thr2_pre);
-  }
 
   // assemble data unit
   //  - record the position of each aec buffer for chunk concatenation

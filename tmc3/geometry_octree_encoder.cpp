@@ -1624,65 +1624,6 @@ GeometryOctreeEncoder::encodeDirectPosition(
 //}
 
 //-------------------------------------------------------------------------
-void
-applyGlobalMotion(
-  const InterGeomEncOpts& params,
-  const SequenceParameterSet& sps,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  PCCPointSet3& predPointCloud,
-  PCCPointSet3& pointPredictorWorld,
-  EntropyEncoder* arithmeticEncoder)
-{
-  PCCPointSet3 pointCloudZeroOrigin;
-  pointCloudZeroOrigin = pointCloud;
-  // shift for matching origin position between predPointCloud and pointCloud
-  for (int i = 0; i < pointCloud.getPointCount(); i++) {
-    pointCloudZeroOrigin[i] += gbh.geomBoxOrigin;
-  }
-  Vec3<int> minimum_position;
-
-  // search for global motion
-  switch (params.motionSrc) {
-  case InterGeomEncOpts::kExternalGMSrc:
-    gbh.min_zero_origin_flag = false;
-    minimum_position = sps.seqBoundingBoxOrigin;
-    params.motionParams.getMotionParams(
-      gbh.gm_thresh, gbh.gm_matrix, gbh.gm_trans);
-    break;
-  case InterGeomEncOpts::kInternalLMSGMSrc:
-    if (params.lpuType != InterGeomEncOpts::kCuboidPartition) {
-      params.motionParams.getMotionParams(
-        gbh.gm_thresh, gbh.gm_matrix, gbh.gm_trans);
-      gbh.gm_thresh.first -= sps.seqBoundingBoxOrigin[2];
-      gbh.gm_thresh.second -= sps.seqBoundingBoxOrigin[2];
-    }
-    minimum_position = {0, 0, 0};
-    gbh.min_zero_origin_flag = true;
-    SearchGlobalMotionPerTile(
-      pointCloudZeroOrigin, predPointCloud, sps.seqGeomScale, gbh,
-      params.th_dist, params.useCuboidalRegionsInGMEstimation);
-    break;
-  case InterGeomEncOpts::kInternalICPGMSrc: break;
-  }
-
-  // compensation
-  switch (params.lpuType) {
-  case InterGeomEncOpts::kRoadObjClassfication:
-    compensateWithRoadObjClassfication(
-      pointPredictorWorld, gbh.gm_matrix, gbh.gm_trans, gbh.gm_thresh,
-      minimum_position);
-    break;
-  case InterGeomEncOpts::kCuboidPartition:
-    compensateWithCuboidPartition(
-      pointCloudZeroOrigin, predPointCloud, pointPredictorWorld, gbh,
-      params.motion_window_size, minimum_position, arithmeticEncoder);
-    break;
-  }
-}
-
-//-------------------------------------------------------------------------
 
 void
 encodeGeometryOctree(
@@ -1695,7 +1636,6 @@ encodeGeometryOctree(
   pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams,
   PCCPointSet3& compensatedPointCloud)
 {
   // TODO: we don't need to keep points never visible is prediction search window
@@ -1709,23 +1649,6 @@ encodeGeometryOctree(
   std::unique_ptr<GeometryOctreeEncoder> savedState;
 
    bool isInter = gbh.interPredictionEnabledFlag;
-
-  // for inter prediction
-  // the globally compensated reference point cloud is in pointPredictorWorld
-  // for local motion, it's just a copy of predPointCloud with origin shift
-  PCCPointSet3 pointPredictorWorld;
-  if (isInter && gps.globalMotionEnabled) {
-    pointPredictorWorld = predPointCloud;
-
-    applyGlobalMotion(
-      interParams, sps, gps, gbh, pointCloud, predPointCloud,
-      pointPredictorWorld, arithmeticEncoderIt->get());
-
-    for (int i = 0; i < pointPredictorWorld.getPointCount(); i++) {
-      pointPredictorWorld[i] -= gbh.geomBoxOrigin;
-    }
-  }
-
 
   // generate the list of the node size for each level in the tree
   auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
@@ -1792,7 +1715,7 @@ encodeGeometryOctree(
   node00.pos = int32_t(0);
 
   node00.numSiblingsMispredicted = 0;
-  node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : pointPredictorWorld.getPointCount();
+  node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : uint32_t(0);
   node00.predStart = uint32_t(0);
 
   node00.numSiblingsPlus1 = 8;
@@ -2102,19 +2025,6 @@ encodeGeometryOctree(
 
       /// sort and partition the predictor...
       std::array<int, 8> predCounts = {};
-
-      // ...for global motion
-      if (isInter && gps.globalMotionEnabled) {
-        countingSort(
-          PCCPointSet3::iterator(&pointPredictorWorld, node0.predStart),  // Need to update the predStar
-          PCCPointSet3::iterator(&pointPredictorWorld, node0.predEnd),
-          predCounts, [=](const PCCPointSet3::Proxy& proxy) {
-          const auto& point = *proxy;
-          return !!(int(point[2]) & pointSortMask[2])
-            | (!!(int(point[1]) & pointSortMask[1]) << 1)
-            | (!!(int(point[0]) & pointSortMask[0]) << 2);
-        });
-      }
 
       // ...for local motion
       if (isInter && gps.localMotionEnabled) {
@@ -2540,12 +2450,11 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams,
   PCCPointSet3& compensatedPointCloud)
 {
   encodeGeometryOctree(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr,
-    refFrame, sps, interParams, compensatedPointCloud);
+    refFrame, sps, compensatedPointCloud);
 }
 
 //============================================================================

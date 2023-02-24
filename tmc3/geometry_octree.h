@@ -913,7 +913,6 @@ void encodeGeometryOctree(
   pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  const InterGeomEncOpts& interParams,
   PCCPointSet3& compensatedPointCloud);
 
 void decodeGeometryOctree(

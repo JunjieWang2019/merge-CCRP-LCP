@@ -1400,30 +1400,6 @@ invQuantPosition(int qp, Vec3<uint32_t> quantMasks, const Vec3<int32_t>& pos)
 }
 
 //-------------------------------------------------------------------------
-void
-compensateGlobalMotion(
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  PCCPointSet3& predPointCloud,
-  PCCPointSet3& pointPredictorWorld,
-  EntropyDecoder* arithmeticDecoder,
-  const Vec3<int> minimum_position)
-{
-  switch (gbh.lpu_type) {
-  case 0:  // object and road classification
-    compensateWithRoadObjClassfication(
-      pointPredictorWorld, gbh.gm_matrix, gbh.gm_trans, gbh.gm_thresh,
-      minimum_position);
-    break;
-  case 1:  // cuboid partition
-    decodeCompensateWithCuboidPartition(
-      predPointCloud, pointPredictorWorld, gbh, minimum_position,
-      arithmeticDecoder);
-    break;
-  }
-}
-
-//-------------------------------------------------------------------------
 
 void
 decodeGeometryOctree(
@@ -1520,26 +1496,6 @@ decodeGeometryOctree(
   // the saved state is restored at the start of each parallel octree level
   std::unique_ptr<GeometryOctreeDecoder> savedState;
 
-  // For inter
-  // the globally compensated reference point cloud is in pointPredictorWorld
-  // for local motion, it's just a copy of predPointCloud with origin shift
-  PCCPointSet3 pointPredictorWorld;
-  if (isInter && gps.globalMotionEnabled) {
-    pointPredictorWorld = predPointCloud;
-
-    auto minPos = minimum_position;
-    if (gbh.min_zero_origin_flag)
-      minPos = {0, 0, 0};
-
-    compensateGlobalMotion(
-      gps, gbh, predPointCloud, pointPredictorWorld, &arithmeticDecoder,
-      minPos);
-
-    for (int i = 0; i < pointPredictorWorld.getPointCount(); i++) {
-      pointPredictorWorld[i] -= gbh.geomBoxOrigin;
-    }
-  }
-
   int LPUnumInAxis = 0;
   int log2MotionBlockSize = 0;
 
@@ -1589,7 +1545,7 @@ decodeGeometryOctree(
   node00.end = uint32_t(0);
   node00.pos = int32_t(0);
   node00.predStart = uint32_t(0);
-  node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : pointPredictorWorld.getPointCount();
+  node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : uint32_t(0);
   node00.numSiblingsMispredicted = 0;
   node00.numSiblingsPlus1 = 8;
   node00.siblingOccupancy = 0;
@@ -1732,19 +1688,6 @@ decodeGeometryOctree(
 
       // sort and partition the predictor...
       std::array<int, 8> predCounts = {};
-
-      // ...for global motion
-      if (isInter && gps.globalMotionEnabled) {
-        countingSort(
-          PCCPointSet3::iterator(&pointPredictorWorld, node0.predStart),  // Need to update the predStar
-          PCCPointSet3::iterator(&pointPredictorWorld, node0.predEnd),
-          predCounts, [=](const PCCPointSet3::Proxy& proxy) {
-          const auto& point = *proxy;
-          return !!(int(point[2]) & pointSortMask[2])
-            | (!!(int(point[1]) & pointSortMask[1]) << 1)
-            | (!!(int(point[0]) & pointSortMask[0]) << 2);
-        });
-      }
 
       // ...for local motion
       if (isInter && gps.localMotionEnabled) {

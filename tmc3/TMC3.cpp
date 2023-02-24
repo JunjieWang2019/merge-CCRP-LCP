@@ -112,8 +112,6 @@ struct Parameters {
 
   // resort the input points by azimuth angle
   bool sortInputByAzimuth;
-
-  std::string motionVectorPath;
 };
 
 //----------------------------------------------------------------------------
@@ -360,22 +358,6 @@ operator>>(std::istream& in, OctreeEncOpts::QpMethod& val)
 }
 }  // namespace pcc
 
-namespace pcc {
-static std::istream&
-operator>>(std::istream& in, InterGeomEncOpts::LPUType& val)
-{
-  return readUInt(in, val);
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::istream&
-operator>>(std::istream& in, InterGeomEncOpts::MotionSource& val)
-{
-  return readUInt(in, val);
-}
-}  // namespace pcc
-
 static std::ostream&
 operator<<(std::ostream& out, const OutputSystem& val)
 {
@@ -510,35 +492,6 @@ operator<<(std::ostream& out, const OctreeEncOpts::QpMethod& val)
   case Method::kUniform: out << int(val) << " (Uniform)"; break;
   case Method::kRandom: out << int(val) << " (Random)"; break;
   case Method::kByDensity: out << int(val) << " (ByDensity)"; break;
-  default: out << int(val) << " (Unknown)"; break;
-  }
-  return out;
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::ostream&
-operator<<(std::ostream& out, const InterGeomEncOpts::LPUType& val)
-{
-  switch (val) {
-    using Method = InterGeomEncOpts::LPUType;
-  case Method::kRoadObjClassfication: out << int(val) << " (RoadObjClassfication)"; break;
-  case Method::kCuboidPartition: out << int(val) << " (CuboidPartition)"; break;
-  default: out << int(val) << " (Unknown)"; break;
-  }
-  return out;
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::ostream&
-operator<<(std::ostream& out, const InterGeomEncOpts::MotionSource& val)
-{
-  switch (val) {
-    using Method = InterGeomEncOpts::MotionSource;
-  case Method::kExternalGMSrc: out << int(val) << " (ExternalGMSrc)"; break;
-  case Method::kInternalLMSGMSrc: out << int(val) << " (InternalLMSGMSrc)"; break;
-  case Method::kInternalICPGMSrc: out << int(val) << " (InternalICPGMSrc)"; break;
   default: out << int(val) << " (Unknown)"; break;
   }
   return out;
@@ -1073,10 +1026,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gps.geom_planar_disabled_idcm_angular_flag, true,
     "Disable planar mode for geometry coding of IDCM coded nodes when angular coding is enabled")
 
-  ("interAzimScaleLog2",
-    params.encoder.gps.interAzimScaleLog2, 1,
-    "Scale factor applied to azimuth angle during inter search")
-
   ("randomAccessPeriod",
     params.encoder.randomAccessPeriod, 1,
     "Distance (in pictures) between random access points when "
@@ -1085,66 +1034,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("interPredictionEnabled",
     params.encoder.gps.interPredictionEnabledFlag, false,
     "Enable inter prediciton")
-
-  ("globalMotionEnabled",
-    params.encoder.gps.globalMotionEnabled, false,
-    "Enable global motion compensation for inter prediction")
-
-  ("motionVectorPath",
-    params.motionVectorPath, {},
-    "File path containing motion vector information")
-
-  ("lpuType",
-    params.encoder.interGeom.lpuType, InterGeomEncOpts::kRoadObjClassfication,
-    "Reference motion used in MC for LPU:"
-    "  0: use road and object classification-based LPU\n"
-    "  1: use cuboid partition-based LPU\n")
-
-  ("globalMotionSrcType",
-    params.encoder.interGeom.motionSrc, InterGeomEncOpts::kExternalGMSrc,
-    "If using outside global motion matrix:"
-    "  0: external GM\n"
-    "  1: internal GM based on LMS\n"
-    "  2: internal GM based on ICP")
-
-  ("globalMotionBlockSize",
-    params.encoder.interGeom.motion_block_size, {0, 0, 4096},
-    "Block size for global moton compensation")
-
-  ("globalMotionWindowSize",
-    params.encoder.interGeom.motion_window_size, 512,
-    "Window size for global moton compensation")
-
-  ("deriveGMThreshold",
-    params.encoder.interGeom.deriveGMThreshold, false,
-    "Derive thresholds for applying global motion compensation")
-
-  ("gmThresholdHistScale",
-    params.encoder.interGeom.gmThresholdHistScale, 100.0f,
-    "Scale value used for histogram computation in GM threshold deriation")
-
-  ("gmThresholdMinZ",
-    params.encoder.interGeom.gmThresholdMinZ, -4000,
-    "Min Z value used for histogram computation in GM threshold deriation")
-
-  ("gmThresholdMaxZ",
-    params.encoder.interGeom.gmThresholdMaxZ, -500,
-    "Max Z value used for histogram computation in GM threshold deriation")
-
-  ("gmThresholdLeftScale",
-    params.encoder.interGeom.gmThresholdLeftScale, 1.5f,
-    "Scale value to calculate lower threshold to apply GM")
-
-  ("gmThresholdRightScale",
-    params.encoder.interGeom.gmThresholdRightScale, 1.5f,
-    "Scale value to calculate upper threshold to apply GM")
-
-  ("use_cuboidal_regions_in_GM_estimation",
-    params.encoder.interGeom.useCuboidalRegionsInGMEstimation, false,
-    "Use cuboidal regions with square cross-section in xy-plane for "
-    "global motion estimation using LMS"
-    "0: Use cubic regions"
-    "1: Use cuboidal regions")
 
    ("localMotionEnabled",
      params.encoder.gps.localMotionEnabled, false,
@@ -1656,20 +1545,6 @@ sanitizeEncoderOpts(
     params.encoder.gps.gof_geom_entropy_continuation_enabled_flag = false;
   }
 
-  if (params.motionVectorPath.size() == 0) {
-    /*if (params.encoder.gps.predgeom_enabled_flag)
-      params.encoder.gps.globalMotionEnabled = false;
-    else*/
-      params.encoder.interGeom.motionSrc = InterGeomEncOpts::kInternalLMSGMSrc;
-  }
-
-  if (
-    params.encoder.gps.globalMotionEnabled
-    && params.encoder.interGeom.motionSrc
-      == InterGeomEncOpts::kInternalLMSGMSrc) {
-    params.encoder.interGeom.deriveGMThreshold = true;
-  }
-
   if (params.encoder.gps.interPredictionEnabledFlag) {
     params.encoder.gps.geom_multiple_planar_mode_enable_flag = false;
 
@@ -2049,7 +1924,6 @@ SequenceEncoder::compress(Stopwatch* clock)
   if (!bytestreamFile.is_open()) {
     return -1;
   }
-  this->encoder.setMotionVectorFileName(params->motionVectorPath);
   const int lastFrameNum = params->firstFrameNum + params->frameCount;
   for (frameNum = params->firstFrameNum; frameNum < lastFrameNum; frameNum++) {
     this->encoder.setInterForCurrPic(
@@ -2178,7 +2052,6 @@ SequenceDecoder::decompress(Stopwatch* clock)
   if (!fin.is_open()) {
     return -1;
   }
-  decoder.setMotionVectorFileName(params->motionVectorPath);
   this->clock = clock;
   clock->start();
 

@@ -409,15 +409,6 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
   _sliceId = _gbh.geom_slice_id;
   _sliceOrigin = _gbh.geomBoxOrigin;
 
-  /*if (_frameCtr == 0) {
-    _refFrameSph.setGlobalMotionEnabled(_gps->globalMotionEnabled);
-  } else if (_firstSliceInFrame) {
-    if (_gps->globalMotionEnabled)
-      _refFrameSph.setMotionParams(
-        _gbh.gm_thresh, _gbh.gm_matrix, _gbh.gm_trans);
-    _refFrameSph.updateFrame(*_gps);
-  }*/
-
   // sanity check for loss detection
   if (_gbh.entropy_continuation_flag) {
     assert(!_firstSliceInFrame);

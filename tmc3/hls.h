@@ -598,7 +598,7 @@ struct GeometryParameterSet {
   // Enable inter prediction
   bool interPredictionEnabledFlag;
   int interAzimScaleLog2;
-  bool globalMotionEnabled;
+  bool globalMotionEnabled = false;
   bool localMotionEnabled;
 
   //Permits entropy continuation enabled in GoF for inter frame coding
@@ -750,13 +750,6 @@ struct GeometryBrickHeader {
 
   // Enable inter prediction
   bool interPredictionEnabledFlag;
-
-  std::vector<int> gm_matrix;
-  Vec3<int> gm_trans;
-  std::pair<int, int> gm_thresh;
-  std::vector<int> motion_block_size;
-  int lpu_type;
-  bool min_zero_origin_flag;
 };
 
 //============================================================================

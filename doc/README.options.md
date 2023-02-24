@@ -664,87 +664,12 @@ Controls the enabling of extending angular mode in octree geometry.
 Controls the disabling of planar mode for geometry coding of IDCM coded nodes
 when angular coding is enabled.
 
-### `--interAzimScaleLog2=INT-VALUE`
-Specifies the scale factor to be applied to azimuth angle during inter 
-search in predictive geometry coding.
-
 ### `--randomAccessPeriod=INT-VALUE`
 Specifies the distance (in frames) between random access points when 
 encoding a sequence.
 
 ### `--interPredictionEnabled=0|1`
 Controls the enabling of inter prediction coding.
-
-### `--globalMotionEnabled=0|1`
-Controls the enabling of global motion compensation in inter prediction.
-
-### `--motionVectorPath=FILE`
-(Encoder only)
-The source containing the motion vector parameters using in global 
-motion compensation.
-
-### `--lpuType=0|1`
-Controls the reference points used in motion compensation for LPUs.
-
-  | Value | Description                                |
-  |:-----:| -------------------------------------------|
-  | 0     | Use road/object classificiation-based LPUs |
-  | 1     | Use cuboid partition-based LPUs            |
-
-
-### `--globalMotionSrcType=0|1|2`
-Controls the global motion parameters used for global motion compensation.
-
-  | Value | Description                                                  |
-  |:-----:| -------------------------------------------------------------|
-  | 0     | Use externally specified global motion parameters            |
-  | 1     | Use internally derived Global motion parameters based on LMS |
-  | 2     | Use internally derived Global motion parameters based on ICP |
-
-### `--globalMotionBlockSize=w,h,d`
-Specifies the block size used for global motion compensation.
-
-### `--globalMotionWindowSize=INT-VALUE`
-Specifies the window size used in global motion compensation
-
-### `--deriveGMThreshold=0|1`
-(Encoder only)
-Controls whether the global motion thresholds derived at the encoder.
-
-### `--gmThresholdHistScale=0|1`
-(Encoder only)
-Specifies a scale value used to compute histogram in the derivation of 
-global motion compensation thresholds. 
-
-### `--gmThresholdMinZ=0|1`
-(Encoder only)
-Specifies a maximum z value used to compute histogram in the derivation of 
-global motion compensation thresholds. 
-
-### `--gmThresholdMaxZ=0|1`
-(Encoder only)
-Specifies a minimum z value used to compute histogram in the derivation of 
-global motion compensation thresholds. 
-
-### `--gmThresholdLeftScale=0|1`
-(Encoder only)
-Specifies a scale value used to calculate the lower threshold to apply 
-global motion compensation. 
-
-### `--gmThresholdRightScale=0|1`
-(Encoder only)
-Specifies a scale value used to calculate the upper threshold to apply 
-global motion compensation. 
-
-### `--use_cuboidal_regions_in_GM_estimation=0|1`
-(Encoder only)
-Controls the use of cuboidal regions with square cross-section in xy-plane
-for global motion estimation using LMS.
-
-  | Value | Description        |
-  |:-----:| -------------------|
-  | 0     | Use cubic regions  |
-  | 1     | Use cuboid regions |
 
 ### `--predGeomMaxPredIdxTested=0|1`
 (Encoder only)
