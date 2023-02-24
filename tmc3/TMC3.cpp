@@ -1595,6 +1595,10 @@ sanitizeEncoderOpts(
   for (auto& aps : params.encoder.aps)
     convertXyzToStv(params.encoder.sps, &aps);
 
+  if (params.encoder.gps.interPredictionEnabledFlag
+      && params.encoder.gps.qtbt_enabled_flag)
+    err.error() << "GeS-TM does not support QTBT with inter\n";
+
   // Trisoup is enabled when a node size is specified
   // sanity: don't enable if only node size is 0.
   // todo(df): this needs to take into account slices where it is disabled

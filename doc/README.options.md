@@ -417,17 +417,17 @@ than 0, overrides `positionQuantisationOctreeDepth`.
 When non-cubic nodes are present, the depth is the tree level with the
 minimum node size dimension.
 
-### `qtbtEnabled=0|1`
+### `--qtbtEnabled=0|1`
 Enables non-cubic geometry tree coding.  When enabled, the geometry
 tree may have a cuboid bounding box.  The partitioning of internal tree
 nodes at a particular depth are determined non-normatively by the encoder
 to be one of octree, quadtree or binary partitions.
 
-### `maxNumQtBtBeforeOt=INT-VALUE`
+### `--maxNumQtBtBeforeOt=INT-VALUE`
 Limits the maximal number of quadtree and binary tree partitions used before
 the first octree partition.
 
-### `minQtbtSizeLog2=INT-VALUE`
+### `--minQtbtSizeLog2=INT-VALUE`
 Specifies the minimum size of quadtree and binary tree partitions.
 
 ### `--bitwiseOccupancyCoding=0|1`
