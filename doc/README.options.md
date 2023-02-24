@@ -595,7 +595,7 @@ Scale and offset used to interpret coded attribute values.
 The encoder derives the coded attribute value as $(attr - offset) / scale$.
 
 The encoder and decoder scale coded attributes for output as
-$attr × scale + offset$.
+$attr \times scale + offset$.
 
 NB: these parameters are only supported for reflectance attributes.
 
