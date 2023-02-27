@@ -65,9 +65,6 @@ enum class OutputSystem
 struct Parameters {
   bool isDecoder;
 
-  // command line parsing should adjust dist2 values according to PQS
-  bool positionQuantizationScaleAdjustsDist2;
-
   // Scale factor to apply when loading the ply before integer conversion.
   // Eg, If source point positions are in fractional metres converting to
   // millimetres will allow some fidelity to be preserved.
@@ -322,14 +319,6 @@ operator>>(std::istream& in, AttributeEncoding& val)
 
 namespace pcc {
 static std::istream&
-operator>>(std::istream& in, LodDecimationMethod& val)
-{
-  return readUInt(in, val);
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::istream&
 operator>>(std::istream& in, PartitionMethod& val)
 {
   return readUInt(in, val);
@@ -415,22 +404,7 @@ operator<<(std::ostream& out, const AttributeEncoding& val)
 {
   switch (val) {
   case AttributeEncoding::kRAHTransform: out << "0 (RAHT)"; break;
-  case AttributeEncoding::kPredictingTransform: out << "1 (Pred)"; break;
-  case AttributeEncoding::kLiftingTransform: out << "2 (Lift)"; break;
   case AttributeEncoding::kRaw: out << "3 (Raw)"; break;
-  }
-  return out;
-}
-}  // namespace pcc
-
-namespace pcc {
-static std::ostream&
-operator<<(std::ostream& out, const LodDecimationMethod& val)
-{
-  switch (val) {
-  case LodDecimationMethod::kNone: out << "0 (None)"; break;
-  case LodDecimationMethod::kPeriodic: out << "1 (Periodic)"; break;
-  case LodDecimationMethod::kCentroid: out << "2 (Centroid)"; break;
   }
   return out;
 }
@@ -945,11 +919,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "  8: YCgCo")
 
   ("transformType",
-    params_attr.aps.attr_encoding, AttributeEncoding::kPredictingTransform,
+    params_attr.aps.attr_encoding, AttributeEncoding::kRAHTransform,
     "Coding method to use for attribute:\n"
     "  0: Region Adaptive Hierarchical Transform (RAHT)\n"
-    "  1: Hierarchical neighbourhood prediction\n"
-    "  2: Hierarchical neighbourhood prediction as lifting transform")
+    "  3: Uncompressed (PCM)")
 
   ("rahtPredictionEnabled",
     params_attr.aps.rahtPredParams.raht_prediction_enabled_flag, true,
@@ -976,111 +949,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.rahtPredParams.raht_prediction_weights, {9,3,1,5,2},
     "Prediction weights for neighbours")
 
-  // NB: the cli option sets +1, the minus1 will be applied later
-  ("numberOfNearestNeighborsInPrediction",
-    params_attr.aps.num_pred_nearest_neighbours_minus1, 3,
-    "Attribute's maximum number of nearest neighbors to be used for prediction")
-
-  ("adaptivePredictionThreshold",
-    params_attr.aps.adaptive_prediction_threshold, 1 << 6,
-    "Neighbouring attribute value difference that enables direct "
-    "prediction. 8-bit value scaled to attribute bitdeph. "
-    "Applies to transformType=0 only")
-
-  ("intraLodSearchRange",
-    params_attr.aps.intra_lod_search_range, -1,
-    "Intra LoD nearest neighbor search range\n"
-    " -1: Full-range")
-
-  ("interLodSearchRange",
-    params_attr.aps.inter_lod_search_range, -1,
-    "Inter LoD nearest neighbor search range\n"
-    " -1: Full-range")
-
-  ("predictionWithDistributionEnabled",
-    params_attr.aps.predictionWithDistributionEnabled, true,
-    "enable LoD prediction with distribution")
-
-  // NB: the underlying variable is in STV order.
-  //     Conversion happens during argument sanitization.
-  ("lod_neigh_bias",
-    params_attr.aps.lodNeighBias, {1, 1, 1},
-    "Attribute's (x,y,z) component intra prediction weights")
-
-  ("lodDecimator",
-    params_attr.aps.lod_decimation_type, LodDecimationMethod::kNone,
-    "LoD decimation method:\n"
-    " 0: none\n"
-    " 1: periodic subsampling using lodSamplingPeriod\n"
-    " 2: centroid subsampling using lodSamplingPeriod")
-
-  ("max_num_direct_predictors",
-    params_attr.aps.max_num_direct_predictors, 3,
-    "Maximum number of nearest neighbour candidates used in direct"
-    "attribute prediction")
-
-  ("direct_avg_predictor_disabled_flag",
-    params_attr.aps.direct_avg_predictor_disabled_flag, false,
-    "Disable average predictor")
-
-  ("predWeightBlending",
-    params_attr.aps.pred_weight_blending_enabled_flag, false,
-    "Blend prediction weights according to neigbour distances. "
-    "Applies to transformType=0 only")
-
-  // NB: this parameter actually represents the number of refinement layers
-  ("levelOfDetailCount",
-    params_attr.aps.num_detail_levels_minus1, 1,
-    "Attribute's number of levels of detail")
-
-  ("dist2",
-    params_attr.aps.dist2, 0,
-    "Initial squared distance used in LoD generation")
-
-  ("dist2PercentileEstimate",
-    params_attr.encoder.dist2PercentileEstimate, 0.85f,
-    "Percentile for dist2 estimation during nearest neighbour search")
-
-  ("positionQuantizationScaleAdjustsDist2",
-    params.positionQuantizationScaleAdjustsDist2, false,
-    "Scale dist2 values by squared positionQuantizationScale")
-
-  ("lodSamplingPeriod",
-    params_attr.aps.lodSamplingPeriod, {4},
-    "List of per LoD sampling periods used in LoD generation")
-
-  ("intraLodPredictionSkipLayers",
-    params_attr.aps.intra_lod_prediction_skip_layers, -1,
-    "Number of finest detail levels that skip intra prediction\n"
-    " -1: skip all (disables intra pred)")
-
-  ("interComponentPredictionEnabled",
-    params_attr.aps.inter_component_prediction_enabled_flag, false,
-    "Use primary attribute component to predict values of subsequent "
-    "components")
-
-  ("lastComponentPredictionEnabled",
-    params_attr.aps.last_component_prediction_enabled_flag, true,
-    "Use second attribute component to predict value of the final component")
-
-  ("canonical_point_order_flag",
-    params_attr.aps.canonical_point_order_flag, false,
-    "Enable skipping morton sort in case of number of LoD equal to 1, "
-    "when max_points_per_sort_log2_plus1 is equal to 0")
-
-  ("max_points_per_sort_log2_plus1",
-    params_attr.aps.max_points_per_sort_log2_plus1, 0,
-    "max number of points per sort based on morton code in case of number of LoD equal to 1")
-
-  ("aps_scalable_enable_flag",
-    params_attr.aps.scalable_lifting_enabled_flag, false,
-    "Enable scalable attritube coding")
-
-  ("max_neigh_range",
-    // NB: this is adjusted by minus 1 after the arguments are parsed
-    params_attr.aps.max_neigh_range_minus1, 5,
-    "maximum nearest neighbour range for scalable lifting")
-
   ("qp",
     // NB: this is adjusted with minus 4 after the arguments are parsed
     params_attr.aps.init_qp_minus4, 4,
@@ -1101,23 +969,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("qpLayerOffsetsChroma",
       params_attr.encoder.abh.attr_layer_qp_delta_chroma, {},
       "Attribute's per layer chroma QP offsets")
-
-  ("quantNeighWeight",
-    params_attr.aps.quant_neigh_weight, {16, 8, 4},
-    "Factors used to derive quantization weights (transformType=1)")
-
-  ("attributeInterPredictionEnabled", 
-    params_attr.aps.attrInterPredictionEnabled, true, 
-    "Enable inter prediction for attributes")
-
-  ("attrInterPredSearchRange", 
-    params_attr.aps.attrInterPredSearchRange, 128, 
-    "Search range for nearest neighbour search in inter prediction candidate"
-    "-1: Full range")
-
-  ("attrInterPredTranslationThresh", 
-    params.encoder.attrInterPredTranslationThreshold, 1000., 
-    "Maximum translation threshold used to disable attr inter prediction")
 
   ("QPShiftStep",
     params_attr.aps.qpShiftStep, 0,
@@ -1274,8 +1125,6 @@ sanitizeEncoderOpts(
   }
   for (auto& attr_aps : params.encoder.aps) {
     attr_aps.init_qp_minus4 -= 4;
-    attr_aps.num_pred_nearest_neighbours_minus1--;
-    attr_aps.max_neigh_range_minus1--;
   }
 
   // Config options are absolute, but signalling is relative
@@ -1369,11 +1218,6 @@ sanitizeEncoderOpts(
     attrMeta.scalingParametersPresent = attrMeta.attr_offset
       || attrMeta.attr_scale_minus1 || attrMeta.attr_frac_bits;
 
-    // behaviour of canonical_point_order_flag is affected by
-    // max_points_per_sort_log2_plus1
-    if (attr_aps.max_points_per_sort_log2_plus1 > 0)
-      attr_aps.canonical_point_order_flag = false;
-
     // todo(df): remove this hack when scaling is generalised
     if (it.first != "reflectance" && attrMeta.scalingParametersPresent) {
       err.warn() << it.first << ": scaling not supported, disabling\n";
@@ -1408,40 +1252,6 @@ sanitizeEncoderOpts(
       attrMeta.attr_default_value.resize(
         attr_sps.attr_num_dimensions_minus1 + 1,
         attrMeta.attr_default_value.back());
-
-    // In order to simplify specification of dist2 values, which are
-    // depending on the scale of the coded point cloud, the following
-    // adjust the dist2 values according to PQS.  The user need only
-    // specify the unquantised PQS value.
-    if (params.positionQuantizationScaleAdjustsDist2) {
-      auto delta = log2(params.encoder.codedGeomScale);
-      attr_aps.dist2 =
-        std::max(0, int32_t(std::round(attr_aps.dist2 + delta)));
-    }
-
-    // derive samplingPeriod values based on initial value
-    if (
-      /*!attr_aps.lodParametersPresent()
-      ||*/ (attr_aps.lod_decimation_type == LodDecimationMethod::kNone)) {
-      attr_aps.lodSamplingPeriod.clear();
-    } else if (!attr_aps.lodSamplingPeriod.empty()) {
-      auto i = attr_aps.lodSamplingPeriod.size();
-      attr_aps.lodSamplingPeriod.resize(attr_aps.num_detail_levels_minus1);
-      // add any extra values as required
-      for (; i < attr_aps.num_detail_levels_minus1; i++)
-        attr_aps.lodSamplingPeriod[i] = attr_aps.lodSamplingPeriod[i - 1];
-    }
-
-    /*if (attr_aps.attr_encoding == AttributeEncoding::kLiftingTransform) {
-      attr_aps.adaptive_prediction_threshold = 0;
-      attr_aps.intra_lod_prediction_skip_layers = -1;
-    }*/
-
-    // For RAHT, ensure that the unused lod count = 0 (prevents mishaps)
-    if (attr_aps.attr_encoding == AttributeEncoding::kRAHTransform) {
-      attr_aps.num_detail_levels_minus1 = 0;
-      attr_aps.adaptive_prediction_threshold = 0;
-    }
 
     if (attr_aps.attr_encoding == AttributeEncoding::kRAHTransform) {
       auto& predParams = attr_aps.rahtPredParams;
@@ -1510,78 +1320,6 @@ sanitizeEncoderOpts(
 
     if (attr_sps.bitdepth > 16)
       err.error() << it.first << ".bitdepth must be less than 17\n";
-
-    //if (attr_aps.lodParametersPresent()) { //NOTE[FT] : lodParametersPresent=false
-    //  int lod = attr_aps.num_detail_levels_minus1;
-    //  if (lod > 255 || lod < 0) {
-    //    err.error() << it.first
-    //                << ".levelOfDetailCount must be in the range [0,255]\n";
-    //  }
-
-    //  // if zero, values are derived automatically
-    //  if (attr_aps.dist2 < 0 || attr_aps.dist2 > 20) {
-    //    err.error() << it.first << ".dist2 must be in the range [0,20]\n";
-    //  }
-
-    //  if (lod > 0 && attr_aps.canonical_point_order_flag) {
-    //    err.error() << it.first
-    //                << "when levelOfDetailCount > 0, "
-    //                   "canonical_point_order_flag must be 0\n";
-    //  }
-
-    //  if (lod > 0 && attr_aps.max_points_per_sort_log2_plus1) {
-    //    err.error() << it.first
-    //                << "when levelOfDetailCount > 0, "
-    //                   "maxPointsPerSortLog2Plus1 must be 0\n";
-    //  }
-
-    //  if (
-    //    attr_aps.attr_encoding == AttributeEncoding::kPredictingTransform
-    //    && lod == 0 && attr_aps.intra_lod_prediction_skip_layers != 0) {
-    //    err.error()
-    //      << "when transformType == 0 (Pred) and levelOfDetailCount == 0, "
-    //         "intraLodPredictionSkipLayers must be 0\n";
-    //  }
-
-    //  if (
-    //    (attr_aps.lod_decimation_type != LodDecimationMethod::kNone)
-    //    && attr_aps.lodSamplingPeriod.empty()) {
-    //    err.error() << it.first
-    //                << ".lodSamplingPeriod must contain at least one entry\n";
-    //  }
-
-    //  for (auto samplingPeriod : attr_aps.lodSamplingPeriod) {
-    //    if (samplingPeriod < 2)
-    //      err.error() << it.first << ".lodSamplingPeriod values must be > 1\n";
-    //  }
-
-    //  if (attr_aps.adaptive_prediction_threshold < 0) {
-    //    err.error() << it.first
-    //                << ".adaptivePredictionThreshold must be positive\n";
-    //  }
-
-    //  if (
-    //    attr_aps.num_pred_nearest_neighbours_minus1
-    //    >= kAttributePredictionMaxNeighbourCount) {
-    //    err.error() << it.first
-    //                << ".numberOfNearestNeighborsInPrediction must be <= "
-    //                << kAttributePredictionMaxNeighbourCount << "\n";
-    //  }
-
-    //  if (attr_aps.scalable_lifting_enabled_flag) {
-    //    if (attr_aps.lod_decimation_type != LodDecimationMethod::kNone) {
-    //      err.error() << it.first << ".lod_decimation_type must be 0\n";
-    //    }
-
-    //    if (params.encoder.gps.trisoup_enabled_flag) {
-    //      err.error() << it.first
-    //                  << " trisoup_enabled_flag must be disabled\n";
-    //    }
-
-    //    if (params.encoder.gps.geom_qp_multiplier_log2 != 3)
-    //      err.error() << it.first << " positionQpMultiplierLog2 must be 3\n";
-    //  }
-    //}
 
     if (attr_aps.init_qp_minus4 < 0 || attr_aps.init_qp_minus4 + 4 > 51)
       err.error() << it.first << ".qp must be in the range [4,51]\n";

@@ -68,44 +68,8 @@ public:
     , const AttributeInterPredParams &attrInterPredParams
     ) override;
 
-  bool isReusable(
-    const AttributeParameterSet& aps,
-    const AttributeBrickHeader& abh) const override;
-
 protected:
   // todo(df): consider alternative encapsulation
-
-  /*void encodeReflectancesLift(
-    const AttributeDescription& desc,
-    const AttributeParameterSet& aps,
-    const QpSet& qpSet,
-    PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder
-    ,
-    const AttributeInterPredParams& attrInterPredParams);*/
-
-  /*void encodeColorsLift(
-    const AttributeDescription& desc,
-    const AttributeParameterSet& aps,
-    const QpSet& qpSet,
-    PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder);*/
-
-  /*void encodeReflectancesPred(
-    const AttributeDescription& desc,
-    const AttributeParameterSet& aps,
-    const QpSet& qpSet,
-    PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder
-    ,
-    const AttributeInterPredParams& attrInterPredParams);*/
-
-  /*void encodeColorsPred(
-    const AttributeDescription& desc,
-    const AttributeParameterSet& aps,
-    const QpSet& qpSet,
-    PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder);*/
 
   void encodeReflectancesTransformRaht(
     const AttributeDescription& desc,
@@ -121,67 +85,9 @@ protected:
     PCCPointSet3& pointCloud,
     PCCResidualsEncoder& encoder);
 
-  static Vec3<int64_t> computeColorResiduals(
-    const AttributeParameterSet& aps,
-    const Vec3<attr_t> color,
-    const Vec3<attr_t> predictedColor,
-    const Vec3<int8_t> icpCoeff,
-    const Quantizers& quant);
-
-  static int computeColorDistortions(
-    const AttributeDescription& desc,
-    const Vec3<attr_t> color,
-    const Vec3<attr_t> predictedColor,
-    const Quantizers& quant);
-
- /* static void decidePredModeColor(
-    const AttributeDescription& desc,
-    const AttributeParameterSet& aps,
-    const PCCPointSet3& pointCloud,
-    const std::vector<uint32_t>& indexesLOD,
-    const uint32_t predictorIndex,
-    PCCPredictor& predictor,
-    PCCResidualsEncoder& encoder,
-    PCCResidualsEntropyEstimator& context,
-    const Vec3<int8_t>& icpCoeff,
-    const Quantizers& quant);*/
-
-  /*static void encodePredModeColor(
-    const AttributeParameterSet& aps, int predMode, Vec3<int32_t>& coeff);*/
-
-  static int64_t computeReflectanceResidual(
-    const uint64_t reflectance,
-    const uint64_t predictedReflectance,
-    const Quantizer& quant);
-
- /* static void decidePredModeRefl(
-    const AttributeDescription& desc,
-    const AttributeParameterSet& aps,
-    const PCCPointSet3& pointCloud,
-    const std::vector<uint32_t>& indexesLOD,
-    const uint32_t predictorIndex,
-    PCCPredictor& predictor,
-    PCCResidualsEncoder& encoder,
-    PCCResidualsEntropyEstimator& context,
-    const Quantizer& quant,
-    const AttributeInterPredParams& attrInterPredParams);*/
-
- /* static void encodePredModeRefl(
-    const AttributeParameterSet& aps, int predMode, int32_t& coeff);*/
-
-private:
-  /*std::vector<int8_t> computeLastComponentPredictionCoeff(
-    const AttributeParameterSet& aps,
-    const std::vector<Vec3<int64_t>>& coeffs);*/
-
- /* std::vector<Vec3<int8_t>> computeInterComponentPredictionCoeffs(
-    const AttributeParameterSet& aps, const PCCPointSet3& pointCloud);*/
-
 private:
   // The current attribute slice header
   AttributeBrickHeader* _abh;
-
-  AttributeLods _lods;
 };
 
 //============================================================================

@@ -58,10 +58,6 @@ namespace pcc {
 struct EncoderAttributeParams {
   // NB: this only makes sense for setting configurable parameters
   AttributeBrickHeader abh;
-
-  // Threshold for choosing dist2 out of the population of nearest neighbour
-  // distances.
-  float dist2PercentileEstimate;
 };
 
 //----------------------------------------------------------------------------
@@ -126,9 +122,6 @@ struct EncoderParams {
 
   // Period of random access points (managed by SequenceEncoder)
   int randomAccessPeriod;
-
-  // Maximum translation threshold used to disable attr inter pred
-  double attrInterPredTranslationThreshold;
 
   // local motion
   int motionPreset;
@@ -229,7 +222,6 @@ private:
   bool _codeCurrFrameAsInter;
 
   AttributeInterPredParams attrInterPredParams;
-  bool movingState;
 
   pcc::point_t minPos_ref;
 

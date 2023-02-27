@@ -550,12 +550,11 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 
   attrInterPredParams.frameDistance = 1;
   attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled && !abh.disableAttrInterPred;
-  abh.attrInterPredSearchRange = attr_aps.attrInterPredSearchRange; 
 
   pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
 
   // replace the attribute decoder if not compatible
-  if (!_attrDecoder || /*!_attrDecoder->isReusable(attr_aps, abh)*/ false)
+  if (!_attrDecoder)
     _attrDecoder = makeAttributeDecoder();
 
   clock_user.start();

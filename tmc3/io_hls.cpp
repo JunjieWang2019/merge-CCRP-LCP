@@ -814,57 +814,6 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   bs.writeSe(aps.aps_chroma_qp_offset);
   bs.write(aps.aps_slice_qp_deltas_present_flag);
 
-  //if (aps.lodParametersPresent()) { //NOTE[FT] : lodParametersPresent=false
-  //  bs.writeUe(aps.num_pred_nearest_neighbours_minus1);
-  //  bs.writeUe(aps.inter_lod_search_range);
-
-  //  auto lod_neigh_bias_minus1 =
-  //    toXyz(sps.geometry_axis_order, aps.lodNeighBias) - 1;
-  //  bs.writeUe(lod_neigh_bias_minus1.x());
-  //  bs.writeUe(lod_neigh_bias_minus1.y());
-  //  bs.writeUe(lod_neigh_bias_minus1.z());
-
-  //  /*if (aps.attr_encoding == AttributeEncoding::kLiftingTransform)
-  //    bs.write(aps.last_component_prediction_enabled_flag);*/
-
-  //  bs.write(aps.scalable_lifting_enabled_flag);
-  //  if (aps.scalable_lifting_enabled_flag)
-  //    bs.writeUe(aps.max_neigh_range_minus1);
-
-  //  if (!aps.scalable_lifting_enabled_flag) {
-  //    bs.writeUe(aps.num_detail_levels_minus1);
-  //    if (!aps.num_detail_levels_minus1)
-  //      bs.write(aps.canonical_point_order_flag);
-  //    else {
-  //      bs.writeUe(aps.lod_decimation_type);
-
-  //      if (aps.lod_decimation_type != LodDecimationMethod::kNone) {
-  //        for (int idx = 0; idx < aps.num_detail_levels_minus1; idx++) {
-  //          auto lod_sampling_period_minus2 = aps.lodSamplingPeriod[idx] - 2;
-  //          bs.writeUe(lod_sampling_period_minus2);
-  //        }
-  //      }
-
-  //      if (aps.lod_decimation_type != LodDecimationMethod::kPeriodic) {
-  //        bs.writeUe(aps.dist2);
-  //        bs.write(aps.aps_slice_dist2_deltas_present_flag);
-  //      }
-  //    }
-  //  }
-  //}
-
-  /*if (aps.attr_encoding == AttributeEncoding::kPredictingTransform) {
-    bs.writeUe(aps.max_num_direct_predictors);
-    if (aps.max_num_direct_predictors) {
-      bs.writeUn(8, aps.adaptive_prediction_threshold);
-      bs.write(aps.direct_avg_predictor_disabled_flag);
-    }
-    bs.writeUe(aps.intra_lod_prediction_skip_layers);
-    bs.writeUe(aps.intra_lod_search_range);
-    bs.write(aps.inter_component_prediction_enabled_flag);
-    bs.write(aps.pred_weight_blending_enabled_flag);
-  }*/
-
   if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
     bs.write(aps.rahtPredParams.raht_prediction_enabled_flag);
     if (aps.rahtPredParams.raht_prediction_enabled_flag) {
@@ -876,8 +825,7 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   if (aps.attr_encoding == AttributeEncoding::kRaw)
     bs.write(aps.raw_attr_variable_len_flag);
 
-  if (!aps.scalable_lifting_enabled_flag)
-    bs.write(aps.spherical_coord_flag);
+  bs.write(aps.spherical_coord_flag);
   if (aps.spherical_coord_flag) {
     throw std::runtime_error("Spherical coordinates shall not be enabled");
   }
@@ -887,25 +835,10 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   bool aps_extension_flag = sps.profile.isDraftProfile();
   bs.write(aps_extension_flag);
   if (aps_extension_flag) {
-    /*if (aps.attr_encoding == AttributeEncoding::kPredictingTransform) {
-      for (int i = 0; i <= aps.num_pred_nearest_neighbours_minus1; i++)
-        bs.writeUe(aps.quant_neigh_weight[i]);
-    }*/
-
     bs.write(aps.attrInterPredictionEnabled);
-    if (aps.attrInterPredictionEnabled)
-      bs.writeUe(aps.attrInterPredSearchRange);
-
-    /*if ( 
-      aps.lodParametersPresent() && !aps.scalable_lifting_enabled_flag
-      && !aps.num_detail_levels_minus1) {
-      bs.writeUe(aps.max_points_per_sort_log2_plus1);   //NOTE[FT] : lodParametersPresent=false
-    }*/
-
-    //if (
-    //  aps.lodParametersPresent()
-    //  && aps.num_pred_nearest_neighbours_minus1 >= 2)
-    //  bs.write(aps.predictionWithDistributionEnabled);//NOTE[FT] : lodParametersPresent=false
+    if (aps.attrInterPredictionEnabled) {
+      throw std::runtime_error("Attributes inter prediction shall not be enabled");
+    }
 
     if (
       aps.attr_encoding == AttributeEncoding::kRAHTransform
@@ -940,69 +873,6 @@ parseAps(const PayloadBuffer& buf)
   bs.readSe(&aps.aps_chroma_qp_offset);
   bs.read(&aps.aps_slice_qp_deltas_present_flag);
 
-  aps.scalable_lifting_enabled_flag = false;
-  aps.aps_slice_dist2_deltas_present_flag = false;
-  //if (aps.lodParametersPresent()) { //NOTE[FT] : lodParametersPresent=false
-  //  bs.readUe(&aps.num_pred_nearest_neighbours_minus1);
-  //  bs.readUe(&aps.inter_lod_search_range);
-
-  //  Vec3<int> lod_neigh_bias_minus1;
-  //  bs.readUe(&lod_neigh_bias_minus1.x());
-  //  bs.readUe(&lod_neigh_bias_minus1.y());
-  //  bs.readUe(&lod_neigh_bias_minus1.z());
-  //  // NB: this is in XYZ axis order until the GPS is converted to STV
-  //  aps.lodNeighBias = lod_neigh_bias_minus1 + 1;
-
-  //  /*if (aps.attr_encoding == AttributeEncoding::kLiftingTransform)
-  //    bs.read(&aps.last_component_prediction_enabled_flag);*/
-
-  //  bs.read(&aps.scalable_lifting_enabled_flag);
-  //  if (aps.scalable_lifting_enabled_flag)
-  //    bs.readUe(&aps.max_neigh_range_minus1);
-
-  //  aps.canonical_point_order_flag = false;
-  //  if (!aps.scalable_lifting_enabled_flag) {
-  //    bs.readUe(&aps.num_detail_levels_minus1);
-  //    if (!aps.num_detail_levels_minus1)
-  //      bs.read(&aps.canonical_point_order_flag);
-  //    else {
-  //      bs.readUe(&aps.lod_decimation_type);
-
-  //      if (aps.lod_decimation_type != LodDecimationMethod::kNone) {
-  //        aps.lodSamplingPeriod.resize(aps.num_detail_levels_minus1);
-  //        for (int idx = 0; idx < aps.num_detail_levels_minus1; idx++) {
-  //          int lod_sampling_period_minus2;
-  //          bs.readUe(&lod_sampling_period_minus2);
-  //          aps.lodSamplingPeriod[idx] = lod_sampling_period_minus2 + 2;
-  //        }
-  //      }
-
-  //      aps.dist2 = 0;
-  //      if (aps.lod_decimation_type != LodDecimationMethod::kPeriodic) {
-  //        bs.readUe(&aps.dist2);
-  //        bs.read(&aps.aps_slice_dist2_deltas_present_flag);
-  //      }
-  //    }
-  //  }
-  //}
-
-  aps.pred_weight_blending_enabled_flag = false;
-  aps.intra_lod_prediction_skip_layers = aps.kSkipAllLayers;
-  aps.quant_neigh_weight = 0;
-  /*if (aps.attr_encoding == AttributeEncoding::kPredictingTransform) {
-    bs.readUe(&aps.max_num_direct_predictors);
-    aps.adaptive_prediction_threshold = 0;
-    aps.direct_avg_predictor_disabled_flag = false;
-    if (aps.max_num_direct_predictors) {
-      bs.readUn(8, &aps.adaptive_prediction_threshold);
-      bs.read(&aps.direct_avg_predictor_disabled_flag);
-    }
-    bs.readUe(&aps.intra_lod_prediction_skip_layers);
-    bs.readUe(&aps.intra_lod_search_range);
-    bs.read(&aps.inter_component_prediction_enabled_flag);
-    bs.read(&aps.pred_weight_blending_enabled_flag);
-  }*/
-
   if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
     bs.read(&aps.rahtPredParams.raht_prediction_enabled_flag);
     if (aps.rahtPredParams.raht_prediction_enabled_flag) {
@@ -1014,36 +884,19 @@ parseAps(const PayloadBuffer& buf)
   if (aps.attr_encoding == AttributeEncoding::kRaw)
     bs.read(&aps.raw_attr_variable_len_flag);
 
-  aps.spherical_coord_flag = false;
-  if (!aps.scalable_lifting_enabled_flag)
-    bs.read(&aps.spherical_coord_flag);
+  bs.read(&aps.spherical_coord_flag);
   if (aps.spherical_coord_flag) {
     throw std::runtime_error("Spherical coordinates shall not be enabled");
   }
 
   bool aps_extension_flag = bs.read();
-  aps.max_points_per_sort_log2_plus1 = 0;
   aps.rahtPredParams.raht_prediction_skip1_flag = false;
   aps.rahtPredParams.raht_subnode_prediction_enabled_flag = false;
   if (aps_extension_flag) {
-    /*if (aps.attr_encoding == AttributeEncoding::kPredictingTransform) {
-      for (int i = 0; i <= aps.num_pred_nearest_neighbours_minus1; i++)
-        bs.readUe(&aps.quant_neigh_weight[i]);
-    }*/
     bs.read(&aps.attrInterPredictionEnabled);
-    if (aps.attrInterPredictionEnabled)
-      bs.readUe(&aps.attrInterPredSearchRange);
-
-    //if (
-    //  aps.lodParametersPresent() && !aps.scalable_lifting_enabled_flag
-    //  && !aps.num_detail_levels_minus1) {
-    //  bs.readUe(&aps.max_points_per_sort_log2_plus1);   //NOTE[FT] : lodParametersPresent=false
-    //}
-
-    //if (
-    //  aps.lodParametersPresent()
-    //  && aps.num_pred_nearest_neighbours_minus1 >= 2)
-    //  bs.read(&aps.predictionWithDistributionEnabled); //NOTE[FT] : lodParametersPresent=false
+    if (aps.attrInterPredictionEnabled) {
+      throw std::runtime_error("Attributes inter prediction shall not be enabled");
+    }
 
     if (
       aps.attr_encoding == AttributeEncoding::kRAHTransform
@@ -1069,7 +922,6 @@ parseAps(const PayloadBuffer& buf)
 void
 convertXyzToStv(const SequenceParameterSet& sps, AttributeParameterSet* aps)
 {
-  aps->lodNeighBias = fromXyz(sps.geometry_axis_order, aps->lodNeighBias);
 }
 
 //============================================================================
@@ -1387,33 +1239,7 @@ write(
   bs.writeUe(abh.attr_sps_attr_idx);
   bs.writeUe(abh.attr_geom_slice_id);
 
-  if (aps.aps_slice_dist2_deltas_present_flag)
-    bs.writeSe(abh.attr_dist2_delta);
-
   assert(abh.attr_sps_attr_idx < sps.attributeSets.size());
-  if (abh.lcpPresent(sps.attributeSets[abh.attr_sps_attr_idx], aps)) {
-    assert(abh.attrLcpCoeffs.size() == aps.maxNumDetailLevels());
-    int pred = 4;
-
-    for (int i = 0; i < abh.attrLcpCoeffs.size(); i++) {
-      int lcp_coeff_diff = abh.attrLcpCoeffs[i] - pred;
-      pred = abh.attrLcpCoeffs[i];
-      bs.writeSe(lcp_coeff_diff);
-    }
-  }
-
-  if (abh.icpPresent(sps.attributeSets[abh.attr_sps_attr_idx], aps)) {
-    assert(abh.icpCoeffs.size() == aps.maxNumDetailLevels());
-    Vec3<int8_t> pred = {0, 4, 4};
-
-    for (int i = 0; i < abh.icpCoeffs.size(); i++) {
-      auto icp_coeff_diff = abh.icpCoeffs[i] - pred;
-      pred = abh.icpCoeffs[i];
-      // NB: only k > 1 is coded
-      for (int k = 1; k < 3; k++)
-        bs.writeSe(icp_coeff_diff[k]);
-    }
-  }
 
   if (aps.aps_slice_qp_deltas_present_flag) {
     bs.writeSe(abh.attr_qp_delta_luma);
@@ -1459,7 +1285,10 @@ write(
       bs.writeSe(region.attr_region_qp_offset[1]);
   }
 
-  bs.write(abh.disableAttrInterPred);  
+  bs.write(abh.disableAttrInterPred);
+  if (!abh.disableAttrInterPred) {
+    throw std::runtime_error("Attributes inter prediction shall be disabled");
+  }
 
   bs.byteAlign();
 }
@@ -1504,37 +1333,7 @@ parseAbh(
   bs.readUe(&abh.attr_sps_attr_idx);
   bs.readUe(&abh.attr_geom_slice_id);
 
-  abh.attr_dist2_delta = 0;
-  if (aps.aps_slice_dist2_deltas_present_flag)
-    bs.readSe(&abh.attr_dist2_delta);
-
   assert(abh.attr_sps_attr_idx < sps.attributeSets.size());
-  if (abh.lcpPresent(sps.attributeSets[abh.attr_sps_attr_idx], aps)) {
-    abh.attrLcpCoeffs.resize(aps.maxNumDetailLevels(), 0);
-    int pred = 4;
-
-    for (int i = 0; i < abh.attrLcpCoeffs.size(); i++) {
-      auto& lcp_coeff_diff = abh.attrLcpCoeffs[i];
-      bs.readSe(&lcp_coeff_diff);
-      abh.attrLcpCoeffs[i] += pred;
-      pred = abh.attrLcpCoeffs[i];
-    }
-  }
-
-  if (abh.icpPresent(sps.attributeSets[abh.attr_sps_attr_idx], aps)) {
-    abh.icpCoeffs.resize(aps.maxNumDetailLevels(), 0);
-    Vec3<int8_t> pred{0, 4, 4};
-
-    for (int i = 0; i < abh.icpCoeffs.size(); i++) {
-      auto& icp_coeff_diff = abh.icpCoeffs[i];
-      for (int k = 1; k < 3; k++)
-        bs.readSe(&icp_coeff_diff[k]);
-
-      // NB: pred[0] is always 0.
-      abh.icpCoeffs[i] += pred;
-      pred = abh.icpCoeffs[i];
-    }
-  }
 
   if (aps.aps_slice_qp_deltas_present_flag) {
     bs.readSe(&abh.attr_qp_delta_luma);
@@ -1584,8 +1383,11 @@ parseAbh(
     if (sps.attributeSets[abh.attr_sps_attr_idx].attr_num_dimensions_minus1)
       bs.readSe(&region.attr_region_qp_offset[1]);
   }
-  
+
   bs.read(&abh.disableAttrInterPred);
+  if (!abh.disableAttrInterPred) {
+    throw std::runtime_error("Attributes inter prediction shall be disabled");
+  }
 
   bs.byteAlign();
 

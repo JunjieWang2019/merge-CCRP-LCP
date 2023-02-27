@@ -132,18 +132,7 @@ std::ostream& operator<<(std::ostream& os, const AttributeLabel& label);
 enum class AttributeEncoding
 {
   kRAHTransform = 0,
-  kPredictingTransform = 1,
-  kLiftingTransform = 2,
   kRaw = 3,
-};
-
-//============================================================================
-
-enum class LodDecimationMethod
-{
-  kNone = 0,
-  kPeriodic = 1,
-  kCentroid = 2,
 };
 
 //============================================================================
@@ -689,71 +678,11 @@ struct GeometryBrickHeader {
 };
 
 //============================================================================
-// NB: when updating this, remember to update AttributeLods::isReusable(...)
 
 struct AttributeParameterSet {
   int aps_attr_parameter_set_id;
   int aps_seq_parameter_set_id;
   AttributeEncoding attr_encoding;
-
-  bool lodParametersPresent() const
-  {
-    return /*attr_encoding == AttributeEncoding::kLiftingTransform
-      || attr_encoding == AttributeEncoding::kPredictingTransform*/ false;
-  }
-
-  //--- lifting/predicting transform parameters
-
-  LodDecimationMethod lod_decimation_type;
-  bool canonical_point_order_flag;
-  int max_points_per_sort_log2_plus1;
-  int num_pred_nearest_neighbours_minus1;
-  int max_num_direct_predictors;
-  bool direct_avg_predictor_disabled_flag;
-  int adaptive_prediction_threshold;
-  int intra_lod_search_range;
-  int inter_lod_search_range;
-  bool predictionWithDistributionEnabled;
-  // Neighbour contribution weights used to calculate quantization weights
-  Vec3<uint32_t> quant_neigh_weight;
-
-  int adaptivePredictionThreshold(const AttributeDescription& desc) const
-  {
-    return adaptive_prediction_threshold << std::max(0, desc.bitdepth - 8);
-  }
-
-  // NB: in stv order
-  Vec3<int32_t> lodNeighBias;
-
-  // The number of detail levels, starting from the finest, to skip intra
-  // prediction.
-  int intra_lod_prediction_skip_layers;
-
-  // A large value for intra_lod_prediction_skip_layers that causes all layers
-  // to be skipped.
-  static const int kSkipAllLayers = 0x7fffffff;
-
-  bool inter_component_prediction_enabled_flag;
-  bool last_component_prediction_enabled_flag;
-
-  // Whether prediction weights are blended according to spatial positions
-  bool pred_weight_blending_enabled_flag;
-
-  // The number of refinement layers
-  int num_detail_levels_minus1;
-
-  // The configured number of detail levels (there is always at least one).
-  // NB: the actual number of detail levels generated may be lower.
-  int maxNumDetailLevels() const
-  {
-    return scalable_lifting_enabled_flag ? 21 /* MaxRootNodeDimLog2 */
-                                         : num_detail_levels_minus1 + 1;
-  }
-
-  std::vector<int> lodSamplingPeriod;
-
-  int dist2;
-  bool aps_slice_dist2_deltas_present_flag;
 
   // NB: these parameters are shared by all transform implementations
   int init_qp_minus4;
@@ -763,22 +692,14 @@ struct AttributeParameterSet {
   //--- raht parameters
   RahtPredictionParams rahtPredParams;
 
-  //--- lifting parameters
-  bool scalable_lifting_enabled_flag;
-  int max_neigh_range_minus1;
-
   // indicates that attribute coding should be performed in
   // pseudo-spherical domain
   bool spherical_coord_flag{false}; //NOTE[FT] : setting to false
 
-  // (r, phi, laserid) scale factors for domain conversion
-  Vec3<int> attr_coord_scale;
-
   // Whether raw attribute are coded as fixed width or variable length.
   bool raw_attr_variable_len_flag;
 
-  bool attrInterPredictionEnabled;
-  int attrInterPredSearchRange;
+  bool attrInterPredictionEnabled = false;
   int qpShiftStep;
 };
 
@@ -788,39 +709,6 @@ struct AttributeBrickHeader {
   int attr_sps_attr_idx;
   int attr_attr_parameter_set_id;
   int attr_geom_slice_id;
-
-  // Last component prediction coefficients.  Only present for lifting
-  // transform with three components.
-  std::vector<int8_t> attrLcpCoeffs;
-
-  // indicates whether last component prediction coefficients are present.
-  bool lcpPresent(
-    const AttributeDescription& desc, const AttributeParameterSet& aps) const
-  {
-    if (aps.attr_encoding != AttributeEncoding::kLiftingTransform)
-      return false;
-    if (!aps.last_component_prediction_enabled_flag)
-      return false;
-    if (desc.attr_num_dimensions_minus1 != 2)
-      return false;
-    return true;
-  }
-
-  // Inter-component prediction coefficients.
-  std::vector<Vec3<int8_t>> icpCoeffs;
-
-  // indicates whether inter component prediction coefficients are present.
-  bool icpPresent(
-    const AttributeDescription& desc, const AttributeParameterSet& aps) const
-  {
-    if (aps.attr_encoding != AttributeEncoding::kPredictingTransform)
-      return false;
-    if (!aps.inter_component_prediction_enabled_flag)
-      return false;
-    if (desc.attr_num_dimensions_minus1 == 0)
-      return false;
-    return true;
-  }
 
   int attr_qp_delta_luma;
   int attr_qp_delta_chroma;
@@ -853,11 +741,7 @@ struct AttributeBrickHeader {
   // Number of bits to represent regionOrigin and regionSize
   int attr_region_bits_minus1;
 
-  int32_t attr_dist2_delta;
-
-  int attrInterPredSearchRange;
-
-  bool disableAttrInterPred;
+  bool disableAttrInterPred = true;
 };
 
 //============================================================================

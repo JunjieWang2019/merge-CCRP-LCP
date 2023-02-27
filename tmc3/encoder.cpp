@@ -474,47 +474,6 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
     // todo(df): add variable length attribute support
     attr_aps.raw_attr_variable_len_flag = 0;
 
-    // sanitise any intra prediction skipping
-    if (attr_aps.attr_encoding != AttributeEncoding::kPredictingTransform)
-      attr_aps.intra_lod_prediction_skip_layers = attr_aps.kSkipAllLayers;
-    if (attr_aps.intra_lod_prediction_skip_layers < 0)
-      attr_aps.intra_lod_prediction_skip_layers = attr_aps.kSkipAllLayers;
-
-    // avoid signalling overly large values
-    attr_aps.intra_lod_prediction_skip_layers = std::min(
-      attr_aps.intra_lod_prediction_skip_layers,
-      attr_aps.maxNumDetailLevels() + 1);
-
-    // dist2 is refined in the slice header
-    //  - the encoder always writes them unless syntatically prohibited:
-    attr_aps.aps_slice_dist2_deltas_present_flag =
-      /*attr_aps.lodParametersPresent()
-      && !attr_aps.scalable_lifting_enabled_flag
-      && attr_aps.num_detail_levels_minus1
-      && attr_aps.lod_decimation_type != LodDecimationMethod::kPeriodic*/ false; //NOTE[FT] : lodParametersPresent=false
-
-    // disable dist2 estimation when decimating with centroid sampler
-    if (attr_aps.lod_decimation_type == LodDecimationMethod::kCentroid)
-      attr_aps.aps_slice_dist2_deltas_present_flag = false;
-
-    // If the lod search ranges are negative, use a full-range search
-    // todo(df): lookup level limit
-    if (attr_aps.inter_lod_search_range < 0)
-      attr_aps.inter_lod_search_range = 5000000;
-
-    if (attr_aps.intra_lod_search_range < 0)
-      attr_aps.intra_lod_search_range = 5000000;
-
-    // If all intra prediction layers are skipped, don't signal a search range
-    if (
-      attr_aps.intra_lod_prediction_skip_layers
-      > attr_aps.maxNumDetailLevels())
-      attr_aps.intra_lod_search_range = 0;
-
-    // If there are no refinement layers, don't signal an inter search range
-    if (attr_aps.maxNumDetailLevels() == 1)
-      attr_aps.inter_lod_search_range = 0;
-
     // the encoder options may not specify sufficient offsets for the number
     // of layers used by the sytax: extend with last value as appropriate
     int numLayers = std::max(
@@ -771,22 +730,8 @@ PCCTMC3Encoder3::compressPartition(
     // Number of regions is constrained to at most 1.
     assert(abh.qpRegions.size() <= 1);
     
-    abh.disableAttrInterPred = !movingState;
+    abh.disableAttrInterPred = true;
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
-    abh.attrInterPredSearchRange = attr_aps.attrInterPredSearchRange;
-
-    // calculate dist2 for this slice
-    abh.attr_dist2_delta = 0;
-    if (attr_aps.aps_slice_dist2_deltas_present_flag) {
-      // todo(df): this could be set in the sps and refined only if necessary
-      auto dist2 =
-        estimateDist2(pointCloud, 100, 128, attr_enc.dist2PercentileEstimate);
-      abh.attr_dist2_delta = dist2 - attr_aps.dist2;
-    }
-
-    // replace the attribute encoder if not compatible
-    /*if (!attrEncoder->isReusable(attr_aps, abh)) //NOTE[FT] :always true
-      attrEncoder = makeAttributeEncoder();*/
 
 	if (true)
       for (auto i = 0; i < pointCloud.getPointCount(); i++)
@@ -952,7 +897,6 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.footer.geom_num_points_minus1 = pointCloud.getPointCount() - 1;
 
   attrInterPredParams.frameDistance = 1;
-  movingState = false;
 
   // assemble data unit
   //  - record the position of each aec buffer for chunk concatenation

@@ -599,14 +599,12 @@ $attr × scale + offset$.
 
 NB: these parameters are only supported for reflectance attributes.
 
-### `--transformType=0|1|2`
+### `--transformType=0|3`
 Coding method to use for the current attribute:
 
   | Value | Description                                                |
   |:-----:| ---------------------------------------------------------- |
   | 0     | Region Adaptive Hierarchical Transform (RAHT)              |
-  | 1     | Hierarchical neighbourhood prediction                      |
-  | 2     | Hierarchical neighbourhood prediction as lifting transform |
   | 3     | Uncompressed (PCM)                                         |
 
 ### `--rahtPredictionEnabled=0|1`
@@ -637,123 +635,6 @@ transform tree.
 A list of five weights that are used in the derivation of transform 
 domain prediction of RAHT coefficients when subnode prediction is enabled.
 
-### `--numberOfNearestNeighboursInPrediction=INT-VALUE`
-Attribute's maximum number of nearest neighbours to be used for
-prediction.
-
-### `--adaptivePredictionThreshold=INT-VALUE`
-Neighbouring attribute value difference that enables the use of direct
-predictor selection over the weighted average.  If bitdepth is greater
-than 8, the threshold is scaled by 2**(bitDepth - 8).
-
-Applies to `transformType=0` only.
-
-### `--predWeightBlending=0|1`
-When enabled, blends the distance derived weights of the three-neighbour
-predictor according to the relative distances between the neighbours.
-
-Applies to `transformType=0` only.
-
-### `--direct_avg_predictor_disabled_flag=0|1`
-Controls the use of the neighbour average predictor when direct prediction
-is invoked.
-
-### `--interComponentPredictionEnabled=0|1`
-Controls the use of an in-loop inter-component prediction of attribute
-residuals.  When enabled, the secondary attribute residuals (e.g. red/blue)
-are predicted from the primary component (e.g. green).
-
-Applies to `transformType=0` and `attribute=color` only.
-
-### `--lastComponentPredictionEnabled=0|1`
-Controls the use of an in-loop inter-component prediction of attribute
-coefficients.  When enabled, the coefficient of the last component (e.g. Cr)
-of the secondary attribute is predicted from the corresponding first
-component (e.g. Cb) according to a simple model.
-
-Applies to `transformType=2` and `attribute=color` only.
-
-### `--intraLoDSearchRange=INT-VALUE`
-Buffer range searched for nearest neighbours within the same level of detail.
-The value -1 configures a full-range search.
-
-### `--interLoDSearchRange=INT-VALUE`
-Buffer range searched for nearest neighbours between different levels of
-detail.  The value -1 configures a full-range search.
-
-### `--max_num_direct_predictors=INT-VALUE`
-Maximum number of nearest neighbour candidates used in direct
-attribute prediction.
-
-### `--lodDecimator=0|1|2`
-Controls the level-of-detail generation method:
-
-  | Value | Description                                             |
-  |:-----:| ------------------------------------------------------- |
-  | 0     | No decimation is performed                              |
-  | 1     | Decimation by periodic lodSubsamplingPeriod             |
-  | 1     | Decimation by distance to lodSubsamplingPeriod centroid |
-
-### `--intraLodPredictionSkipLayers=INT-VALUE`
-The number of detail levels where intra prediction is disabled, starting
-from the finest detail level.  Applies to `transformType=0` only.
-
-  | Value | Description                             |
-  |:-----:| --------------------------------------- |
-  | -1    | Disabled in all detail levels           |
-  |  0    | Enabled in all detail levels            |
-  |  n    | Disabled in n finest detail levels      |
-
-### `--aps_scalable_enabled_flag=0|1`
-Enable spatially scalable attribute encoding.
-The option is only valid when `transformType=2`, `positionQpMultiplierLog2=3`,
-`lodDecimator=0`, and `trisoupNodeSizeLog2=0`.
-
-### `--max_neigh_range=INT-VALUE`
-Limits the distance between a point and the neighbours used for its
-prediction. The maximum distance is expressed in units of node diagonals
-and is scaled according to the current level of detail.
-
-### `--levelOfDetailCount=INT-VALUE`
-Attribute's number of levels of detail.
-
-### `--dist2=INT-VALUE`
-An initial squared distances used to generate successive levels of detail.
-When equal to zero, an initial value is automatically determined.
-
-### `--dist2PercentileEstimate=FLOAT-VALUE`
-Percentile of per-point nearest neighbour distances used to estimate `dist2`.
-
-### `--positionQuantizationScaleAdjustsDist2=0|1`
-Adjusts `dist2` according to `sequenceScale`.  This option simplifies the
-specification of the per-attribute `dist2` parameter.
-
-The squared distance threshold used for generating levels-of-detail in
-attribute coding is dependent on the point cloud density and is therefore
-affected by geometry quantization.  When this parameter is enabled,
-`dist2` values are scaled by `sequenceScale` squared, thereby
-allowing `dist2` to be specified as an intrinsic property of the source
-sequence.
-
-### `--lodSubsamplingPeriod=INT-VALUE|INT-VALUE-LIST`
-A list of sampling periods used to generate successive levels of detail.
-
-### `--canonical_point_order_flag=0|1`
-Controls the order used for attribute coding when 
-max_points_per_sort_log2_plus1 is equal to 0.  The canonical (geometry
-decoding order) is usable only with LoD attribute coding and
-`levelOfDtailCount=0`.
-
-  | Value | Description                        |
-  |:-----:| ---------------------------------- |
-  | 0     | Morton order                       |
-  | 1     | Decoded geometry (canonical) order |
-
-### `--lod_neigh_bias=INT-VALUE-LIST`
-A set of three bias factors corresponding to the first, second and third
-geometry axes used to weight nearest neighbours during the LoD generation
-and weighting processes.  The value `1,1,1` implies no bias.
-
 ### `--qp=INT-VALUE`
 Attribute's luma quantization parameter.
 
@@ -772,33 +653,6 @@ level-of-detail or RAHT transform block.
 Attribute's per layer chroma QP offsets.  A layer is corresponds to a
 level-of-detail or RAHT transform block.
 Only applies when `attribute=colour`.
-
-### `--quantNeighWeight=INT-VALUE-LIST`
-Three factors used to derive quantization weights when `transformType=1`.
-The quantization weights are determined by recursively distributing each
-coefficient's weight to each of its neighbours, i, scaled by
-$\texttt{quantNeighWeight}[i] \div 256$.
-
-### `--predictionWithDistributionEnabled=0|1`
-Controls the activation of prediction within levels of detail based on 
-the distribution of predictors.
-
-### `--max_points_per_sort_log2_plus1=INT-VALUE`
-Specifies the maximum number of points per sort used in attribute coding 
-based on morton code in case the number of LoDs is equal to 1.
-
-### `--attributeInterPredictionEnabled=0|1`
-Controls the activation of inter prediction of attribute.
-
-### `--attrInterPredSearchRange=INT-VALUE`
-Specifies the search range for nearest neighbour search in inter prediction 
-candidate for attribute coding. A value of -1 indicates that the full 
-range is used for the search.
-
-### `--attrInterPredTranslationThresh=INT-VALUE`
-(Encoder only)
-Specifies the maximum translation threshold used to disable inter 
-predicion for attributes. 
 
 ### `--QPShiftStep=INT-VALUE`
 (Encoder only)
