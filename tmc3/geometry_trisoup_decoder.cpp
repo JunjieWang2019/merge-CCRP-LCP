@@ -55,71 +55,6 @@ const int truncateValue = kTrisoupFpHalf;
 
 //============================================================================
 
-bool
-operator<(const TrisoupSegment& s1, const TrisoupSegment& s2)
-{
-  // sort on start
-  if ((s1.startpos[0] < s2.startpos[0])
-      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] < s2.startpos[1])
-      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] == s2.startpos[1]
-          && s1.startpos[2] < s2.startpos[2]))
-    return true;
-
-  if (s1.startpos[0] != s2.startpos[0]
-      || s1.startpos[1] != s2.startpos[1]
-      || s1.startpos[2] != s2.startpos[2])
-    return false;
-
-  // sort on end
-  if ((s1.endpos[0] < s2.endpos[0])
-      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] < s2.endpos[1])
-      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] == s2.endpos[1]
-          && s1.endpos[2] < s2.endpos[2]))
-    return true;
-
-  if (s1.endpos[0] == s2.endpos[0]
-      && s1.endpos[1] == s2.endpos[1]
-      && s1.endpos[2] == s2.endpos[2])
-    return (s1.index < s2.index);  // stable sort
-
-  return false;
-}
-
-//============================================================================
-bool
-operator<(const TrisoupSegmentNeighbours& s1, const TrisoupSegmentNeighbours& s2)
-{
-  // sort on start
-  if ((s1.startpos[0] < s2.startpos[0])
-      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] < s2.startpos[1])
-      || (s1.startpos[0] == s2.startpos[0] && s1.startpos[1] == s2.startpos[1]
-          && s1.startpos[2] < s2.startpos[2]))
-    return true;
-
-  if (s1.startpos[0] != s2.startpos[0]
-      || s1.startpos[1] != s2.startpos[1]
-      || s1.startpos[2] != s2.startpos[2])
-    return false;
-
-  // sort on end
-  if ((s1.endpos[0] < s2.endpos[0])
-      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] < s2.endpos[1])
-      || (s1.endpos[0] == s2.endpos[0] && s1.endpos[1] == s2.endpos[1]
-          && s1.endpos[2] < s2.endpos[2]))
-    return true;
-
-  if (s1.endpos[0] == s2.endpos[0]
-      && s1.endpos[1] == s2.endpos[1]
-      && s1.endpos[2] == s2.endpos[2])
-    return (s1.index < s2.index);  // stable sort
-
-  return false;
-}
-
-
-
-//============================================================================
-
 void
 decodeGeometryTrisoup(
   const GeometryParameterSet& gps,
@@ -198,6 +133,243 @@ decodeGeometryTrisoup(
 
 
 //============================================================================
+
+struct RasterScanTrisoupEdges {
+  const int32_t blockWidth;
+  // Eight corners of block.
+  const Vec3<int32_t> pos000 { 0, 0, 0 };
+  const Vec3<int32_t> posW00 { blockWidth, 0, 0 };
+  const Vec3<int32_t> pos0W0 { 0, blockWidth, 0 };
+  const Vec3<int32_t> posWW0 { blockWidth, blockWidth, 0 };
+  const Vec3<int32_t> pos00W { 0, 0, blockWidth };
+  const Vec3<int32_t> posW0W { blockWidth, 0, blockWidth };
+  const Vec3<int32_t> pos0WW { 0, blockWidth, blockWidth };
+  const Vec3<int32_t> posWWW { blockWidth, blockWidth, blockWidth };
+
+  const Vec3<int32_t> offsets[8] = {
+    { -blockWidth, -blockWidth, 0 },//-posWW0, // left-bottom
+    { -blockWidth, 0, -blockWidth },//-posW0W, // left-front
+    { -blockWidth, 0, 0 },//-posW00, // left
+    { 0, -blockWidth, -blockWidth },//-pos0WW, // bottom-front
+    { 0, -blockWidth, 0 },//-pos0W0, // bottom
+    { 0, 0, -blockWidth },//-pos00W, // front
+    { 0, 0, 0 },// pos000, // current
+    { -blockWidth, -blockWidth, -blockWidth },//-posWWW, // left-bottom-front only useful for neighbors determination
+  };
+
+  std::array<int, 8> edgesNeighNodes; // neighboring nodes' index
+  // The 7 firsts are used for unique segments generation/iteration
+  // The 8-th is used for contextual information (mask)
+  Vec3<int32_t> currWedgePos;
+
+  const std::vector<PCCOctree3Node>& leaves;
+
+  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth)
+  : leaves(leaves)
+  , blockWidth(blockWidth)
+  , currWedgePos(leaves.empty() ? Vec3<int32_t>{0,0,0} : leaves[0].pos)
+  , edgesNeighNodes {0,0,0,0,0,0,0,0}
+  {}
+
+  void buildSegments(
+      std::vector<uint16_t>& neighbNodes,
+      std::vector<std::array<int, 18>>& edgePattern,
+      std::vector<int>& segmentUniqueIndex,
+      int& numUniqueIndexes)
+  {
+    neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
+    segmentUniqueIndex.clear();
+    segmentUniqueIndex.resize(12 * leaves.size(), -1); // temporarily set to -1 to check everithing is working
+    // TODO: set to -1 could be removed when everything will work properly
+
+    int uniqueIndex = 0;
+
+    while (nextIsAvailable()) {
+      // process current wedge position
+
+      std::array<bool, 8> processedNode;
+      for (int i=0; i<8; ++i)
+        processedNode[i] =
+          edgesNeighNodes[i] < leaves.size()
+          && currWedgePos + offsets[i] == leaves[edgesNeighNodes[i]].pos;
+
+      // edge along z, then y, then x
+
+      // index in edgesNeighNodes of neighboring nodes for each edge
+      static const int edgesNeighNodesIdx[3][4] = {
+        {6, 4, 0, 2}, // along z
+        {6, 2, 5, 1}, // along y
+        {6, 4, 5, 3}, // along x
+      };
+
+      // edge index in existing order
+      static const int edgeIdx[3][4] = {
+        {4, 5, 6, 7},
+        {1, 3, 9, 11},
+        {0, 2, 8, 10},
+      };
+
+      static const uint16_t neighMask[3][4] = {
+        {0x4001, 0x4002, 0x4004, 0x4008},
+        {0x2001, 0x2002, 0x2004, 0x2008},
+        {0x0001, 0x0002, 0x0004, 0x0008},
+      };
+
+      // index in edgesNeighNodes of other neighboring nodes for the wedge
+      static const int wedgeNeighNodesIdx[3][4] = {
+        {1, 5, 3, 7}, // along z
+        {0, 3, 4, 7}, // along y
+        {0, 1, 2, 7}, // along x
+      };
+
+      // edge index in existing order
+      static const int wedgeNeighNodesEdgeIdx[3][4] = {
+        {7, 4, 5,  6},
+        {3, 9, 1, 11},
+        {2, 8, 0, 10},
+      };
+
+      static const uint16_t wedgeNeighMask[3][4] = {
+        {0x0800, 0x0100, 0x0200, 0x0400},
+        {0x0200, 0x0400, 0x0100, 0x0800},
+        {0x0200, 0x0400, 0x0100, 0x0800},
+      };
+
+      static const uint16_t toPrevEdgeNeighMask[3][4] = {
+        {0x0010, 0x0020, 0x0040, 0x0080},
+        {0x0010, 0x0020, 0x0040, 0x0080},
+        {0x0010, 0x0020, 0x0040, 0x0080},
+      };
+
+      // neighbourhood staic tables
+      // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
+      static const int localEdgeindex[12][11] = {
+        { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
+        { 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
+        { 1,  5,  4,  9,  0,  8, -1, -1, -1, -1, -1}, // vertex 2
+        { 0,  7,  4,  8,  2, 10,  1,  9, -1, -1, -1}, // vertex 3
+        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
+        { 1,  0,  9,  4, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
+        { 3,  2,  0, 10, 11,  9,  8,  7,  5,  4, -1}, // vertex 6
+        { 0,  1,  2,  8, 10,  4,  5, -1, -1, -1, -1}, // vertex 7
+        { 4,  9,  1,  0, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
+        { 4,  0,  1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
+        { 5,  9,  1,  2,  8,  0, -1, -1, -1, -1, -1}, // vertex 10
+        { 7,  8,  0, 10,  5,  2,  3,  9,  1, -1, -1}  // vertex 11
+      };
+      static const int patternIndex[12][11] = {
+        { 3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
+        { 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
+        { 2,  3,  5,  8, 15, 17, -1, -1, -1, -1, -1}, // vertex 2
+        { 2,  3,  5,  8,  9, 12, 15, 17, -1, -1, -1}, // vertex 3
+        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
+        { 1,  7, 10, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
+        { 1,  2,  6,  9, 10, 11, 13, 14, 15, 16, -1}, // vertex 6
+        { 2,  5,  8,  9, 12, 15, 17, -1, -1, -1, -1}, // vertex 7
+        { 1,  4,  7, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
+        { 1,  7, 14, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
+        { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
+        { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
+      };
+
+      for (int dir=0; dir<3; ++dir) {
+        bool processedEdge = false;
+        uint16_t neighboursMask = 0;
+        std::array<int, 18> pattern {
+          -1, -1, -1, -1, -1, -1, -1, -1, -1,
+          -1, -1, -1, -1, -1, -1, -1, -1, -1
+        };
+        for (int neighIdx=0; neighIdx<4; ++neighIdx) {
+          int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx];
+          if (processedNode[edgeNeighNodeIdx]) {
+            processedEdge = true;
+            int idx =
+              edgesNeighNodes[edgeNeighNodeIdx] * 12
+              + edgeIdx[dir][neighIdx];
+            segmentUniqueIndex[idx] = uniqueIndex;
+
+            // update mask from nodes touching edge
+            neighboursMask |= neighMask[dir][neighIdx];
+
+            int indexLow = edgeIdx[dir][neighIdx];
+            for (int v = 0; v < 11; v++) {
+              if (localEdgeindex[indexLow][v] == -1)
+                break;
+
+              int indexV = edgesNeighNodes[edgeNeighNodeIdx] * 12 + localEdgeindex[indexLow][v]; // index of segment
+              int Vidx = segmentUniqueIndex[indexV];
+              assert(Vidx != -1); // check if already coded
+              pattern[patternIndex[indexLow][v]] = Vidx;
+            }
+          }
+        }
+        if (processedEdge) {
+          int segmentUniqueIdxPrevEdge = -1;
+          for (int prevNeighIdx=0; prevNeighIdx<4; ++prevNeighIdx) {
+            int wedgeNeighNodeIdx = wedgeNeighNodesIdx[dir][prevNeighIdx];
+            if (processedNode[wedgeNeighNodeIdx]) {
+              // update current mask from nodes touching wedge
+              neighboursMask |= wedgeNeighMask[dir][prevNeighIdx];
+              if (segmentUniqueIdxPrevEdge == -1) {
+                int idx = edgesNeighNodes[wedgeNeighNodeIdx] * 12
+                  + wedgeNeighNodesEdgeIdx[dir][prevNeighIdx];
+                segmentUniqueIdxPrevEdge = segmentUniqueIndex[idx];
+                pattern[0] = segmentUniqueIdxPrevEdge;
+                assert(segmentUniqueIdxPrevEdge != -1);
+                for (int neighIdx=0; neighIdx<4; ++neighIdx) {
+                  int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx];
+                  if (processedNode[edgeNeighNodeIdx]) {
+                    neighbNodes[segmentUniqueIdxPrevEdge] |= toPrevEdgeNeighMask[dir][neighIdx];
+                  }
+                }
+              }
+            }
+          }
+          ++uniqueIndex;
+          neighbNodes.push_back(neighboursMask);
+          edgePattern.push_back(pattern);
+        }
+      }
+
+      goNextWedge(processedNode);
+    }
+    numUniqueIndexes = uniqueIndex;
+  }
+private:
+  bool nextIsAvailable() const { return edgesNeighNodes[0] < leaves.size(); }
+
+  void goNextWedge(const std::array<bool, 8>& processedNode) {
+    bool nextWedgeIsNext = false;
+    if (processedNode[0])
+      edgesNeighNodes[7] = edgesNeighNodes[0];
+    // handle neighboring nodes with same z as wedge
+    for (int i=0; i<7; i+=2)
+      if (processedNode[i]) {
+        nextWedgeIsNext = true;
+        edgesNeighNodes[i]++;
+      }
+    for (int i=1; i<7; i+=2)
+      if (processedNode[i]) {
+        edgesNeighNodes[i]++;
+      }
+    if (nextWedgeIsNext) {
+      currWedgePos += pos00W;
+    }
+    else {
+      currWedgePos = leaves[edgesNeighNodes[0]].pos - offsets[0];
+      for (int i=1; i<7; ++i) {
+        if (edgesNeighNodes[i] >= leaves.size())
+          break;
+        auto wedgePos = leaves[edgesNeighNodes[i]].pos - offsets[i];
+        if (currWedgePos > wedgePos) {
+          currWedgePos = wedgePos;
+        }
+      }
+    }
+  }
+
+};
+
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
   std::vector<uint16_t>& neighbNodes,
@@ -210,197 +382,8 @@ void determineTrisoupNeighbours(
   // in future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  // Eight corners of block.
-  const Vec3<int32_t> pos000({ 0, 0, 0 });
-  const Vec3<int32_t> posW00({ blockWidth, 0, 0 });
-  const Vec3<int32_t> pos0W0({ 0, blockWidth, 0 });
-  const Vec3<int32_t> posWW0({ blockWidth, blockWidth, 0 });
-  const Vec3<int32_t> pos00W({ 0, 0, blockWidth });
-  const Vec3<int32_t> posW0W({ blockWidth, 0, blockWidth });
-  const Vec3<int32_t> pos0WW({ 0, blockWidth, blockWidth });
-  const Vec3<int32_t> posWWW({ blockWidth, blockWidth, blockWidth });
-
-  // Put all leaves' edges into a list.
-  std::vector<TrisoupSegmentNeighbours> segments(36 * leaves.size());
-  int idx = 0;
-  for (int i = 0; i < leaves.size(); i++) {
-
-    const auto& leaf = leaves[i];
-    int ii = 36 * i;
-    int ii2 = ii + 12;
-    int ii3 = ii + 24;
-    // x: left to right; y: bottom to top; z: far to near
-    auto posNode = leaf.pos + blockWidth;
-
-    // ------------ edges along x
-    // in node
-    segments[idx++] = {posNode + pos000, posNode + posW00, ii + 0, 1}; // far bottom edge
-    segments[idx++] = { posNode + pos0W0, posNode + posWW0, ii + 2,  2 }; // far top edge
-    segments[idx++] = { posNode + pos00W, posNode + posW0W, ii + 8,  4 }; // near bottom edge
-    segments[idx++] = { posNode + pos0WW, posNode + posWWW, ii + 10,  8 }; // near top edge
-    // left
-    auto posLeft = posNode - posW00;
-    segments[idx++] = { posLeft + pos000, posLeft + posW00, ii2 + 0, 16 }; // far bottom edge
-    segments[idx++] = { posLeft + pos0W0, posLeft + posWW0, ii2 + 2,  32 }; // far top edge
-    segments[idx++] = { posLeft + pos00W, posLeft + posW0W, ii2 + 8,  64 }; // near bottom edge
-    segments[idx++] = { posLeft + pos0WW, posLeft + posWWW, ii2 + 10,  128 }; // near top edge
-    //right
-    auto posRight = posNode + posW00;
-    segments[idx++] = { posRight + pos000, posRight + posW00, ii3 + 0, 256 }; // far bottom edge
-    segments[idx++] = { posRight + pos0W0, posRight + posWW0, ii3 + 2,  512 }; // far top edge
-    segments[idx++] = { posRight + pos00W, posRight + posW0W, ii3 + 8,  1024 }; // near bottom edge
-    segments[idx++] = { posRight + pos0WW, posRight + posWWW, ii3 + 10,  2048 }; // near top edge
-
-    // ------------ edges along y
-    // in node
-    segments[idx++] = { posNode + pos000, posNode + pos0W0, ii + 1, 1 + (1 << 13) }; // far left edge
-    segments[idx++] = { posNode + posW00, posNode + posWW0, ii + 3,  2 + (1 << 13) }; // far right edge
-    segments[idx++] = { posNode + pos00W, posNode + pos0WW, ii + 9,  4 + (1 << 13) }; // near left edge
-    segments[idx++] = { posNode + posW0W, posNode + posWWW, ii + 11,  8 + (1 << 13) }; // near right edge
-    // bottom
-    auto posBottom = posNode - pos0W0;
-    segments[idx++] = { posBottom + pos000, posBottom + pos0W0, ii2 + 1, 16 }; // far left edge
-    segments[idx++] = { posBottom + posW00, posBottom + posWW0, ii2 + 3,  32 }; // far right edge
-    segments[idx++] = { posBottom + pos00W, posBottom + pos0WW, ii2 + 9,  64 }; // near left edge
-    segments[idx++] = { posBottom + posW0W, posBottom + posWWW, ii2 + 11,  128 }; // near right edge
-    // top
-    auto posTop = posNode + pos0W0;
-    segments[idx++] = { posTop + pos000, posTop + pos0W0, ii3 + 1, 256 }; // far left edge
-    segments[idx++] = { posTop + posW00, posTop + posWW0, ii3 + 3,  512 }; // far right edge
-    segments[idx++] = { posTop + pos00W, posTop + pos0WW, ii3 + 9,  1024 }; // near left edge
-    segments[idx++] = { posTop + posW0W, posTop + posWWW, ii3 + 11,  2048 }; // near right edge
-
-    // ------------ edges along z
-    // in node
-    segments[idx++] = { posNode + pos000, posNode + pos00W, ii + 4, 1 + (1 << 14) }; // bottom left edge
-    segments[idx++] = { posNode + pos0W0, posNode + pos0WW, ii + 5,  2 + (1 << 14) }; // top left edge
-    segments[idx++] = { posNode + posWW0, posNode + posWWW, ii + 6,  4 + (1 << 14) }; // top right edge
-    segments[idx++] = { posNode + posW00, posNode + posW0W, ii + 7,  8 + (1 << 14) }; // bottom right edge
-    // near
-    auto posNear = posNode - pos00W;
-    segments[idx++] = { posNear + pos000, posNear + pos00W, ii2 + 4, 16 }; // bottom left edge
-    segments[idx++] = { posNear + pos0W0, posNear + pos0WW, ii2 + 5,  32 }; // top left edge
-    segments[idx++] = { posNear + posWW0, posNear + posWWW, ii2 + 6,  64 }; // top right edge
-    segments[idx++] = { posNear + posW00, posNear + posW0W, ii2 + 7,  128 }; // bottom right edge
-    // far
-    auto posFar = posNode + pos00W;
-    segments[idx++] = { posFar + pos000, posFar + pos00W, ii3 + 4, 256 }; // bottom left edge
-    segments[idx++] = { posFar + pos0W0, posFar + pos0WW, ii3 + 5,  512 }; // top left edge
-    segments[idx++] = { posFar + posWW0, posFar + posWWW, ii3 + 6,  1024 }; // top right edge
-    segments[idx++] = { posFar + posW00, posFar + posW0W, ii3 + 7,  2048 }; // bottom right edge
-  }
-
-  // Sort the list and find unique segments.
-  std::sort(segments.begin(), segments.end());
-
-  // neighbourhood staic tables
-  // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
-  static const int localEdgeindex[12][11] = {
-    { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
-    { 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
-    { 1,  5,  4,  9,  0,  8, -1, -1, -1, -1, -1}, // vertex 2
-    { 0,  7,  4,  8,  2, 10,  1,  9, -1, -1, -1}, // vertex 3
-    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
-    { 1,  0,  9,  4, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
-    { 3,  2,  0, 10, 11,  9,  8,  7,  5,  4, -1}, // vertex 6
-    { 0,  1,  2,  8, 10,  4,  5, -1, -1, -1, -1}, // vertex 7
-    { 4,  9,  1,  0, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
-    { 4,  0,  1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
-    { 5,  9,  1,  2,  8,  0, -1, -1, -1, -1, -1}, // vertex 10
-    { 7,  8,  0, 10,  5,  2,  3,  9,  1, -1, -1}  // vertex 11
-  };
-  static const int patternIndex[12][11] = {
-    { 3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
-    { 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
-    { 2,  3,  5,  8, 15, 17, -1, -1, -1, -1, -1}, // vertex 2
-    { 2,  3,  5,  8,  9, 12, 15, 17, -1, -1, -1}, // vertex 3
-    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
-    { 1,  7, 10, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
-    { 1,  2,  6,  9, 10, 11, 13, 14, 15, 16, -1}, // vertex 6
-    { 2,  5,  8,  9, 12, 15, 17, -1, -1, -1, -1}, // vertex 7
-    { 1,  4,  7, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
-    { 1,  7, 14, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
-    { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
-    { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
-  };
-
-  // find neighbourgs for unique segments
-  TrisoupSegmentNeighbours localSegment = segments[0];
-
-  auto it = segments.begin() + 1;
-  neighbNodes.clear();
-  std::vector<int> correspondanceUnique(segments.size(), -1);
-  if (segments.begin()->neighboursMask & 15) { // for true segments
-    // change index from 36* to 16*
-    int idx0 = segments.begin()->index;
-    int idx36 = idx0 / 36;
-    int idx = (idx36) * 12 + (idx0 - idx36 * 36);
-    segmentUniqueIndex[idx] = 0;
-  }
-
-  int uniqueIndex = 0;
-  std::array<int, 18> pattern = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
-
-  segmentUniqueIndex.resize(12 * leaves.size());
-  for (; it != segments.end(); it++) {
-    if (localSegment.startpos != it->startpos || localSegment.endpos != it->endpos) {
-
-      if (localSegment.neighboursMask & 15) {
-        // the segment is a true segment and not only accumulation of copies; then push and jump to next segment
-        neighbNodes.push_back(localSegment.neighboursMask);
-        edgePattern.push_back(pattern);
-
-        uniqueIndex++;
-        for (int v = 0; v < 18; v++)
-          pattern[v] = -1;
-      }
-      localSegment = *it;
-    }
-    else {
-      // segment[i] is the same as localSegment
-      // Accumulate into localSegment       
-      localSegment.neighboursMask |= it->neighboursMask;
-    }
-    correspondanceUnique[it->index] = uniqueIndex;
-
-    if (it->neighboursMask & 15) { // for true segments
-    // change index from 36* to 16*
-      int idx0 = it->index;
-      int idx36 = idx0 / 36;
-      int idx = (idx36) * 12 + (idx0 - idx36 * 36);
-      segmentUniqueIndex[idx] = uniqueIndex;
-    }
-
-    // ---------- neighbouring vertex parallel before
-    if (it->neighboursMask >= 256 && it->neighboursMask <= 2048) { // lookinbg for vertex before (x left or y front or z below)
-      int indexBefore = it->index - 24;
-
-      if (correspondanceUnique[indexBefore] != -1) {
-        pattern[0] = correspondanceUnique[indexBefore];
-      }
-    }
-
-    if ((it->neighboursMask & 4095) <= 8) { // true edge, not a copy; so done as many times a nodes for the  true edge
-      int indexLow = it->index % 12;   // true edge index within node
-      for (int v = 0; v < 11; v++) {
-        if (localEdgeindex[indexLow][v] == -1)
-          break;
-
-        int indexV = it->index - indexLow + localEdgeindex[indexLow][v]; // index of segment
-        int Vidx = correspondanceUnique[indexV];
-        if (Vidx != -1)  // check if already coded
-          pattern[patternIndex[indexLow][v]] = Vidx;
-      }
-    }
-
-  }
-  if (localSegment.neighboursMask & 15) {
-    neighbNodes.push_back(localSegment.neighboursMask);
-    edgePattern.push_back(pattern);
-  }
-
-
-  Nunique = uniqueIndex;
+  RasterScanTrisoupEdges rste(leaves, blockWidth);
+  rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique);
 }
 //============================================================================
 

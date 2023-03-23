@@ -200,48 +200,6 @@ void rayTracingAlongdirection(
 
 //============================================================================
 
-struct TrisoupSegment {
-  Vec3<int32_t> startpos;  // start point of edge segment
-  Vec3<int32_t> endpos;    // end point of edge segment
-
-  int index;        // index of segment, to reorder after sorting
-  int uniqueIndex;  // index of uniqueSegment
-  int vertex;       // distance along segment for intersection (else -1)
-};
-
-struct TrisoupSegmentEnc : public TrisoupSegment {
-  TrisoupSegmentEnc(
-    const Vec3<int32_t>& startpos,
-    const Vec3<int32_t>& endpos,
-    int index,
-    int uniqueIndex,
-    int vertex,
-    int count,
-    int distanceSum,
-    int count2,
-    int distanceSum2)
-    : TrisoupSegment{startpos, endpos, index, uniqueIndex, vertex}
-    , count(count)
-    , distanceSum(distanceSum)
-    , count2(count2)
-    , distanceSum2(distanceSum2)
-  {}
-
-  int count;        // count of voxels adjacent to this segment
-  int distanceSum;  // sum of distances (along segment) of adjacent voxels  
-  int count2;        // count of voxels adjacent to this segment
-  int distanceSum2;  // sum of distances (along segment) of adjacent voxels  
-};
-
-struct TrisoupSegmentNeighbours {
-  Vec3<int32_t> startpos;  // start point of edge segment
-  Vec3<int32_t> endpos;    // end point of edge segment
-
-  int index;        // index of segment, to reorder after sorting 
-  uint16_t neighboursMask;   
-};
-
-
 enum{
   POS_000 = 0,
   POS_W00 = 1,
@@ -264,18 +222,6 @@ void nonCubicNode
  Vec3<int32_t>& neww,
  Vec3<int32_t>* corner
  );
-
-
-
-//----------------------------------------------------------------------------
-// comparison for sorting
-
-bool operator<(const TrisoupSegment& s1, const TrisoupSegment& s2);
-
-bool operator<(const TrisoupSegmentNeighbours& s1, const TrisoupSegmentNeighbours& s2);
-
-
-
 
 //============================================================================
 
