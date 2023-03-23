@@ -905,9 +905,7 @@ uraht_process(
         }
       }
 
-      int parentWeight = 0;
       if (inheritDc) {
-        parentWeight = weightsParentIt->weight;
         weightsParentIt++;
         numGrandParentNeighIt++;
       }

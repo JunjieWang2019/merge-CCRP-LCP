@@ -119,7 +119,6 @@ partitionNone(
   const PartitionParams& params, const PCCPointSet3& cloud, int tileID)
 {
   std::vector<Partition> slices;
-  int numSlices = 1;
   slices.emplace_back();
   auto& slice = slices.back();
   slice.sliceId = 0;
@@ -649,8 +648,7 @@ refineSlicesByAdjacentInfo(
 {
   if (!params.safeTrisoupPartionning)
     partitionBoundary = 0;
-  int maxPoints = params.sliceMaxPoints;  
-  int minPoints = params.sliceMinPoints;
+  int maxPoints = params.sliceMaxPoints;
 
   //initialize
   int xNum = sliceArrNum[0];

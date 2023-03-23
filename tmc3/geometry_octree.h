@@ -36,7 +36,7 @@
 #pragma once
 
 #include <cstdint>
-#  include <cstring>
+#include <cstring>
 #include "PCCMath.h"
 #include "PCCPointSet.h"
 #include "entropy.h"

@@ -320,9 +320,9 @@ ply::read(
   size_t indexB = PCC_UNDEFINED_INDEX;
   size_t indexReflectance = PCC_UNDEFINED_INDEX;
   size_t indexFrame = PCC_UNDEFINED_INDEX;
-  size_t indexNX = PCC_UNDEFINED_INDEX;
-  size_t indexNY = PCC_UNDEFINED_INDEX;
-  size_t indexNZ = PCC_UNDEFINED_INDEX;
+  // size_t indexNX = PCC_UNDEFINED_INDEX;
+  // size_t indexNY = PCC_UNDEFINED_INDEX;
+  // size_t indexNZ = PCC_UNDEFINED_INDEX;
   size_t indexLaserAngle = PCC_UNDEFINED_INDEX;
   const size_t attributeCount = attributesInfo.size();
   for (size_t a = 0; a < attributeCount; ++a) {
@@ -352,18 +352,18 @@ ply::read(
     } else if (
       attributeInfo.name == "frameindex" && attributeInfo.byteCount <= 2) {
       indexFrame = a;
-    } else if (
-      attributeInfo.name == "nx"
-      && (attributeInfo.byteCount == 8 || attributeInfo.byteCount == 4)) {
-      indexNX = a;
-    } else if (
-      attributeInfo.name == "ny"
-      && (attributeInfo.byteCount == 8 || attributeInfo.byteCount == 4)) {
-      indexNY = a;
-    } else if (
-      attributeInfo.name == "nz"
-      && (attributeInfo.byteCount == 8 || attributeInfo.byteCount == 4)) {
-      indexNZ = a;
+    // } else if (
+    //   attributeInfo.name == "nx"
+    //   && (attributeInfo.byteCount == 8 || attributeInfo.byteCount == 4)) {
+    //   indexNX = a;
+    // } else if (
+    //   attributeInfo.name == "ny"
+    //   && (attributeInfo.byteCount == 8 || attributeInfo.byteCount == 4)) {
+    //   indexNY = a;
+    // } else if (
+    //   attributeInfo.name == "nz"
+    //   && (attributeInfo.byteCount == 8 || attributeInfo.byteCount == 4)) {
+    //   indexNZ = a;
     } else if (attributeInfo.name == "laserangle") {
       indexLaserAngle = a;
     }
