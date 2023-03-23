@@ -808,11 +808,11 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Thickness of Trisoup triangles")
 
   ("trisoupNonCubicNodeNearOriginSideEnabled",
-    params.encoder.gps.non_cubic_node_start_edge, true,
+    params.encoder.gps.non_cubic_node_start_edge, false,
     "Trisoup activate non-cubic-node near the origin side of the slice bounding box")
 
   ("trisoupNonCubicNodeFarFromOriginSideEnabled",
-    params.encoder.gps.non_cubic_node_end_edge, true,
+    params.encoder.gps.non_cubic_node_end_edge, false,
     "Trisoup activate non-cubic-node far from the origin side of the slice bounding box")
 
   ("positionQuantisationEnabled",
