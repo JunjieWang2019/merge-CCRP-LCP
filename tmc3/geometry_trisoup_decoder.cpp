@@ -132,7 +132,7 @@ decodeGeometryTrisoup(
 {
   // trisoup uses octree coding until reaching the triangulation level.
   // todo(df): pass trisoup node size rather than 0?
-  pcc::ringbuf<PCCOctree3Node> nodes;
+  std::vector<PCCOctree3Node> nodes;
   PCCPointSet3 compensatedPointCloud;  // set of points after motion compensation
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, &nodes,
@@ -199,7 +199,7 @@ decodeGeometryTrisoup(
 
 //============================================================================
 void determineTrisoupNeighbours(
-  const ringbuf<PCCOctree3Node>& leaves,
+  const std::vector<PCCOctree3Node>& leaves,
   std::vector<uint16_t>& neighbNodes,
   std::vector<std::array<int, 18>>& edgePattern,
   const int defaultBlockWidth,
@@ -534,7 +534,7 @@ void nonCubicNode
 
 void
 decodeTrisoupCommon(
-  const ringbuf<PCCOctree3Node>& leaves,
+  const std::vector<PCCOctree3Node>& leaves,
   const std::vector<bool>& segind,
   const std::vector<uint8_t>& vertices,
   std::vector<CentroidDrift>& drifts,

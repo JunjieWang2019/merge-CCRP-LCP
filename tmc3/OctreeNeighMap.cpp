@@ -47,232 +47,29 @@ namespace pcc {
 
 //============================================================================
 
-void
-MortonMap3D::clearUpdates()
-{
-  for (const auto byteIndex : _updates) {
-    _buffer[byteIndex] = uint8_t(0);
-  }
-  _updates.resize(0);
-
-  // Access to the child array is supposed to be guarded by checking the main
-  // map first.  It is therefore not necessary to clear the array between
-  // updates.  Setting it to zero just hides the issue -- ie, tools like
-  // valgrind don't complain, but the logic error is still present.
-  //
-  // The following undoes the effect of any writes that have cleared the
-  // undefined state.
-  VALGRIND_MAKE_MEM_UNDEFINED(_childOccupancy.get(), _bufferSizeInBytes << 3);
-}
-
-//----------------------------------------------------------------------------
-
-void
-MortonMap3D::clear()
-{
-  memset(_buffer.get(), 0, _bufferSizeInBytes);
-  _updates.resize(0);
-
-  // See clearUpdates()
-  VALGRIND_MAKE_MEM_UNDEFINED(_childOccupancy.get(), _bufferSizeInBytes << 3);
-}
-
-//============================================================================
-
-void
-updateGeometryOccupancyAtlas(
-  const Vec3<int32_t>& currentPosition,
-  const int atlasShift,
-  const pcc::ringbuf<PCCOctree3Node>& fifo,
-  const pcc::ringbuf<PCCOctree3Node>::iterator& fifoCurrLvlEnd,
-  MortonMap3D* occupancyAtlas,
-  Vec3<int32_t>* atlasOrigin)
-{
-  const uint32_t mask = (1 << occupancyAtlas->cubeSizeLog2()) - 1;
-  const int shift = occupancyAtlas->cubeSizeLog2();
-  const int shiftX = (atlasShift & 4 ? 1 : 0);
-  const int shiftY = (atlasShift & 2 ? 1 : 0);
-  const int shiftZ = (atlasShift & 1 ? 1 : 0);
-
-  const auto currentOrigin = currentPosition >> shift;
-
-  // only refresh the atlas if the current position lies outside the
-  // the current atlas.
-  if (*atlasOrigin == currentOrigin) {
-    return;
-  }
-
-  *atlasOrigin = currentOrigin;
-  occupancyAtlas->clearUpdates();
-
-  for (auto it = fifo.begin(); it != fifoCurrLvlEnd; ++it) {
-    if (currentOrigin != it->pos >> shift)
-      break;
-    const uint32_t x = (it->pos[0] & mask) >> shiftX;
-    const uint32_t y = (it->pos[1] & mask) >> shiftY;
-    const uint32_t z = (it->pos[2] & mask) >> shiftZ;
-    occupancyAtlas->setByte(x, y, z, it->siblingOccupancy);
-  }
-}
-
-//----------------------------------------------------------------------------
-
-void
-updateGeometryOccupancyAtlasOccChild(
-  const Vec3<int32_t>& pos,
-  uint8_t childOccupancy,
-  MortonMap3D* occupancyAtlas)
-{
-  uint32_t mask = (1 << occupancyAtlas->cubeSizeLog2()) - 1;
-  uint32_t x = pos[0] & mask;
-  uint32_t y = pos[1] & mask;
-  uint32_t z = pos[2] & mask;
-
-  occupancyAtlas->setChildOcc(x, y, z, childOccupancy);
-}
-
-//----------------------------------------------------------------------------
-// neighIdx: 0 => (x-1), 1 => (y-1), 2 => (z-1)
-//
-static GeometryNeighPattern
-updatePatternFromNeighOccupancy(
-  const MortonMap3D& occupancyAtlas,
-  int x,
-  int y,
-  int z,
-  GeometryNeighPattern gnp,
-  int neighIdx,
-  bool codedAxisCurLvl)
-{
-  static const uint8_t childMasks[] = {
-    0xf0 /* x-1 */, 0xcc /* y-1 */, 0xaa /* z-1 */
-  };
-
-  uint32_t patternBit = 1 << (1 << neighIdx);
-  uint8_t childMask = childMasks[neighIdx];
-
-  // conversions between neighbour occupancy and adjacency:
-  //  x: >> 4, y: >> 2, z: >> 1
-  // Always inspect the adjacent children, taking into account that their
-  // position changes depending upon whther the current axis is coded or not.
-  if (!codedAxisCurLvl) {
-    childMask ^= 0xff;
-  }
-  uint8_t child_occ = occupancyAtlas.getChildOcc(x, y, z);
-  gnp.adjNeighOcc[neighIdx] = child_occ;
-
-  return gnp;
-}
-
-//----------------------------------------------------------------------------
-
-GeometryNeighPattern
-makeGeometryNeighPattern(
-  bool adjacent_child_contextualization_enabled_flag,
-  const Vec3<int32_t>& position,
-  int codedAxesPrevLvl,
-  const MortonMap3D& occupancyAtlas)
-{
-  const int mask = occupancyAtlas.cubeSize() - 1;
-  const int cubeSizeMinusOne = mask;
-  const int32_t x = position[0] & mask;
-  const int32_t y = position[1] & mask;
-  const int32_t z = position[2] & mask;
-  uint8_t neighPattern;
-
-  const int sx = codedAxesPrevLvl & 4 ? 1 : 0;
-  const int sy = codedAxesPrevLvl & 2 ? 1 : 0;
-  const int sz = codedAxesPrevLvl & 1 ? 1 : 0;
-
-  if (
-    x > 0 && x < cubeSizeMinusOne && y > 0 && y < cubeSizeMinusOne && z > 0
-    && z < cubeSizeMinusOne) {
-    neighPattern = occupancyAtlas.get(x + 1, y, z, sx, sy, sz);
-    neighPattern |= occupancyAtlas.get(x - 1, y, z, sx, sy, sz) << 1;
-    neighPattern |= occupancyAtlas.get(x, y - 1, z, sx, sy, sz) << 2;
-    neighPattern |= occupancyAtlas.get(x, y + 1, z, sx, sy, sz) << 3;
-    neighPattern |= occupancyAtlas.get(x, y, z - 1, sx, sy, sz) << 4;
-    neighPattern |= occupancyAtlas.get(x, y, z + 1, sx, sy, sz) << 5;
-  } else {
-    neighPattern = occupancyAtlas.getWithCheck(x + 1, y, z, sx, sy, sz);
-    neighPattern |= occupancyAtlas.getWithCheck(x - 1, y, z, sx, sy, sz) << 1;
-    neighPattern |= occupancyAtlas.getWithCheck(x, y - 1, z, sx, sy, sz) << 2;
-    neighPattern |= occupancyAtlas.getWithCheck(x, y + 1, z, sx, sy, sz) << 3;
-    neighPattern |= occupancyAtlas.getWithCheck(x, y, z - 1, sx, sy, sz) << 4;
-    neighPattern |= occupancyAtlas.getWithCheck(x, y, z + 1, sx, sy, sz) << 5;
-  }
-
-  // Above, the neighbour pattern corresponds directly to the six same
-  // sized neighbours of the given node.
-  // The patten is then refined by examining the available children
-  // of the same neighbours.
-
-  // NB: the process of updating neighpattern below also derives
-  // the occupancy contextualisation bits.
-  GeometryNeighPattern gnp = {neighPattern, 0, 0, 0, {0, 0, 0}};
-
-  if (!gnp.neighPattern || !adjacent_child_contextualization_enabled_flag)
-    return gnp;
-
-  if (x > 0 && gnp.neighPattern & 2)
-    gnp.adjNeighOcc[0] = occupancyAtlas.getChildOcc(x - 1, y, z);
-
-  if (y > 0 && gnp.neighPattern & 4)
-    gnp.adjNeighOcc[1] = occupancyAtlas.getChildOcc(x, y - 1, z);
-
-  if (z > 0 && gnp.neighPattern & 16)
-    gnp.adjNeighOcc[2] = occupancyAtlas.getChildOcc(x, y, z - 1);
-
-  return gnp;
-}
-
-//----------------------------------------------------------------------------
-
-static const int LUTdx[20] =
-  { -1,-1,-1,-1,-1,-1,-1,-1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1 };
-static const int LUTdy[20] =
-  { -1,-1,-1, 0, 0, 1, 1, 1,-1,-1, 1, 1,-1,-1,-1, 0, 0, 1, 1, 1 };
-static const int LUTdz[20] =
-  { -1, 0, 1,-1, 1,-1, 0, 1,-1, 1,-1, 1,-1, 0, 1,-1, 1,-1, 0, 1 };
+static const int LUTneigh20child[10] =
+  { 0, 1, 2, 3, 5, 6, 7, 8, 9, 11 };
+static const int LUTneigh20parent[10] =
+  { 15 - 14, 17 - 14, 18 - 14, 19 - 14, 20 - 14,
+    21 - 14, 23 - 14, 24 - 14, 25 - 14, 26 - 14 };
 
 void prepareGeometryAdvancedNeighPattern(
-  OctreeNeighours& octreeNeighours,
-  const GeometryNeighPattern& gnp,
-  const Vec3<int32_t>& position,
-  int atlasShift,
-  const MortonMap3D& occupancyAtlas)
+  const RasterScanContext::occupancy& occ,
+  OctreeNeighours& octreeNeighours)
 {
-  // prepare neighbours
-  const int neighPattern = gnp.neighPattern;
-  const int mask = occupancyAtlas.cubeSize() - 1;
-  const int32_t x = position[0] & mask;
-  const int32_t y = position[1] & mask;
-  const int32_t z = position[2] & mask;
-
-  const int sx = atlasShift & 4 ? 1 : 0;
-  const int sy = atlasShift & 2 ? 1 : 0;
-  const int sz = atlasShift & 1 ? 1 : 0;
-
-  const int cubeSizeMinusOne = mask;
-
   // prepare 20 neighbours
   int neighb20 = 0;
-  if (x > 0 && x < cubeSizeMinusOne && y > 0 && y < cubeSizeMinusOne && z > 0
-      && z < cubeSizeMinusOne)
-    for (int n = 0; n < 20; n++)
-      neighb20 |= occupancyAtlas.get(
-        x + LUTdx[n], y + LUTdy[n], z + LUTdz[n], sx, sy, sz) << n;
-  else
-    for (int n = 0; n < 20; n++)
-      neighb20 |= occupancyAtlas.getWithCheck(
-        x + LUTdx[n], y + LUTdy[n], z + LUTdz[n], sx, sy, sz) << n;
+  for (int n = 0; n < 10; n++)
+      neighb20 |= !!(occ.childOccupancyContext[LUTneigh20child[n]]) << n;
+  for (int n = 10; n < 20; n++)
+      neighb20 |= occ.depthOccupancyContext[LUTneigh20parent[n-10]] << n;
 
   octreeNeighours.neighb20 = neighb20;
 
   // ----- neighbours  FLB -----
-  octreeNeighours.occLeft = gnp.adjNeighOcc[0];
-  octreeNeighours.occFront = gnp.adjNeighOcc[1];
-  octreeNeighours.occBottom = gnp.adjNeighOcc[2];
+  octreeNeighours.occLeft = occ.childOccupancyContext[4];
+  octreeNeighours.occFront = occ.childOccupancyContext[10];
+  octreeNeighours.occBottom = occ.childOccupancyContext[12];
 
   octreeNeighours.occL = octreeNeighours.occLeft >> 4;
   octreeNeighours.occF =
@@ -291,31 +88,31 @@ void prepareGeometryAdvancedNeighPattern(
   // ----- neighbours  LB, FB, LF -----
   octreeNeighours.edgeBits = 0;
   if ((neighb20 >> 3) & 1) {
-    int occLB = occupancyAtlas.getChildOcc(x - 1, y, z - 1);
+    int occLB = occ.childOccupancyContext[3];
     octreeNeighours.edgeBits = ((occLB & 32) >> 5) | ((occLB & 128) >> 6);
   }
 
   if ((neighb20 >> 8) & 1) {
-    int occFB = occupancyAtlas.getChildOcc(x, y - 1, z - 1);
+    int occFB = occ.childOccupancyContext[9];
     octreeNeighours.edgeBits |= ((occFB & 8) >> 1) | ((occFB & 128) >> 4);
   }
 
   if ((neighb20 >> 1) & 1) {
-    int occLF = occupancyAtlas.getChildOcc(x - 1, y - 1, z);
+    int occLF = occ.childOccupancyContext[1];
     octreeNeighours.edgeBits |= (occLF & 0b11000000) >> 2;
   }
 
   // neighPattern & 0b101001  -> right  back top
   octreeNeighours.N3 =
-    ((neighPattern >> 3) & 4)
-    | ((neighPattern >> 2) & 2)
-    | (neighPattern & 1);
+    ((occ.neighPattern >> 3) & 4)
+    | ((occ.neighPattern >> 2) & 2)
+    | (occ.neighPattern & 1);
   // -> right  back
   octreeNeighours.N2 = octreeNeighours.N3 & 3;
   // LFB pattern
   octreeNeighours.neighPatternLFB =
-    ((neighPattern & 0b110) >> 1)
-    | ((neighPattern & 16) >> 2);
+    ((occ.neighPattern & 0b110) >> 1)
+    | ((occ.neighPattern & 16) >> 2);
 }
 
 // ---------------------------------------------------------------------------

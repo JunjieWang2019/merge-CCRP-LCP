@@ -43,7 +43,6 @@
 #include "geometry_params.h"
 #include "hls.h"
 #include "quantization.h"
-#include "ringbuf.h"
 #include "tables.h"
 #include "TMC3.h"
 #include "motionWip.h"
@@ -80,9 +79,26 @@ struct PCCOctree3Node {
   uint32_t start;
   uint32_t end;
 
+  // encoder only, count of childs once ordered
+  std::array<int32_t, 8> childCounts = {};
+
+  // count of childs predicted
+  std::array<int32_t, 8> predCounts = {};
+
+  // encoder for motion
+  // Note: there is probably better way to do that
+  // This is for quick porting of the existing code with raster scan order
+  int predPointsStartIdx;
+  int pos_fs;
+  int pos_fp;
+  int pos_MV;
+
   // The current node's number of siblings plus one.
   // ie, the number of child nodes present in this node's parent.
   uint8_t numSiblingsPlus1;
+
+  // store the the neighborhood pattern for further passes on the node
+  uint8_t neighPattern;
 
   // Range of prediction's point indexes spanned by node
   uint32_t predStart;
@@ -103,6 +119,10 @@ struct PCCOctree3Node {
 
   // Indicatest hat the current node qualifies for IDCM
   bool idcmEligible{false}; //NOTE[FT]: FORCING idcmEligible to false at construction
+  bool isDirectMode{false};
+
+  // The occupancy map used describing the child nodes.
+  uint8_t childOccupancy;
 
   // The qp used for geometry quantisation.
   // NB: this qp value always uses a step size doubling interval of 8 qps
@@ -115,6 +135,198 @@ struct OctreeNodePlanar {
   // planar; first bit for x, second bit for y, third bit for z
   uint8_t planePosBits = 0;
   uint8_t planarMode = 0;
+};
+
+//============================================================================
+struct RasterScanContext {
+  static constexpr int childOccupancyContextSize = 13;
+  static constexpr int depthOccupancyContextSize = 13;
+  static constexpr int contextSize = childOccupancyContextSize + 1 + childOccupancyContextSize;
+  const Vec3<int32_t>
+    occupancyContextOffsets[contextSize] =
+  {
+    // z
+    // ^   y
+    // | 7|
+    // |/
+    // -----> x
+    //x,  y,  z}
+    {-1, -1, -1}, //  0/ 0
+    {-1, -1, +0}, //  1/ 1: (LF) Front Left node
+    {-1, -1, +1}, //  2/ 2
+
+    {-1, +0, -1}, //  3/ 3: (LB) Bottom Left node
+    {-1, +0, +0}, //  4/ 4: (L) LeFt node
+    {-1, +0, +1}, //  5/ 5
+
+    {-1, +1, -1}, //  6/ 6
+    {-1, +1, +0}, //  7/ 7
+    {-1, +1, +1}, //  8/ 8
+
+    {+0, -1, -1}, //  9/ 9: (FB) Bottom Front node
+    {+0, -1, +0}, // 10/10: (F) FRont node
+    {+0, -1, +1}, // 11/11
+
+    {+0, +0, -1}, // 12/12: (B) BoTtom node
+    {+0, +0, +0}, // 13/xx: current node
+    {+0, +0, +1}, // 14/ 0: ToP node
+
+    {+0, +1, -1}, // 15/ 1
+    {+0, +1, +0}, // 16/ 2: BacK node
+    {+0, +1, +1}, // 17/ 3
+
+    {+1, -1, -1}, // 18/ 4
+    {+1, -1, +0}, // 19/ 5
+    {+1, -1, +1}, // 20/ 6
+
+    {+1, +0, -1}, // 21/ 7
+    {+1, +0, +0}, // 22/ 8: RighT node
+    {+1, +0, +1}, // 23/ 9
+
+    {+1, +1, -1}, // 24/10
+    {+1, +1, +0}, // 25/11
+    {+1, +1, +1}, // 26/12
+  };
+  struct occupancy {
+    void reset() {
+      std::fill_n(childOccupancyContext, childOccupancyContextSize, 0);
+      std::fill_n(depthOccupancyContext, depthOccupancyContextSize, false);
+      neighPattern = 0;
+    }
+    uint8_t childOccupancyContext[childOccupancyContextSize];
+    bool    depthOccupancyContext[depthOccupancyContextSize];
+    uint8_t neighPattern;
+  };
+
+  // iterator will point nodes with lower or equal position to current+offset
+  std::vector<const PCCOctree3Node*> occupancyContextNodes;
+
+  const std::vector<PCCOctree3Node>& buffer;
+
+  RasterScanContext(const std::vector<PCCOctree3Node>& buffer)
+  : buffer(buffer)
+  , occupancyContextNodes(contextSize, nullptr)
+  {}
+
+  void initializeNextDepth() {
+    for (int i = 0; i < contextSize; ++i) {
+      occupancyContextNodes[i] = buffer.data();
+    }
+  }
+
+  void nextNode(const PCCOctree3Node* currNode, occupancy& occ) {
+    const PCCOctree3Node* buffer_end = buffer.data() + buffer.size();
+    occ.reset();
+
+    // should never occur
+    //if(occupancyContextNodes[0] == buffer_end)
+    //  return;
+
+    int i;
+    int j;
+    const PCCOctree3Node* nextNodeContext;
+    Vec3<int32_t> offsetPos;
+    for (i = 0; i < childOccupancyContextSize; i += 3) {
+      // from here, iterator points at least on first node of the depth
+      nextNodeContext = occupancyContextNodes[i] + 1;
+      //
+      if (nextNodeContext >= currNode)
+        break;
+      offsetPos = currNode->pos + occupancyContextOffsets[i];
+      /**/
+      while (nextNodeContext < currNode
+        && ( nextNodeContext->pos[0] < offsetPos[0]
+          || nextNodeContext->pos[0] == offsetPos[0]
+          && ( nextNodeContext->pos[1] < offsetPos[1]
+            || nextNodeContext->pos[1] == offsetPos[1]
+            && nextNodeContext->pos[2] < offsetPos[2]
+          )
+        )
+      ) {
+        ++occupancyContextNodes[i];
+        ++nextNodeContext;
+      }
+      if (
+        nextNodeContext < currNode
+        && nextNodeContext->pos == offsetPos
+      ) {
+        ++occupancyContextNodes[i];
+        occ.childOccupancyContext[i] = nextNodeContext->childOccupancy;
+        ++nextNodeContext;
+      }
+      int jend = i + 3 < childOccupancyContextSize ? i + 3 : childOccupancyContextSize;
+      for (j = i + 1; j < jend; ++j) {
+        if (nextNodeContext >= currNode)
+          break;
+        ++offsetPos[2];
+        if (nextNodeContext->pos == offsetPos) {
+          occ.childOccupancyContext[j] = nextNodeContext->childOccupancy;
+          ++nextNodeContext;
+        }
+      }
+    }
+    nextNodeContext = currNode + 1;
+    if (nextNodeContext >= buffer_end) {
+      occ.neighPattern =
+        ((occ.childOccupancyContext[4] != 0) << 1)
+      | ((occ.childOccupancyContext[10] != 0) << 2)
+      | ((occ.childOccupancyContext[12] != 0) << 4);
+      return;
+    }
+    //offsetPos = currNode->pos + occupancyContextOffsets[14];
+    offsetPos = currNode->pos;
+    ++offsetPos[2];
+    if (nextNodeContext->pos == offsetPos) {
+      occ.depthOccupancyContext[0] = true;
+    }
+    for (i=15; i < contextSize; i += 3) {
+      // from here, iterator points at least on first node of the depth
+      auto nextNodeContext = occupancyContextNodes[i] + 1;
+      //
+      if (nextNodeContext >= buffer_end)
+        break;
+      auto offsetPos = currNode->pos + occupancyContextOffsets[i];
+      /**/
+      while (nextNodeContext < buffer_end
+        && ( nextNodeContext->pos[0] < offsetPos[0]
+          || nextNodeContext->pos[0] == offsetPos[0]
+          && ( nextNodeContext->pos[1] < offsetPos[1]
+            || nextNodeContext->pos[1] == offsetPos[1]
+            && nextNodeContext->pos[2] < offsetPos[2]
+          )
+        )
+      ) {
+        ++occupancyContextNodes[i];
+        ++nextNodeContext;
+      }
+      if (
+        nextNodeContext < buffer_end
+        && nextNodeContext->pos == offsetPos
+      ) {
+        ++occupancyContextNodes[i];
+        occ.depthOccupancyContext[i-14] = true;
+        ++nextNodeContext;
+      }
+      int j;
+      int jend = i + 3/* < contextSize ? i + 3 : contextSize*/;
+      for (j = i + 1; j < jend; ++j) {
+        if (nextNodeContext >= buffer_end)
+          break;
+        ++offsetPos[2];
+        if (nextNodeContext->pos == offsetPos) {
+          occ.depthOccupancyContext[j-14] = true;
+          ++nextNodeContext;
+        }
+      }
+    }
+    occ.neighPattern =
+      (occ.depthOccupancyContext[8] << 0)
+    | ((occ.childOccupancyContext[4] != 0) << 1)
+    | ((occ.childOccupancyContext[10] != 0) << 2)
+    | (occ.depthOccupancyContext[2] << 3)
+    | ((occ.childOccupancyContext[12] != 0) << 4)
+    | (occ.depthOccupancyContext[0] << 5);
+  }
 };
 
 //---------------------------------------------------------------------------
@@ -739,10 +951,6 @@ protected:
   AdaptiveBitModel _ctxQpOffsetSign;
   AdaptiveBitModel _ctxQpOffsetAbsEgl;
 
-  // For bitwise occupancy coding
-  CtxModelOctreeOccupancy _ctxOccupancy;
-  CtxMapOctreeOccupancy _ctxIdxMaps[24];
-
   // OBUF somplified
   CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
 
@@ -767,7 +975,7 @@ void encodeGeometryOctree(
   PCCPointSet3& pointCloud,
   GeometryOctreeContexts& ctxtMem,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
-  pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
+  std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
   PCCPointSet3& compensatedPointCloud);
@@ -779,7 +987,7 @@ void decodeGeometryOctree(
   PCCPointSet3& pointCloud,
   GeometryOctreeContexts& ctxtMem,
   EntropyDecoder& arithmeticDecoder,
-  pcc::ringbuf<PCCOctree3Node>* nodesRemaining,
+  std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
   PCCPointSet3& compensatedPointCloud);

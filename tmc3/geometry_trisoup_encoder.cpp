@@ -56,7 +56,7 @@ encodeGeometryTrisoup(
   const SequenceParameterSet& sps)
 {
   // trisoup uses octree coding until reaching the triangulation level.
-  pcc::ringbuf<PCCOctree3Node> nodes;
+  std::vector<PCCOctree3Node> nodes;
   PCCPointSet3 compensatedPointCloud;  // set of points after motion compensation
   encodeGeometryOctree(
     optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
@@ -188,7 +188,7 @@ encodeGeometryTrisoup(
 
 void
 determineTrisoupVertices(
-  const ringbuf<PCCOctree3Node>& leaves,
+  const std::vector<PCCOctree3Node>& leaves,
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,
   const PCCPointSet3& pointCloud,

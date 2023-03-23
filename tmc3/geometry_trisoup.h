@@ -41,7 +41,6 @@
 
 #include "PCCPointSet.h"
 #include "geometry_octree.h"
-#include "ringbuf.h"
 
 namespace pcc {
 //============================================================================
@@ -87,7 +86,7 @@ namespace pcc {
 
  //============================================================================
 void determineTrisoupVertices(
-  const ringbuf<PCCOctree3Node>& leaves,
+  const std::vector<PCCOctree3Node>& leaves,
   std::vector<bool>& segind,
   std::vector<uint8_t>& vertices,  
   const PCCPointSet3& pointCloud,
@@ -102,7 +101,7 @@ void determineTrisoupVertices(
   int Nunique);
 
 void determineTrisoupNeighbours(
-  const ringbuf<PCCOctree3Node>& leaves, 
+  const std::vector<PCCOctree3Node>& leaves, 
   std::vector<uint16_t>& neighbNodes, 
   std::vector<std::array<int, 18>>& edgePattern,
   const int defaultBlockWidth,
@@ -142,7 +141,7 @@ void encodeTrisoupCentroidResidue(
   GeometryOctreeContexts& ctxtMemOctree);
 
 void decodeTrisoupCommon(
-  const ringbuf<PCCOctree3Node>& leaves,
+  const std::vector<PCCOctree3Node>& leaves,
   const std::vector<bool>& segind,
   const std::vector<uint8_t>& vertices,
   std::vector<CentroidDrift>& drifts,
