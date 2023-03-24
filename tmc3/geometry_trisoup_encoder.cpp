@@ -261,18 +261,18 @@ determineTrisoupVertices(
       if (check2 > 2) check2 = 1;
 
       int check = check0 + 3 * check1 + 9 * check2; // in [0,26]
-      int unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
-      int unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
-      int unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
       if (bufferIdx0[check] < 12) {
+        int unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
         count[unique0]++;
         distanceSum[unique0] += voxel[voxelComp0[check]];
       }
       if (bufferIdx1[check] < 12) {
+        int unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
         count[unique1]++;
         distanceSum[unique1] += voxel[voxelComp1[check]];
       }
       if (bufferIdx2[check] < 12) {
+        int unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
         count[unique2]++;
         distanceSum[unique2] += voxel[voxelComp2[check]];
       }
@@ -291,18 +291,18 @@ determineTrisoupVertices(
 
         check = check0 + 3 * check1 + 9 * check2; // in [0,26]
 
-        unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
-        unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
-        unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
         if (bufferIdx0[check] < 12) {
+          int unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
           count2[unique0]++;
           distanceSum2[unique0] += voxel[voxelComp0[check]];
         }
         if (bufferIdx1[check] < 12) {
+          int unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
           count2[unique1]++;
           distanceSum2[unique1] += voxel[voxelComp1[check]];
         }
         if (bufferIdx2[check] < 12) {
+          int unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
           count2[unique2]++;
           distanceSum2[unique2] += voxel[voxelComp2[check]];
         }
