@@ -73,6 +73,9 @@ struct OctreeEncOpts {
 
 struct TrisoupEncOpts {
   bool improvedVertexDetermination;
+
+  // force align slices to a grid of trisoup node size
+  bool alignToNodeGrid;
 };
 
 //=============================================================================

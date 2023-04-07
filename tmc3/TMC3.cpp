@@ -803,6 +803,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.trisoup.improvedVertexDetermination, true,
     "Trisoup activate improved determination of vertex position (encoder only)")
 
+  ("trisoupAlignToNodeGrid",
+    params.encoder.trisoup.alignToNodeGrid, true,
+    "Align slices to a grid of trisoup nodes (encoder only)")
+
   ("trisoupThickness",
     params.encoder.gbh.trisoup_thickness, 36,
     "Thickness of Trisoup triangles")

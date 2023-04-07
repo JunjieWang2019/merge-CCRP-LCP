@@ -110,6 +110,14 @@ PCCTMC3Encoder3::compress(
       bbox.max = bbox.min + params->sps.seqBoundingBoxSize - 1;
     }
 
+    if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizesLog2.empty()) {
+      int nodeSizeLog2 = *std::max_element(
+          params->trisoupNodeSizesLog2.begin(),
+          params->trisoupNodeSizesLog2.end());
+      bbox.min = ((bbox.min >> nodeSizeLog2) << nodeSizeLog2);
+      bbox.max = ((bbox.max + (1 << nodeSizeLog2) - 1 >> nodeSizeLog2) << nodeSizeLog2);
+    }
+
     // Note whether the bounding box size is defined
     // todo(df): set upper limit using level
     bool bboxSizeDefined = params->sps.seqBoundingBoxSize > 0;
@@ -369,6 +377,13 @@ PCCTMC3Encoder3::compress(
       _sliceOrigin[0] -= (_sliceOrigin[0] % partitionBoundary);
       _sliceOrigin[1] -= (_sliceOrigin[1] % partitionBoundary);
       _sliceOrigin[2] -= (_sliceOrigin[2] % partitionBoundary);
+    }
+
+    if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizesLog2.empty()) {
+      int nodeSizeLog2 = *std::max_element(
+          params->trisoupNodeSizesLog2.begin(),
+          params->trisoupNodeSizesLog2.end());
+      _sliceOrigin = ((_sliceOrigin >> nodeSizeLog2) << nodeSizeLog2);
     }
 
     compressPartition(sliceCloud, sliceSrcCloud, params, callback, reconCloud);
@@ -833,10 +848,19 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   if (_sps->entropy_continuation_enabled_flag)
     gbh.entropy_continuation_flag = !_firstSliceInFrame;
 
+  int nodeSizeLog2 = 0;
+  if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizesLog2.empty())
+    nodeSizeLog2 = *std::max_element(
+      params->trisoupNodeSizesLog2.begin(),
+      params->trisoupNodeSizesLog2.end());
+
   // inform the geometry coder what the root node size is
   for (int k = 0; k < 3; k++) {
     // NB: A minimum whd of 2 means there is always at least 1 tree level
-    gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, _sliceBoxWhd[k]));
+    if (params->trisoup.alignToNodeGrid)
+      gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, (_sliceBoxWhd[k] + (1 << nodeSizeLog2) - 1 >> nodeSizeLog2) << nodeSizeLog2));
+    else
+      gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, _sliceBoxWhd[k]));
 
     // The root node size cannot be smaller than the trisoup node size
     // since this is how the root node size is defined at the decoder.

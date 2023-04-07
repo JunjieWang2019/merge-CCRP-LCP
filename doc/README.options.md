@@ -514,6 +514,10 @@ Controls the activation of additional ray tracing from non-integer origin.
 (Encoder only)
 Controls the activation of improved determination of trisoup vertex position.
 
+### `--trisoupAlignToNodeGrid=0|1`
+(Encoder only)
+Force aligning slices to a grid of trisoup node size.
+
 ### `--trisoupThickness=INT-VALUE`
 Controls the thickness for point reconstruction with rasterization.
 
