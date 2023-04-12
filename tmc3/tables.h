@@ -40,7 +40,7 @@
 namespace pcc {
 extern const uint8_t kNeighPatternInvMap[64][8];
 extern const int numMaxOccupided[8];
-
+extern const uint16_t obufSingleBoundOrigin[33];
 // Symmetry reduction of 64 neighbour pattern to 10
 extern const uint8_t kNeighPattern64to9[64];
 extern const uint8_t kNeighPattern64to6[64];

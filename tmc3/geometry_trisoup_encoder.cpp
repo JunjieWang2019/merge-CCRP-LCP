@@ -441,7 +441,9 @@ encodeTrisoupVertices(
       segind[i], ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
       ctxtMemOctree._BufferOBUFleavesTrisoup);
     arithmeticEncoder->encode(
-      (int)segind[i], ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxTrisoup]);
+      (int)segind[i], ctxTrisoup >> 3,
+      ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxTrisoup],
+      ctxtMemOctree.ctxTriSoup[0][ctxInter].obufSingleBound);
 
     // encode position vertex
     if (segind[i]) {
@@ -471,7 +473,9 @@ encodeTrisoupVertices(
         bit, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
         ctxtMemOctree._BufferOBUFleavesTrisoup);
       arithmeticEncoder->encode(
-        bit, ctxtMemOctree.ctxTriSoup[1][ctxInter][ctxTrisoup]);
+        bit, ctxTrisoup >> 3,
+        ctxtMemOctree.ctxTriSoup[1][ctxInter][ctxTrisoup],
+        ctxtMemOctree.ctxTriSoup[1][ctxInter].obufSingleBound);
       v = bit;
 
       // second bit
@@ -495,7 +499,9 @@ encodeTrisoupVertices(
           &ctxtMemOctree._OBUFleafNumberTrisoup,
           ctxtMemOctree._BufferOBUFleavesTrisoup);
         arithmeticEncoder->encode(
-          bit, ctxtMemOctree.ctxTriSoup[2][ctxInter][ctxTrisoup]);
+          bit, ctxTrisoup >> 3,
+          ctxtMemOctree.ctxTriSoup[2][ctxInter][ctxTrisoup],
+          ctxtMemOctree.ctxTriSoup[2][ctxInter].obufSingleBound);
         v = (v << 1) | bit;
       }
 
