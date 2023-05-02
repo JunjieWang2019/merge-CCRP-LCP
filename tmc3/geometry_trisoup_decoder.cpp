@@ -453,6 +453,197 @@ void nonCubicNode
 }
 
 
+// --------------------------------------------------------------------------
+void
+determineCentroidAndDominantAxis(
+  Vec3<int32_t> &blockCentroid,
+  int &dominantAxis,
+  std::vector<Vertex> &leafVertices,
+  Vec3<int32_t> nodew)
+
+{
+  // compute centroid
+  int triCount = (int)leafVertices.size();
+  blockCentroid = 0;
+  for (int j = 0; j < triCount; j++) {
+    blockCentroid += leafVertices[j].pos;
+  }
+  blockCentroid /= triCount;
+
+  // order vertices along a dominant axis only if more than three (otherwise only one triangle, whatever...)
+  dominantAxis = findDominantAxis(leafVertices, nodew, blockCentroid);
+}
+
+// --------------------------------------------------------------------------
+//  encoding of centroid residual in TriSOup node
+Vec3<int32_t>
+determineCentroidNormalAndBounds(
+  int& lowBound,
+  int& highBound,
+  int& lowBoundSurface,
+  int& highBoundSurface,
+  int & ctxMinMax,
+  int bitDropped,
+  int bitDropped2,
+  int triCount,
+  Vec3<int32_t> blockCentroid,
+  int dominantAxis,
+  std::vector<Vertex>& leafVertices,
+  int nodewDominant)
+{
+  int halfDropped2 = bitDropped2 == 0 ? 0 : 1 << bitDropped2 - 1;
+
+  // contextual information  for drift coding
+  int minPos = leafVertices[0].pos[dominantAxis];
+  int maxPos = leafVertices[0].pos[dominantAxis];
+  for (int k = 1; k < triCount; k++) {
+    if (leafVertices[k].pos[dominantAxis] < minPos)
+      minPos = leafVertices[k].pos[dominantAxis];
+    if (leafVertices[k].pos[dominantAxis] > maxPos)
+      maxPos = leafVertices[k].pos[dominantAxis];
+  }
+
+  // find normal vector
+  Vec3<int64_t> accuNormal = 0;
+  for (int k = 0; k < triCount; k++) {
+    int k2 = k + 1;
+    if (k2 >= triCount)
+      k2 -= triCount;
+    accuNormal += crossProduct(leafVertices[k].pos - blockCentroid, leafVertices[k2].pos - blockCentroid);
+  }
+  int64_t normN = isqrt(accuNormal[0] * accuNormal[0] + accuNormal[1] * accuNormal[1] + accuNormal[2] * accuNormal[2]);
+  Vec3<int32_t> normalV = ((accuNormal << kTrisoupFpBits) / normN);
+
+  // drift bounds
+  ctxMinMax = std::min(8, (maxPos - minPos) >> (kTrisoupFpBits + bitDropped));
+  int bound = (nodewDominant - 1) << kTrisoupFpBits;
+  int m = 1;
+  for (; m < nodewDominant; m++) {
+    Vec3<int32_t> temp = blockCentroid + m * normalV;
+    if (temp[0]<0 || temp[1]<0 || temp[2]<0 || temp[0]>bound || temp[1]>bound || temp[2]> bound)
+      break;
+  }
+  highBound = (m - 1) + halfDropped2 >> bitDropped2;
+
+  m = 1;
+  for (; m < nodewDominant; m++) {
+    Vec3<int32_t> temp = blockCentroid - m * normalV;
+    if (temp[0]<0 || temp[1]<0 || temp[2]<0 || temp[0]>bound || temp[1]>bound || temp[2]> bound)
+      break;
+  }
+  lowBound = (m - 1) + halfDropped2 >> bitDropped2;
+  lowBoundSurface = std::max(0, ((blockCentroid[dominantAxis] - minPos) + kTrisoupFpHalf >> kTrisoupFpBits) + halfDropped2 >> bitDropped2);
+  highBoundSurface = std::max(0, ((maxPos - blockCentroid[dominantAxis]) + kTrisoupFpHalf >> kTrisoupFpBits) + halfDropped2 >> bitDropped2);
+
+  return normalV;
+}
+
+// --------------------------------------------------------------------------
+int
+determineCentroidPredictor(
+  int bitDropped2,
+  Vec3<int32_t> normalV,
+  Vec3<int32_t> blockCentroid,
+  Vec3<int32_t> nodepos,
+  PCCPointSet3& compensatedPointCloud,
+  int start,
+  int end,
+  int lowBound,
+  int  highBound)
+{
+
+  int driftQPred = -100;
+  // determine quantized drift for predictor
+  if (end > start) {
+    int driftPred = 0;
+    driftQPred = 0;
+    int counter = 0;
+    int maxD = bitDropped2;
+
+    for (int p = start; p < end; p++) {
+      auto point = (compensatedPointCloud[p] - nodepos) << kTrisoupFpBits;
+
+      Vec3<int32_t> CP = crossProduct(normalV, point - blockCentroid) >> kTrisoupFpBits;
+      int dist = std::max(std::max(std::abs(CP[0]), std::abs(CP[1])), std::abs(CP[2]));
+      dist >>= kTrisoupFpBits;
+
+      if (dist <= maxD) {
+        int w = 1 + 4 * (maxD - dist);
+        counter += w;
+        driftPred += w * ((normalV * (point - blockCentroid)) >> kTrisoupFpBits);
+      }
+    }
+
+    if (counter) { // drift is shift by kTrisoupFpBits
+      driftPred = (driftPred >> kTrisoupFpBits - 6) / counter; // drift is shift by 6 bits
+    }
+
+    int half = 1 << 5 + bitDropped2;
+    int DZ = 2 * half / 3;
+
+    if (abs(driftPred) >= DZ) {
+      driftQPred = (abs(driftPred) - DZ + 2 * half) >> 6 + bitDropped2 - 1;
+      if (driftPred < 0)
+        driftQPred = -driftQPred;
+    }
+    driftQPred = std::min(std::max(driftQPred, -2 * lowBound), 2 * highBound);  // drift in [-lowBound; highBound] but quantization is twice better
+
+  }
+
+  return driftQPred;
+}
+
+// --------------------------------------------------------------------------
+int
+determineCentroidResidual(
+  int bitDropped2,
+  Vec3<int32_t> normalV,
+  Vec3<int32_t> blockCentroid,
+  Vec3<int32_t> nodepos,
+  PCCPointSet3& pointCloud,
+  int start,
+  int end,
+  int lowBound,
+  int  highBound)
+{
+  // determine quantized drift
+  int counter = 0;
+  int drift = 0;
+  int maxD = bitDropped2;
+
+  // determine quantized drift
+  for (int p = start; p < end; p++) {
+    auto point = (pointCloud[p] - nodepos) << kTrisoupFpBits;
+
+    Vec3<int32_t> CP = crossProduct(normalV, point - blockCentroid) >> kTrisoupFpBits;
+    int dist = std::max(std::max(std::abs(CP[0]), std::abs(CP[1])), std::abs(CP[2]));
+    dist >>= kTrisoupFpBits;
+
+    if (dist <= maxD) {
+      int w = 1 + 4 * (maxD - dist);
+      counter += w;
+      drift += w * ((normalV * (point - blockCentroid)) >> kTrisoupFpBits);
+    }
+  }
+
+  if (counter) { // drift is shift by kTrisoupFpBits
+    drift = (drift >> kTrisoupFpBits - 6) / counter; // drift is shift by 6 bits
+  }
+
+  int half = 1 << 5 + bitDropped2;
+  int DZ = 2 * half / 3;
+
+  int driftQ = 0;
+  if (abs(drift) >= DZ) {
+    driftQ = (abs(drift) - DZ + 2 * half) >> 6 + bitDropped2;
+    if (drift < 0)
+      driftQ = -driftQ;
+  }
+  driftQ = std::min(std::max(driftQ, -lowBound), highBound);  // drift in [-lowBound; highBound]
+
+  return driftQ;
+}
+
 
 // --------------------------------------------------------------------------
 //  encoding of centroid residual in TriSOup node
@@ -468,12 +659,10 @@ encodeCentroidResidual(
   int lowBound,
   int highBound)
 {
-
   if (driftQPred == -100) //intra
     arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][0]);
   else //inter
     arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]);
-
 
   // if not 0, drift in [-lowBound; highBound]
   if (driftQ) {
@@ -672,7 +861,8 @@ decodeTrisoupCommon(
     }
 
     // Skip leaves that have fewer than 3 vertices.
-    if (leafVertices.size() < 3) {
+    int triCount = (int)leafVertices.size();
+    if (triCount < 3) {
       std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
       refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
 
@@ -685,144 +875,26 @@ decodeTrisoupCommon(
       continue;
     }
 
-    // compute centroid 
-    int triCount = (int)leafVertices.size();
-    Vec3<int32_t> blockCentroid = 0;
-    for (int j = 0; j < triCount; j++) {
-      blockCentroid += leafVertices[j].pos;
-    }
-    blockCentroid /= triCount; 
-
-    // order vertices along a dominant axis only if more than three (otherwise only one triangle, whatever...)
-    int dominantAxis = findDominantAxis(leafVertices, nodew, blockCentroid);
+    // compute centroid
+    Vec3<int32_t> blockCentroid;
+    int dominantAxis;
+    determineCentroidAndDominantAxis(blockCentroid, dominantAxis, leafVertices, nodew);
 
     // Refinement of the centroid along the domiannt axis
-    // deactivated if sampling is too big 
     if (triCount > 3 && isCentroidDriftActivated) {
-
       int bitDropped2 = bitDropped;
-      int halfDropped2 = bitDropped2 == 0 ? 0 : 1 << bitDropped2 - 1;
 
-      // contextual information  for drift coding 
-      int minPos = leafVertices[0].pos[dominantAxis];
-      int maxPos = leafVertices[0].pos[dominantAxis];
-      for (int k = 1; k < triCount; k++) {
-        if (leafVertices[k].pos[dominantAxis] < minPos)
-          minPos = leafVertices[k].pos[dominantAxis];
-        if (leafVertices[k].pos[dominantAxis] > maxPos)
-          maxPos = leafVertices[k].pos[dominantAxis];
-      }
+      int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
+      Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis]);
 
-      // find normal vector 
-      Vec3<int64_t> accuNormal = 0;
-      for (int k = 0; k < triCount; k++) {
-        int k2 = k + 1;
-        if (k2 >= triCount)
-          k2 -= triCount;        
-        accuNormal += crossProduct(leafVertices[k].pos - blockCentroid, leafVertices[k2].pos - blockCentroid);
-      }
-      int64_t normN = isqrt(accuNormal[0]* accuNormal[0] + accuNormal[1] * accuNormal[1] + accuNormal[2] * accuNormal[2]);       
-      Vec3<int32_t> normalV = (accuNormal<< kTrisoupFpBits) / normN;
-     
-      //  drift bounds     
-      int ctxMinMax = std::min(8, (maxPos - minPos) >> (kTrisoupFpBits + bitDropped));
-      int bound = (int(nodew[dominantAxis]) - 1) << kTrisoupFpBits;
-      int m = 1;
-      for (; m < nodew[dominantAxis]; m++) {
-        Vec3<int32_t> temp = blockCentroid + m * normalV;
-        if (temp[0]<0 || temp[1]<0 || temp[2]<0 || temp[0]>bound || temp[1]>bound || temp[2]> bound)
-          break;
-      }
-      int highBound = (m - 1) + halfDropped2 >> bitDropped2;
-
-      m = 1;
-      for (; m < nodew[dominantAxis]; m++) {
-        Vec3<int32_t> temp = blockCentroid - m * normalV;
-        if (temp[0]<0 || temp[1]<0 || temp[2]<0 || temp[0]>bound || temp[1]>bound || temp[2]> bound)
-          break;
-      }
-      int lowBound = (m - 1) + halfDropped2 >> bitDropped2;
-      int lowBoundSurface = std::max(0, ((blockCentroid[dominantAxis] - minPos) + kTrisoupFpHalf >> kTrisoupFpBits)   + halfDropped2 >> bitDropped2);
-      int highBoundSurface = std::max(0, ((maxPos - blockCentroid[dominantAxis]) + kTrisoupFpHalf >> kTrisoupFpBits) + halfDropped2 >> bitDropped2);
-
-     
-      int driftQPred = -100;
-      // determine quantized drift for predictor   
-      if (leaves[i].predEnd > leaves[i].predStart) {
-        int driftPred = 0;
-        driftQPred = 0;
-        int counter = 0;
-        int maxD = bitDropped2;
-
-        for (int p = leaves[i].predStart; p < leaves[i].predEnd; p++) {
-          auto point = (compensatedPointCloud[p] - leaves[i].pos) << kTrisoupFpBits;
-
-          Vec3<int32_t> CP = crossProduct(normalV, point - blockCentroid) >> kTrisoupFpBits;
-          int dist = std::max(std::max(std::abs(CP[0]), std::abs(CP[1])), std::abs(CP[2]));
-          dist >>= kTrisoupFpBits;
-
-          if (dist <= maxD) {
-            int w = 1 + 4 * (maxD - dist);
-            counter += w;
-            driftPred += w * ((normalV * (point - blockCentroid)) >> kTrisoupFpBits);
-          }
-        }
-
-        if (counter) { // drift is shift by kTrisoupFpBits                    
-          driftPred = (driftPred >> kTrisoupFpBits - 6) / counter; // drift is shift by 6 bits 
-        }
-
-        int half = 1 << 5 + bitDropped2;
-        int DZ = 2 * half / 3;
-
-        if (abs(driftPred) >= DZ) {
-          driftQPred = (abs(driftPred) - DZ + 2 * half) >> 6 + bitDropped2-1;
-          if (driftPred < 0)
-            driftQPred = -driftQPred;
-        }
-        driftQPred = std::min(std::max(driftQPred, -2*lowBound), 2*highBound);  // drift in [-lowBound; highBound]
-
-      }
+      int driftQPred = determineCentroidPredictor(bitDropped2, normalV, blockCentroid, nodepos, compensatedPointCloud, leaves[i].predStart, leaves[i].predEnd, lowBound, highBound);
 
       int driftQ = 0;
-      if (!isDecoder) { // encoder 
-        // determine qauntized drift 
-        int counter = 0;
-        int drift = 0;
-        int maxD = bitDropped2;
-
-        // determine quantized drift         
-        for (int p = leaves[i].start; p < leaves[i].end; p++) {
-          auto point = (pointCloud[p] - nodepos) << kTrisoupFpBits;
-
-         Vec3<int32_t> CP = crossProduct(normalV, point - blockCentroid) >> kTrisoupFpBits;
-         int dist = std::max(std::max(std::abs(CP[0]) , std::abs(CP[1])) , std::abs(CP[2]));
-         dist >>= kTrisoupFpBits;
-          
-          if (dist <= maxD) {
-            int w = 1 + 4 * (maxD - dist);
-            counter += w;
-            drift += w * ( (normalV * (point - blockCentroid)) >> kTrisoupFpBits );
-          }
-        }
-
-        if (counter) { // drift is shift by kTrisoupFpBits                    
-          drift = (drift >> kTrisoupFpBits - 6) / counter; // drift is shift by 6 bits 
-        }
-
-        int half = 1 << 5 + bitDropped2;
-        int DZ = 2*half/3; 
-
-        if (abs(drift) >= DZ) {
-          driftQ = (abs(drift) - DZ + 2*half) >> 6 + bitDropped2;
-          if (drift < 0)
-            driftQ = -driftQ;
-        }
-        driftQ = std::min(std::max(driftQ, -lowBound), highBound);  // drift in [-lowBound; highBound]
-
+      if (!isDecoder) { // encode centroid residual
+        driftQ = determineCentroidResidual(bitDropped2, normalV, blockCentroid, nodepos, pointCloud, leaves[i].start, leaves[i].end, lowBound, highBound);
         encodeCentroidResidual(driftQ, arithmeticEncoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
-      } // end encoder
-      else { // decode drift
+      }
+      else { // decode centroid residual
         driftQ = decodeCentroidResidual(arithmeticDecoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
       }
 
@@ -855,11 +927,9 @@ decodeTrisoupCommon(
         refinedVerticesBlock.push_back(nodepos + foundvoxel);
     }
 
-
     int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
     haloTriangle = (haloTriangle * 28) >> 5; // / 32;
     haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
-
 
     Vec3<int32_t> v2 = triCount == 3 ? leafVertices[2].pos : blockCentroid;
     Vec3<int32_t> v1 = leafVertices[0].pos;
@@ -900,7 +970,6 @@ decodeTrisoupCommon(
 
     }  // end loop on triangles
 
-
     // remove points present twice or more for node
     std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
     refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
@@ -910,7 +979,6 @@ decodeTrisoupCommon(
     recPointCloud.resize(nPointInCloud + refinedVerticesBlock.size());
     for (int i = 0; i < refinedVerticesBlock.size(); i++)
       recPointCloud[nPointInCloud+i] = refinedVerticesBlock[i];
-
 
   }// end loop on leaves
 
