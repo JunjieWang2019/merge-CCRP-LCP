@@ -807,7 +807,8 @@ decodeTrisoupCommon(
   GeometryOctreeContexts& ctxtMemOctree,
   std::vector<int>& segmentUniqueIndex)
 {
-  recPointCloud.resize(0);
+  recPointCloud.resize(100000);
+  int nRecPoints = 0;
 
   Box3<int32_t> sliceBB;
   sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
@@ -818,15 +819,8 @@ decodeTrisoupCommon(
 
   std::vector<int> vertexList(segind.size());
   int vertexCount = 0;
-  for (int i = 0; i < segind.size(); i++) {
-
-    if (segind[i]) {  // intersects the surface
-      vertexList[i]= vertices[vertexCount++];
-    }
-    else {  // does not intersect the surface
-      vertexList[i] = -1;
-    }
-  }
+  for (int i = 0; i < segind.size(); i++)
+    vertexList[i] = segind[i] ? vertices[vertexCount++] : -1;
 
   const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
   const int endCorner[12] =   { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
@@ -891,10 +885,13 @@ decodeTrisoupCommon(
 
       // Move list of points to pointCloud
       int nPointInCloud = recPointCloud.getPointCount();
-      recPointCloud.resize(nPointInCloud + refinedVerticesBlock.size());
-      for (int i = 0; i < refinedVerticesBlock.size(); i++)
-        recPointCloud[nPointInCloud + i] = refinedVerticesBlock[i];
+      int nPointInNode = refinedVerticesBlock.size();
+      if (nPointInCloud <= nRecPoints + nPointInNode)
+        recPointCloud.resize(nRecPoints + nPointInNode + 100000);
 
+      for (int i = 0; i < nPointInNode; i++)
+        recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
+      nRecPoints += nPointInNode;
       continue;
     }
 
@@ -988,11 +985,17 @@ decodeTrisoupCommon(
 
     // Move list of points to pointCloud
     int nPointInCloud = recPointCloud.getPointCount();
-    recPointCloud.resize(nPointInCloud + refinedVerticesBlock.size());
-    for (int i = 0; i < refinedVerticesBlock.size(); i++)
-      recPointCloud[nPointInCloud+i] = refinedVerticesBlock[i];
+    int nPointInNode = refinedVerticesBlock.size();
+    if (nPointInCloud <= nRecPoints + nPointInNode)
+      recPointCloud.resize(nRecPoints + nPointInNode + 100000);
+
+    for (int i = 0; i < nPointInNode; i++)
+      recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
+    nRecPoints += nPointInNode;
 
   }// end loop on leaves
+
+  recPointCloud.resize(nRecPoints);
 
 }
 
