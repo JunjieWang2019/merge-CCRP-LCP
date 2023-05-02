@@ -414,28 +414,6 @@ truncate(const Vec3<int32_t> in, const int32_t offset)
   return out;
 }
 
-
-
-//---------------------------------------------------------------------------
-
-int32_t
-trisoupVertexArc(int32_t x, int32_t y, int32_t Width_x, int32_t Width_y)
-{
-  int32_t score;
-
-  if (x >= Width_x) {
-    score = y;
-  } else if (y >= Width_y) {
-    score = Width_y + Width_x - x;
-  } else if (x <= 0) {
-    score = Width_y*2 + Width_x - y;
-  } else {
-    score = Width_y*2 + Width_x + x;
-  }
-
-  return score;
-}
-
 //---------------------------------------------------------------------------
 bool
 boundaryinsidecheck(const Vec3<int32_t> a, const int bbsize)
@@ -1123,6 +1101,9 @@ int findDominantAxis(
 
   int dominantAxis = 0;
   int triCount = leafVertices.size();
+
+  auto leafVerticesTemp = leafVertices;
+
   if (triCount > 3) {
     Vertex vertex;
     Vec3<int32_t> Width = blockWidth << kTrisoupFpBits;
@@ -1132,40 +1113,46 @@ int findDominantAxis(
 
     int maxNormTri = 0;
     for (int axis = 0; axis <= 2; axis++) {
+      int axis1 = sIdx1[axis];
+      int axis2 = sIdx2[axis];
       // order along axis
       for (int j = 0; j < triCount; j++) {
-        Vec3<int32_t> s = leafVertices[j].pos + kTrisoupFpHalf; // back to [0,B]^3 for ordering
-        leafVertices[j].theta = trisoupVertexArc(s[sIdx1[axis]], s[sIdx2[axis]],
-                                                 Width[sIdx1[axis]], Width[sIdx2[axis]]);
-        leafVertices[j].tiebreaker = s[axis];
+        // compute score closckwise
+        int x = leafVerticesTemp[j].pos[axis1] + kTrisoupFpHalf; // back to [0,B]^3 for ordering
+        int y = leafVerticesTemp[j].pos[axis2] + kTrisoupFpHalf; // back to [0,B]^3 for ordering
+        int Width_x = Width[axis1];
+        int Width_y = Width[axis2];
+
+        int flag3 = x <= 0;
+        int score3 = Width_y - flag3 * y + (!flag3) * x;
+        int flag2 = y >= Width_y;
+        int score2 = Width_y + Width_x - flag2 * x + (!flag2) * score3;
+        int flag1 = x >= Width_x;
+        int score = flag1 * y + (!flag1) * score2;
+        leafVerticesTemp[j].theta = score;
+
+        // stable sort if same score
+        leafVerticesTemp[j].tiebreaker = leafVerticesTemp[j].pos[axis] + kTrisoupFpHalf;
       }
-      std::sort(leafVertices.begin(), leafVertices.end(), vertex);
+      std::sort(leafVerticesTemp.begin(), leafVerticesTemp.end(), vertex);
 
       // compute sum normal
       int32_t accuN = 0;
       for (int k = 0; k < triCount; k++) {
-        int k2 = k + 1;
-        if (k2 >= triCount)
-          k2 -= triCount;
-        Vec3<int32_t> h = crossProduct(leafVertices[k].pos - blockCentroid, leafVertices[k2].pos - blockCentroid);
-        accuN += std::abs(h[axis]);
+        int k2 = k == triCount-1 ? 0 : k + 1;
+        int32_t h = (leafVerticesTemp[k].pos[axis1] - blockCentroid[axis1])* (leafVerticesTemp[k2].pos[axis2] - blockCentroid[axis2]);
+        h -= (leafVerticesTemp[k].pos[axis2] - blockCentroid[axis2]) * (leafVerticesTemp[k2].pos[axis1] - blockCentroid[axis1]);
+        accuN += std::abs(h);
       }
 
       // if sumnormal is bigger , this is dominantAxis
       if (accuN > maxNormTri) {
         maxNormTri = accuN;
         dominantAxis = axis;
+        leafVertices = leafVerticesTemp;
       }
     }
-
-    for (int j = 0; j < leafVertices.size(); j++) {
-      Vec3<int32_t> s = leafVertices[j].pos + kTrisoupFpHalf; // back to [0,B]^3 for ordering
-      leafVertices[j].theta = trisoupVertexArc(s[sIdx1[dominantAxis]], s[sIdx2[dominantAxis]],
-                                               Width[sIdx1[dominantAxis]], Width[sIdx2[dominantAxis]]);
-      leafVertices[j].tiebreaker = s[dominantAxis];
-    }
-    std::sort(leafVertices.begin(), leafVertices.end(), vertex);
-  } // end find dominant axis 
+  } // end find dominant axis
 
   return dominantAxis;
 }
