@@ -109,7 +109,6 @@ decodeGeometryTrisoup(
   recPointCloud.addRemoveAttributes(pointCloud);
 
   // Compute refinedVertices.
-  std::vector<CentroidDrift> drifts;
   int32_t maxval = (1 << gbh.maxRootNodeDimLog2) - 1;
   bool haloFlag = gbh.trisoup_halo_flag;
   bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
@@ -117,11 +116,10 @@ decodeGeometryTrisoup(
   int thickness = gbh.trisoup_thickness;
 
   decodeTrisoupCommon(
-    nodes, segind, vertices, drifts, pointCloud, recPointCloud,
+    nodes, segind, vertices, pointCloud, recPointCloud,
     compensatedPointCloud, gps, gbh, blockWidth, maxval,
-    gbh.trisoup_sampling_value_minus1 + 1, bitDropped,
-    isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag, thickness,
-    &arithmeticDecoder,  ctxtMemOctree, segmentUniqueIndex);
+    bitDropped, isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag, thickness,
+    &arithmeticDecoder,  NULL, ctxtMemOctree, segmentUniqueIndex);
 
   pointCloud.resize(0);
   pointCloud = std::move(recPointCloud);
@@ -424,36 +422,6 @@ boundaryinsidecheck(const Vec3<int32_t> a, const int bbsize)
 
 //---------------------------------------------------------------------------
 
-bool
-rayIntersectsTriangle(
-  const Vec3<int32_t>& rayOrigin,  
-  const Vec3<int32_t>& TriangleVertex0,
-  const Vec3<int32_t>& edge1,
-  const Vec3<int32_t>& edge2,
-  const Vec3<int32_t>& h,
-  int32_t a,
-  Vec3<int32_t>& outIntersectionPoint,
-  int direction,
-  int haloTriangle)
-{  
-  Vec3<int32_t> s = rayOrigin - TriangleVertex0;
-  int32_t u = (s * h) / a;  
-
-  Vec3<int32_t> q = crossProduct(s, edge1) ;
-  //int32_t v = (rayVector * q) / a;
-  int32_t v =  q[direction]  / a;
-
-  int w = kTrisoupFpOne - u - v;
-
-  int32_t t = (edge2 * (q >> kTrisoupFpBits)) / a;  
-  // outIntersectionPoint = rayOrigin + ((rayVector * t) >> kTrisoupFpBits);  
-  outIntersectionPoint[direction] +=  t;
-
-  return u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle;
-}
-
-//---------------------------------------------------------------------------
-
 void nonCubicNode
 (
  const GeometryParameterSet& gps,
@@ -484,6 +452,116 @@ void nonCubicNode
   return;
 }
 
+
+
+// --------------------------------------------------------------------------
+//  encoding of centroid residual in TriSOup node
+void
+encodeCentroidResidual(
+  int driftQ,
+  pcc::EntropyEncoder* arithmeticEncoder,
+  GeometryOctreeContexts & ctxtMemOctree,
+  int driftQPred,
+  int ctxMinMax,
+  int lowBoundSurface,
+  int highBoundSurface,
+  int lowBound,
+  int highBound)
+{
+
+  if (driftQPred == -100) //intra
+    arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][0]);
+  else //inter
+    arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]);
+
+
+  // if not 0, drift in [-lowBound; highBound]
+  if (driftQ) {
+    // code sign
+    int lowS = std::min(7, lowBoundSurface);
+    int highS = std::min(7, highBoundSurface);
+    if (highBound && lowBound) {  // otherwise sign is known
+      arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
+    }
+
+    // code remaining bits 1 to 7 at most
+    int magBound = (driftQ > 0 ? highBound : lowBound) - 1;
+    bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && driftQ > 0) || (driftQPred < 0 && driftQ < 0);
+
+    int magDrift = std::abs(driftQ) - 1;
+    int ctx = 0;
+    while (magBound > 0 && magDrift >= 0) {
+      if (ctx < 4)
+        arithmeticEncoder->encode(magDrift == 0, ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
+      else
+        arithmeticEncoder->encode(magDrift == 0);
+
+      magDrift--;
+      magBound--;
+      ctx++;
+    }
+  }  // end if not 0
+}
+
+//---------------------------------------------------------------------------
+//  decoding of centroid residual in TriSOup node
+int
+decodeCentroidResidual(
+  pcc::EntropyDecoder* arithmeticDecoder,
+  GeometryOctreeContexts& ctxtMemOctree,
+  int driftQPred,
+  int ctxMinMax,
+  int lowBoundSurface,
+  int highBoundSurface,
+  int lowBound,
+  int highBound)
+{
+  // decode drift
+  int driftQ = 0;
+  if (driftQPred == -100) //intra
+    driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][0]) ? 0 : 1;
+  else //inter
+    driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]) ? 0 : 1;
+
+  // if not 0, drift in [-lowBound; highBound]
+  if (driftQ) {
+    // code sign
+    int lowS = std::min(7, lowBoundSurface);
+    int highS = std::min(7, highBoundSurface);
+
+    int sign = 1;
+    if (highBound && lowBound) // otherwise sign is knwow
+      sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
+    else if (!highBound) // highbound is 0 , so sign is negative; otherwise sign is already set to positive
+      sign = 0;
+
+    // code remaining bits 1 to 7 at most
+    int magBound = (sign ? highBound : lowBound) - 1;
+    bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && sign) || (driftQPred < 0 && !sign);
+
+
+    int ctx = 0;
+    while (magBound > 0) {
+      int bit;
+      if (ctx < 4)
+        bit = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
+      else
+        bit = arithmeticDecoder->decode();
+
+      if (bit) // magDrift==0 and magnitude coding is finished
+        break;
+
+      driftQ++;
+      magBound--;
+      ctx++;
+    }
+
+    if (!sign)
+      driftQ = -driftQ;
+  }
+  return driftQ;
+}
+
 //---------------------------------------------------------------------------
 // Trisoup geometry decoding, at both encoder and decoder.
 // Compute from leaves, segment indicators, and vertices
@@ -498,7 +576,6 @@ decodeTrisoupCommon(
   const std::vector<PCCOctree3Node>& leaves,
   const std::vector<bool>& segind,
   const std::vector<uint8_t>& vertices,
-  std::vector<CentroidDrift>& drifts,
   PCCPointSet3& pointCloud,
   PCCPointSet3& recPointCloud,
   PCCPointSet3& compensatedPointCloud,
@@ -506,7 +583,6 @@ decodeTrisoupCommon(
   const GeometryBrickHeader& gbh,
   int defaultBlockWidth,
   int poistionClipValue,
-  uint32_t samplingValue,
   const int bitDropped,
   const bool isCentroidDriftActivated,
   bool isDecoder,
@@ -515,11 +591,11 @@ decodeTrisoupCommon(
   bool fineRayflag,
   int thickness,
   pcc::EntropyDecoder* arithmeticDecoder,
+  pcc::EntropyEncoder* arithmeticEncoder,
   GeometryOctreeContexts& ctxtMemOctree,
   std::vector<int>& segmentUniqueIndex)
 {
-  // clear drifst vecause of encoder multi pass 
-  drifts.clear();
+  recPointCloud.resize(0);
 
   Box3<int32_t> sliceBB;
   sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
@@ -540,9 +616,6 @@ decodeTrisoupCommon(
     }
   }
 
-  // Create list of refined vertices, one leaf at a time.
-  std::vector<Vec3<int32_t>> refinedVertices;
-  refinedVertices.reserve(blockWidth * blockWidth * 4 * leaves.size());
   const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
   const int endCorner[12] =   { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
 
@@ -591,7 +664,7 @@ decodeTrisoupCommon(
       leafVertices.push_back({ point, 0, 0 });
 
       // vertex to list of points
-      if (bitDropped || samplingValue > 1) {
+      if (bitDropped) {
         Vec3<int32_t> foundvoxel = (point + truncateValue) >> kTrisoupFpBits;
         if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
            refinedVerticesBlock.push_back(nodepos + foundvoxel);
@@ -602,7 +675,13 @@ decodeTrisoupCommon(
     if (leafVertices.size() < 3) {
       std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
       refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
-      refinedVertices.insert(refinedVertices.end(), refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+
+      // Move list of points to pointCloud
+      int nPointInCloud = recPointCloud.getPointCount();
+      recPointCloud.resize(nPointInCloud + refinedVerticesBlock.size());
+      for (int i = 0; i < refinedVerticesBlock.size(); i++)
+        recPointCloud[nPointInCloud + i] = refinedVerticesBlock[i];
+
       continue;
     }
 
@@ -619,7 +698,7 @@ decodeTrisoupCommon(
 
     // Refinement of the centroid along the domiannt axis
     // deactivated if sampling is too big 
-    if (triCount > 3 && isCentroidDriftActivated && samplingValue <= 4) {
+    if (triCount > 3 && isCentroidDriftActivated) {
 
       int bitDropped2 = bitDropped;
       int halfDropped2 = bitDropped2 == 0 ? 0 : 1 << bitDropped2 - 1;
@@ -673,7 +752,7 @@ decodeTrisoupCommon(
         int driftPred = 0;
         driftQPred = 0;
         int counter = 0;
-        int maxD = std::max(int(samplingValue), bitDropped2);
+        int maxD = bitDropped2;
 
         for (int p = leaves[i].predStart; p < leaves[i].predEnd; p++) {
           auto point = (compensatedPointCloud[p] - leaves[i].pos) << kTrisoupFpBits;
@@ -710,7 +789,7 @@ decodeTrisoupCommon(
         // determine qauntized drift 
         int counter = 0;
         int drift = 0;
-        int maxD = std::max(int(samplingValue), bitDropped2);
+        int maxD = bitDropped2;
 
         // determine quantized drift         
         for (int p = leaves[i].start; p < leaves[i].end; p++) {
@@ -739,58 +818,12 @@ decodeTrisoupCommon(
           if (drift < 0)
             driftQ = -driftQ;
         }
-        driftQ = std::min(std::max(driftQ, -lowBound), highBound);  // drift in [-lowBound; highBound]       
+        driftQ = std::min(std::max(driftQ, -lowBound), highBound);  // drift in [-lowBound; highBound]
 
-
-        // push quantized drift  to buffeer for encoding 
-        drifts.push_back({ driftQ, driftQPred, lowBound, highBound, ctxMinMax, lowBoundSurface, highBoundSurface });       
-
-      } // end encoder 
-
-      else { // decode drift        
-        
-        if (driftQPred==-100) //intra 
-          driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][0]) ? 0 : 1;
-        else //inter      
-          driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][1+std::min(3,std::abs(driftQPred))]) ? 0 : 1;
-        
-        // if not 0, drift in [-lowBound; highBound]
-        if (driftQ) {
-          // code sign
-          int lowS = std::min(7,lowBoundSurface);
-          int highS = std::min(7,highBoundSurface);
-
-          int sign = 1;
-          if (highBound && lowBound) // otherwise sign is knwow 
-            sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
-          else if (!highBound) // highbound is 0 , so sign is negative; otherwise sign is already set to positive 
-            sign = 0;
-
-          // code remaining bits 1 to 7 at most 
-          int magBound = (sign ? highBound : lowBound) - 1;
-          bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && sign) || (driftQPred < 0 && !sign);
-          
-
-          int ctx = 0;
-          while (magBound > 0) {
-            int bit;
-            if (ctx < 4)
-              bit = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
-            else
-              bit = arithmeticDecoder->decode();
-
-            if (bit) // magDrift==0 and magnitude coding is finished 
-              break;
-
-            driftQ++;
-            magBound--;
-            ctx++;
-          }
-
-          if (!sign)
-            driftQ = -driftQ;
-
-        } // end decoder 
+        encodeCentroidResidual(driftQ, arithmeticEncoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
+      } // end encoder
+      else { // decode drift
+        driftQ = decodeCentroidResidual(arithmeticDecoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
       }
 
       // dequantize and apply drift 
@@ -861,18 +894,9 @@ decodeTrisoupCommon(
       }
 
       // applying ray tracing along direction
-      if (samplingValue == 1 && !fineRayflag) {
-        rayTracingAlongdirection_samp1_optim(
-          refinedVerticesBlock, directionOk, blockWidth, nodepos, minRange,
-          maxRange, edge1, edge2, v0, haloTriangle, thickness);
-      }
-      else {
-        Vec3<int32_t> posNode = nodepos << kTrisoupFpBits;
-        rayTracingAlongdirection(
-          refinedVerticesBlock, directionOk, samplingValue, posNode, minRange,
-          maxRange, edge1, edge2, v0, poistionClipValue, haloFlag,
-          adaptiveHaloFlag, fineRayflag);
-      }
+      rayTracingAlongdirection_samp1_optim(
+        refinedVerticesBlock, directionOk, blockWidth, nodepos, minRange,
+        maxRange, edge1, edge2, v0, haloTriangle, thickness);      
 
     }  // end loop on triangles
 
@@ -880,14 +904,15 @@ decodeTrisoupCommon(
     // remove points present twice or more for node
     std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
     refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
-    refinedVertices.insert(refinedVertices.end(), refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+
+    // Move list of points to pointCloud
+    int nPointInCloud = recPointCloud.getPointCount();
+    recPointCloud.resize(nPointInCloud + refinedVerticesBlock.size());
+    for (int i = 0; i < refinedVerticesBlock.size(); i++)
+      recPointCloud[nPointInCloud+i] = refinedVerticesBlock[i];
+
 
   }// end loop on leaves
-
-  // Move list of points to pointCloud.
-  recPointCloud.resize(refinedVertices.size());
-  for (int i = 0; i < refinedVertices.size(); i++)
-    recPointCloud[i] = refinedVertices[i];
 
 }
 
@@ -1266,97 +1291,6 @@ void rayTracingAlongdirection_samp1_optim(
   }//loop g1
 
 }
-
-
-
-// -------------------------------------------
-void rayTracingAlongdirection(
-  std::vector<Vec3<int32_t>>& refinedVerticesBlock,
-  int direction,
-  uint32_t samplingValue,
-  Vec3<int32_t> posNode,
-  int minRange[3],
-  int maxRange[3],
-  Vec3<int32_t> edge1,
-  Vec3<int32_t> edge2,
-  Vec3<int32_t> v0,
-  int poistionClipValue,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
-  bool fineRayflag) {
-
-  // check if ray tracing is valid; if not skip the direction
-  Vec3<int32_t> rayVector = 0;
-  rayVector[direction] = 1 << kTrisoupFpBits;
-  Vec3<int32_t> h = crossProduct(rayVector, edge2) >> kTrisoupFpBits;
-  int32_t a = (edge1 * h) >> kTrisoupFpBits;
-  if (std::abs(a) <= kTrisoupFpOne)
-    return;
-
-  //bounds
-  const int g1pos[3] = { 1, 0, 0 };
-  const int g2pos[3] = { 2, 2, 1 };
-  const int32_t startposG1 = minRange[g1pos[direction]];
-  const int32_t startposG2 = minRange[g2pos[direction]];
-  const int32_t endposG1 = maxRange[g1pos[direction]];
-  const int32_t endposG2 = maxRange[g2pos[direction]];
-  const int32_t rayStart = minRange[direction] << kTrisoupFpBits;
-  Vec3<int32_t>  rayOrigin = rayStart;
-
-
-  // ray tracing
-  const int haloTriangle =
-    haloFlag ? (adaptiveHaloFlag ? 32 * samplingValue : 32) : 0;
-  for (int32_t g1 = startposG1; g1 <= endposG1; g1 += samplingValue) {
-    rayOrigin[g1pos[direction]] = g1 << kTrisoupFpBits;
-
-
-    for (int32_t g2 = startposG2; g2 <= endposG2; g2 += samplingValue) {
-      rayOrigin[g2pos[direction]] = g2 << kTrisoupFpBits;
-
-      // middle ray at integer position 
-      Vec3<int32_t>  intersection = rayOrigin;
-      bool foundIntersection = rayIntersectsTriangle(rayOrigin, v0, edge1, edge2, h, a, intersection, direction, haloTriangle);
-      if (foundIntersection) {
-        Vec3<int32_t> foundvoxel = (posNode + intersection + truncateValue) >> kTrisoupFpBits;
-        if (boundaryinsidecheck(foundvoxel, poistionClipValue)) {
-          refinedVerticesBlock.push_back(foundvoxel);
-          continue; // ray interected , no need to launch other rays  
-        }
-      }
-
-      // if ray not interected then  augment +- offset
-      if (samplingValue == 1 && fineRayflag) {
-        const int Offset1[8] = { 0,  0, -1, +1, -1, -1, +1, +1 };
-        const int Offset2[8] = { -1, +1,  0,  0, -1, +1, -1, +1 };
-        const int offset = kTrisoupFpHalf >> 2;
-
-        for (int pos = 0; pos < 8; pos++) {
-
-          Vec3<int32_t> rayOrigin2 = rayOrigin;
-          rayOrigin2[g1pos[direction]] += Offset1[pos] * offset;
-          rayOrigin2[g2pos[direction]] += Offset2[pos] * offset;
-
-          Vec3<int32_t> intersection = rayOrigin2;
-          if (rayIntersectsTriangle(rayOrigin2, v0, edge1, edge2, h, a, intersection, direction, haloTriangle)) {
-            Vec3<int32_t> foundvoxel = (posNode + intersection + truncateValue) >> kTrisoupFpBits;
-            if (boundaryinsidecheck(foundvoxel, poistionClipValue)) {
-              refinedVerticesBlock.push_back(foundvoxel);
-              break; // ray interected , no need to launch other rays  
-            }
-          }
-
-        } //pos
-
-      } // augment
-
-
-    }// loop g2 
-  }//loop g1
-
-}
-
-
 
 //============================================================================
 

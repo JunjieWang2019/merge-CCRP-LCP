@@ -773,9 +773,9 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     " <2: disabled")
 
   ("trisoup_sampling_value",
-    params.encoder.gps.trisoup_sampling_value, 0,
+    params.encoder.gps.trisoup_sampling_value, 1,
     "Trisoup voxelisation sampling rate\n"
-    "  0: automatic")
+    "  1: no sub-sampling")
 
   ("trisoupQuantizationBits",
     params.encoder.gbh.trisoup_vertex_quantization_bits, 0,
@@ -1144,6 +1144,9 @@ sanitizeEncoderOpts(
   if (params.encoder.gps.interPredictionEnabledFlag
       && params.encoder.gps.qtbt_enabled_flag)
     err.error() << "GeS-TM does not support QTBT with inter\n";
+
+  if (params.encoder.gps.trisoup_sampling_value != 1)
+    err.error() << "GeS-TM only supports trisoup_sampling_value=1\n";
 
   // Trisoup is enabled when a node size is specified
   // sanity: don't enable if only node size is 0.

@@ -130,47 +130,24 @@ encodeGeometryTrisoup(
   bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;
   int thickness = gbh.trisoup_thickness;
 
+  int subsample = 1;
+  int32_t maxval = (1 << gbh.maxRootNodeDimLog2) - 1;
+  std::cout << "GeSTM  Sample is imposed to 1 \n";
+
   PCCPointSet3 recPointCloud;
   recPointCloud.addRemoveAttributes(pointCloud);
 
-  std::vector<CentroidDrift> drifts;
-  int subsample = 1;
-  int32_t maxval = (1 << gbh.maxRootNodeDimLog2) - 1;
-  std::cout << "Loop on sampling for max "
-            << (gbh.footer.geom_num_points_minus1 + 1) << " points \n";
-  if (gps.trisoup_sampling_value > 0) {
-    subsample = gps.trisoup_sampling_value;
-    decodeTrisoupCommon(
-      nodes, segind, vertices, drifts, pointCloud, recPointCloud,
-      compensatedPointCloud, gps, gbh, blockWidth,
-      maxval, subsample, bitDropped, isCentroidDriftActivated, false,
-      haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL, ctxtMemOctree, segmentUniqueIndex);
-    std::cout << "Sub-sampling " << subsample << " gives "
-              << recPointCloud.getPointCount() << " points \n";
-  } else {
-    int maxSubsample = 1 << gbh.trisoupNodeSizeLog2(gps);
-    for (subsample = 1; subsample <= maxSubsample; subsample++) {
-      decodeTrisoupCommon(
-        nodes, segind, vertices, drifts, pointCloud, recPointCloud,
-        compensatedPointCloud, gps, gbh, blockWidth,
-        maxval, subsample, bitDropped, isCentroidDriftActivated, false,
-        haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL, ctxtMemOctree, segmentUniqueIndex);
+  decodeTrisoupCommon(
+    nodes, segind, vertices, pointCloud, recPointCloud,
+    compensatedPointCloud, gps, gbh, blockWidth,
+    maxval, bitDropped, isCentroidDriftActivated, false,
+    haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL,  arithmeticEncoder, ctxtMemOctree, segmentUniqueIndex);
 
-      std::cout << "Sub-sampling " << subsample << " gives "
-                << recPointCloud.getPointCount() << " points \n";
-      if (recPointCloud.getPointCount() <= gbh.footer.geom_num_points_minus1 + 1)
-        break;
-    }
-  }
+  std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
+  gbh.trisoup_sampling_value_minus1 = subsample - 1;
 
   pointCloud.resize(0);
   pointCloud = std::move(recPointCloud);
-
-  gbh.trisoup_sampling_value_minus1 = subsample - 1;
-
-  // encoder centroid residua into bitstream
-  if (isCentroidDriftActivated)
-    encodeTrisoupCentroidResidue(drifts, arithmeticEncoder, ctxtMemOctree);
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
@@ -524,57 +501,6 @@ encodeTrisoupVertices(
       iVPred++;
   }
 
-}
-
-//-------------------------------------------------------------------------------------
-void
-encodeTrisoupCentroidResidue(
-  std::vector<CentroidDrift>& drifts, pcc::EntropyEncoder* arithmeticEncoder, GeometryOctreeContexts& ctxtMemOctree)
-{
-  //AdaptiveBitModel ctxDrift0[9];
-  //AdaptiveBitModel ctxDriftSign[3][8][8];
-  //AdaptiveBitModel ctxDriftMag[4];
-  for (int i = 0; i < drifts.size(); i++) {
-    int driftQ = drifts[i].driftQ;
-    int driftQPred = drifts[i].driftQPred;   
-   
-    if (driftQPred==-100) //intra 
-      arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[drifts[i].ctxMinMax][0]);
-    else //inter      
-      arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[drifts[i].ctxMinMax][1+std::min(3,std::abs(driftQPred))]);    
-    
-    
-    // if not 0
-    // drift in [-lowBound; highBound]
-    if (driftQ) {
-      int lowBound = drifts[i].lowBound;
-      int highBound = drifts[i].highBound;
-      // code sign
-      int lowS = std::min(7, drifts[i].lowBoundSurface);
-      int highS = std::min(7, drifts[i].highBoundSurface);
-      if (highBound && lowBound) {  // otherwise sign is known
-        arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
-      }
-
-      // code remaining bits 1 to 7 at most
-      int magBound = (driftQ > 0 ? highBound : lowBound) - 1;
-      bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && driftQ > 0) || (driftQPred < 0 && driftQ < 0);      
-
-      int magDrift = std::abs(driftQ) - 1;
-      int ctx = 0;
-      while (magBound > 0 && magDrift >= 0) {
-        if (ctx < 4)
-          arithmeticEncoder->encode(magDrift == 0, ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
-        else
-          arithmeticEncoder->encode(magDrift == 0);
-
-        magDrift--;
-        magBound--;
-        ctx++;
-      }
-    }  // end if not 0
-
-  }  // end loop on drifts
 }
 
 //============================================================================

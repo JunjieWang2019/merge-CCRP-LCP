@@ -134,17 +134,32 @@ void decodeTrisoupVertices(
   pcc::EntropyDecoder& arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree);
 
-
-void encodeTrisoupCentroidResidue(
-  std::vector<CentroidDrift>& drifts,
+void encodeCentroidResidual(
+  int driftQ,
   pcc::EntropyEncoder* arithmeticEncoder,
-  GeometryOctreeContexts& ctxtMemOctree);
+  GeometryOctreeContexts& ctxtMemOctree,
+  int driftQPred,
+  int ctxMinMax,
+  int lowBoundSurface,
+  int highBoundSurface,
+  int lowBound,
+  int highBound);
+
+int decodeCentroidResidual(
+  pcc::EntropyDecoder* arithmeticDecoder,
+  GeometryOctreeContexts& ctxtMemOctree,
+  int driftQPred,
+  int ctxMinMax,
+  int lowBoundSurface,
+  int highBoundSurface,
+  int lowBound,
+  int highBound);
+
 
 void decodeTrisoupCommon(
   const std::vector<PCCOctree3Node>& leaves,
   const std::vector<bool>& segind,
   const std::vector<uint8_t>& vertices,
-  std::vector<CentroidDrift>& drifts,
   PCCPointSet3& pointCloud,
   PCCPointSet3& recPointCloud,
   PCCPointSet3& compensatedPointCloud,
@@ -152,7 +167,6 @@ void decodeTrisoupCommon(
   const GeometryBrickHeader& gbh,
   int defaultBlockWidth,
   int poistionClipValue,
-  uint32_t samplingValue,
   const int bitDropped,
   const bool isCentroidDriftActivated,
   bool isDecoder,
@@ -161,6 +175,7 @@ void decodeTrisoupCommon(
   bool fineRayflag,
   int thickness,
   pcc::EntropyDecoder* arithmeticDecoder,
+  pcc::EntropyEncoder* arithmeticEncoder,
   GeometryOctreeContexts& ctxtMemOctree,
   std::vector<int>& segmentUniqueIndex);
 
@@ -182,21 +197,6 @@ void rayTracingAlongdirection_samp1_optim(
   Vec3<int32_t> v0,
   int haloTriangle,
   int thickness);
-
-void rayTracingAlongdirection(
-  std::vector<Vec3<int32_t>>& refinedVerticesBlock,
-  int direction,
-  uint32_t samplingValue,
-  Vec3<int32_t> posNode,
-  int minRange[3],
-  int maxRange[3],
-  Vec3<int32_t> edge1,
-  Vec3<int32_t> edge2,
-  Vec3<int32_t> v0,
-  int poistionClipValue,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
-  bool fineRayflag);
 
 //============================================================================
 

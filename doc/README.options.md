@@ -483,9 +483,7 @@ generated per triangle.
 
  | Value | Description                    |
  |:-----:| -------------------------------|
- | 0     | automatic (default)            |
  | 1     | no sub-sampling                |
- | N >=1 | point sampling period          |
 
 The automatic mode will find the smallest sampling value that such that
 the number of generated points does not exceed the slice limit set by
