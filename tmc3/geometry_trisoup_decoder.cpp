@@ -957,10 +957,7 @@ decodeTrisoupCommon(
     Vec3<int32_t> v2 = triCount == 3 ? leafVertices[2].pos : blockCentroid;
     Vec3<int32_t> v1 = leafVertices[0].pos;
     for (int triIndex = 0; triIndex < (triCount == 3 ? 1 : triCount); triIndex++) {
-      int j1 = triIndex + 1;
-      if (j1 >= triCount)
-        j1 -= triCount;
-
+      int j1 = triIndex == triCount - 1 ? 0 : triIndex + 1;
       Vec3<int32_t> v0 = v1;
       v1 = leafVertices[j1].pos;
 
@@ -975,16 +972,8 @@ decodeTrisoupCommon(
       // choose ray direction
       Vec3<int32_t> edge1 = v1 - v0;
       Vec3<int32_t> edge2 = v2 - v0;
-      Vec3<int32_t> h = crossProduct(edge1, edge2) >> kTrisoupFpBits;
-      int minDir = std::abs(h[0]);
-      int directionOk = 0;
-      if (std::abs(h[1]) >= minDir) {
-        minDir = std::abs(h[1]);
-        directionOk = 1;
-      }
-      if (std::abs(h[2]) >= minDir) {
-        directionOk = 2;
-      }
+      Vec3<int32_t> h = crossProduct(edge1, edge2).abs() >> kTrisoupFpBits;
+      int directionOk = (h[0]>h[1] && h[0]>h[2]) ? 0 : h[1] > h[2] ? 1 : 2;
 
       // applying ray tracing along direction
       rayTracingAlongdirection_samp1_optim(
