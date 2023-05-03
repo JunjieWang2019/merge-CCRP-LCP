@@ -85,8 +85,9 @@ decodeGeometryTrisoup(
   std::vector<uint16_t> neighbNodes;
   std::vector<std::array<int, 18>> edgePattern;
   std::vector<int> segmentUniqueIndex;
+  std::vector<int8_t> TriSoupVertices;
   int Nunique;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique);
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/);
 
   // determine vertices from compensated point cloud
   std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
@@ -161,10 +162,18 @@ struct RasterScanTrisoupEdges {
   Vec3<int32_t> currWedgePos;
 
   const std::vector<PCCOctree3Node>& leaves;
+  const PCCPointSet3& pointCloud;
+  const bool isEncoder;
+  const int bitDropped;
+  const int distanceSearchEncoder;
 
-  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth)
+  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, const PCCPointSet3& pointCloud, bool isEncoder, int bitDropped, int distanceSearchEncoder)
   : leaves(leaves)
   , blockWidth(blockWidth)
+  , pointCloud(pointCloud)
+  , isEncoder(isEncoder)
+  , bitDropped(bitDropped)
+  , distanceSearchEncoder(distanceSearchEncoder)
   , currWedgePos(leaves.empty() ? Vec3<int32_t>{0,0,0} : leaves[0].pos)
   , edgesNeighNodes {0,0,0,0,0,0,0,0}
   {}
@@ -173,7 +182,8 @@ struct RasterScanTrisoupEdges {
       std::vector<uint16_t>& neighbNodes,
       std::vector<std::array<int, 18>>& edgePattern,
       std::vector<int>& segmentUniqueIndex,
-      int& numUniqueIndexes)
+      int& numUniqueIndexes,
+      std::vector<int8_t>& TriSoupVertices)
   {
     neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
     segmentUniqueIndex.clear();
@@ -197,6 +207,9 @@ struct RasterScanTrisoupEdges {
         {6, 2, 5, 1}, // along y
         {6, 4, 5, 3}, // along x
       };
+
+      // axis direction
+      static const int axisdirection[3][3] = { {2,0,1}, {1, 0,2}, {0, 1, 2 } }; // z, y ,x
 
       // edge index in existing order
       static const int edgeIdx[3][4] = {
@@ -273,12 +286,23 @@ struct RasterScanTrisoupEdges {
         uint16_t neighboursMask = 0;
         std::array<int, 18> pattern {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 
+        // for TriSoup Vertex by the encoder
+        int countNearPoints = 0;
+        int distanceSum = 0;
+        int countNearPoints2 = 0;
+        int distanceSum2 = 0;
+        int dir0 = axisdirection[dir][0];
+        int dir1 = axisdirection[dir][1];
+        int dir2 = axisdirection[dir][2];
+
         for (int neighIdx=0; neighIdx<4; ++neighIdx) { // this the loop on the 4 nodes to interesect the edge
           int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx]; // gives the neighbour inde in the list of 8 neighbours
 
           if (isNeigbourSane[edgeNeighNodeIdx]) { // test for sanity of the neighbour, process only if sane
             processedEdge = true; // at least one neighbour is sane, so the edge become a TriSoup edge and will be added to the list
-            int idx = edgesNeighNodes[edgeNeighNodeIdx] * 12 + edgeIdx[dir][neighIdx];
+            int neighbNodeIndex = edgesNeighNodes[edgeNeighNodeIdx];
+
+            int idx = neighbNodeIndex * 12 + edgeIdx[dir][neighIdx];
             segmentUniqueIndex[idx] = uniqueIndex;
 
             // update mask from nodes touching edge
@@ -289,10 +313,29 @@ struct RasterScanTrisoupEdges {
               if (localEdgeindex[indexLow][v] == -1)
                 break;
 
-              int indexV = edgesNeighNodes[edgeNeighNodeIdx] * 12 + localEdgeindex[indexLow][v]; // index of segment
+              int indexV = neighbNodeIndex * 12 + localEdgeindex[indexLow][v]; // index of segment
               int Vidx = segmentUniqueIndex[indexV];
               assert(Vidx != -1); // check if already coded
               pattern[patternIndex[indexLow][v]] = Vidx;
+            }
+
+            // determine TriSoup Vertex by the encoder
+            if (isEncoder) {
+              int idxStart = leaves[neighbNodeIndex].start;
+              int idxEnd = leaves[neighbNodeIndex].end;
+              int offset1 = leaves[neighbNodeIndex].pos[dir1] < currWedgePos[dir1];
+              int offset2 = leaves[neighbNodeIndex].pos[dir2] < currWedgePos[dir2];
+              for (int j = idxStart; j < idxEnd; j++) {
+                Vec3<int> voxel = pointCloud[j];
+                if (std::abs(voxel[dir1] + offset1 - currWedgePos[dir1]) < 1 && std::abs(voxel[dir2] + offset2 - currWedgePos[dir2]) < 1) {
+                  countNearPoints++;
+                  distanceSum += voxel[dir0] - currWedgePos[dir0];
+                }
+                if (std::abs(voxel[dir1] + offset1 - currWedgePos[dir1]) < distanceSearchEncoder && std::abs(voxel[dir2] + offset2 - currWedgePos[dir2]) < distanceSearchEncoder) {
+                  countNearPoints2++;
+                  distanceSum2 += voxel[dir0] - currWedgePos[dir0];
+                }
+              }
             }
           }
         }
@@ -322,6 +365,17 @@ struct RasterScanTrisoupEdges {
           ++uniqueIndex;
           neighbNodes.push_back(neighboursMask);
           edgePattern.push_back(pattern);
+
+          // determine TriSoup Vertex by the encoder
+          if (isEncoder)
+          {
+            int8_t vertexPos = -1;
+            if (countNearPoints > 0 || countNearPoints2 > 1) {
+              int temp = ((2 * distanceSum + distanceSum2) << (10 - bitDropped)) / (2 * countNearPoints + countNearPoints2);
+              vertexPos = (temp + (1 << 9 - bitDropped)) >> 10;
+            }
+            TriSoupVertices.push_back(vertexPos);
+          }
         }
       }
 
@@ -359,14 +413,19 @@ void determineTrisoupNeighbours(
   std::vector<std::array<int, 18>>& edgePattern,
   const int defaultBlockWidth,
   std::vector<int>& segmentUniqueIndex,
-  int& Nunique) {
+  int& Nunique,
+  const PCCPointSet3& pointCloud,
+  std::vector<int8_t>& TriSoupVertices,
+  bool isEncoder,
+  int bitDropped,
+  int distanceSearchEncoder) {
 
   // Width of block.
   // in future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  RasterScanTrisoupEdges rste(leaves, blockWidth);
-  rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique);
+  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder);
+  rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique, TriSoupVertices);
 }
 //============================================================================
 

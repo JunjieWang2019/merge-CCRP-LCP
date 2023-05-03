@@ -106,7 +106,12 @@ void determineTrisoupNeighbours(
   std::vector<std::array<int, 18>>& edgePattern,
   const int defaultBlockWidth,
   std::vector<int>& segmentUniqueIndex,
-  int& Nunique);
+  int& Nunique,
+  const PCCPointSet3& pointCloud,
+  std::vector<int8_t>& TriSoupVertices,
+  bool isEncoder,
+  int bitDropped,
+  int distanceSearchEncoder);
 
 void encodeTrisoupVertices(  
   std::vector<bool>& segind,

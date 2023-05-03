@@ -98,15 +98,18 @@ encodeGeometryTrisoup(
   std::vector<uint16_t> neighbNodes;
   std::vector<std::array<int, 18>> edgePattern;
   std::vector<int> segmentUniqueIndex;
+  std::vector<int8_t> TriSoupVertices;
   int Nunique;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique);
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder);
 
   // Determine vertices
   std::vector<bool> segind;
   std::vector<uint8_t> vertices;
-  determineTrisoupVertices(
-    nodes, segind, vertices, pointCloud, pointCloud, gps, gbh, blockWidth,
-    bitDropped, distanceSearchEncoder, false, segmentUniqueIndex, Nunique);
+  for (int i = 0; i < TriSoupVertices.size(); i++) {
+    segind.push_back(TriSoupVertices[i] >= 0);
+    if (TriSoupVertices[i] >= 0)
+      vertices.push_back(TriSoupVertices[i]);
+  }
 
   // determine vertices from compensated point cloud
   std::vector<bool> segindPred;
