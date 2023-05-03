@@ -472,6 +472,28 @@ determineCentroidAndDominantAxis(
 
   // order vertices along a dominant axis only if more than three (otherwise only one triangle, whatever...)
   dominantAxis = findDominantAxis(leafVertices, nodew, blockCentroid);
+
+  // compute centroid
+  std::vector<int> Weigths(leafVertices.size(), 0);
+  int Wtotal = 0;
+  for (int k = 0; k < triCount; k++) {
+    int k2 = k + 1;
+    if (k2 >= triCount)
+       k2 -= triCount;
+    Vec3<int32_t> segment = (leafVertices[k].pos - leafVertices[k2].pos).abs();
+    int weight = segment[0] + segment[1] + segment[2];
+
+    Weigths[k] += weight;
+    Weigths[k2] += weight;
+    Wtotal += 2 * weight;
+  }
+
+  Vec3<int64_t> blockCentroid2 = 0;
+  for (int j = 0; j < triCount; j++) {
+    blockCentroid2 += int64_t(Weigths[j]) * leafVertices[j].pos;
+  }
+  blockCentroid2 /= int64_t(Wtotal);
+  blockCentroid = { int(blockCentroid2[0]),int(blockCentroid2[1]), int(blockCentroid2[2]) };
 }
 
 // --------------------------------------------------------------------------
