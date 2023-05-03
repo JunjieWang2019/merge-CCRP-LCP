@@ -657,7 +657,8 @@ determineCentroidResidual(
 
   int driftQ = 0;
   if (abs(drift) >= DZ) {
-    driftQ = (abs(drift) - DZ + 2 * half) >> 6 + bitDropped2;
+    //driftQ = (abs(drift) - DZ + 2 * half) >> 6 + bitDropped2;
+    driftQ = (abs(drift) + 2 * half) >> 6 + bitDropped2;
     if (drift < 0)
       driftQ = -driftQ;
   }
