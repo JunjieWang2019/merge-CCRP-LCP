@@ -157,7 +157,7 @@ struct RasterScanTrisoupEdges {
 
   std::array<int, 8> edgesNeighNodes; // neighboring nodes' index
   // The 7 firsts are used for unique segments generation/iteration
-  // The 8-th is used for contextual information (mask)
+  // All the 8 are used for contextual information to be used by edge entropy coder
   Vec3<int32_t> currWedgePos;
 
   const std::vector<PCCOctree3Node>& leaves;
@@ -182,14 +182,12 @@ struct RasterScanTrisoupEdges {
 
     int uniqueIndex = 0;
 
-    while (nextIsAvailable()) {
+    while (nextIsAvailable()) { // this a loop on start position of edges; 3 edges along x,y and z per start position
       // process current wedge position
 
-      std::array<bool, 8> processedNode;
-      for (int i=0; i<8; ++i)
-        processedNode[i] =
-          edgesNeighNodes[i] < leaves.size()
-          && currWedgePos + offsets[i] == leaves[edgesNeighNodes[i]].pos;
+      std::array<bool, 8> isNeigbourSane;
+      for (int i=0; i<8; ++i) // sanity of neighbouring nodes
+        isNeigbourSane[i] = edgesNeighNodes[i] < leaves.size() && currWedgePos + offsets[i] == leaves[edgesNeighNodes[i]].pos;
 
       // edge along z, then y, then x
 
@@ -270,20 +268,17 @@ struct RasterScanTrisoupEdges {
         { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
       };
 
-      for (int dir=0; dir<3; ++dir) {
+      for (int dir=0; dir<3; ++dir) { // this the loop on the 3 edges along z, then y, then x
         bool processedEdge = false;
         uint16_t neighboursMask = 0;
-        std::array<int, 18> pattern {
-          -1, -1, -1, -1, -1, -1, -1, -1, -1,
-          -1, -1, -1, -1, -1, -1, -1, -1, -1
-        };
-        for (int neighIdx=0; neighIdx<4; ++neighIdx) {
-          int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx];
-          if (processedNode[edgeNeighNodeIdx]) {
-            processedEdge = true;
-            int idx =
-              edgesNeighNodes[edgeNeighNodeIdx] * 12
-              + edgeIdx[dir][neighIdx];
+        std::array<int, 18> pattern {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+
+        for (int neighIdx=0; neighIdx<4; ++neighIdx) { // this the loop on the 4 nodes to interesect the edge
+          int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx]; // gives the neighbour inde in the list of 8 neighbours
+
+          if (isNeigbourSane[edgeNeighNodeIdx]) { // test for sanity of the neighbour, process only if sane
+            processedEdge = true; // at least one neighbour is sane, so the edge become a TriSoup edge and will be added to the list
+            int idx = edgesNeighNodes[edgeNeighNodeIdx] * 12 + edgeIdx[dir][neighIdx];
             segmentUniqueIndex[idx] = uniqueIndex;
 
             // update mask from nodes touching edge
@@ -301,22 +296,23 @@ struct RasterScanTrisoupEdges {
             }
           }
         }
-        if (processedEdge) {
+
+
+        if (processedEdge) { // the TriSoup edge and will be added to the list
           int segmentUniqueIdxPrevEdge = -1;
           for (int prevNeighIdx=0; prevNeighIdx<4; ++prevNeighIdx) {
             int wedgeNeighNodeIdx = wedgeNeighNodesIdx[dir][prevNeighIdx];
-            if (processedNode[wedgeNeighNodeIdx]) {
+            if (isNeigbourSane[wedgeNeighNodeIdx]) {
               // update current mask from nodes touching wedge
               neighboursMask |= wedgeNeighMask[dir][prevNeighIdx];
               if (segmentUniqueIdxPrevEdge == -1) {
-                int idx = edgesNeighNodes[wedgeNeighNodeIdx] * 12
-                  + wedgeNeighNodesEdgeIdx[dir][prevNeighIdx];
+                int idx = edgesNeighNodes[wedgeNeighNodeIdx] * 12 + wedgeNeighNodesEdgeIdx[dir][prevNeighIdx];
                 segmentUniqueIdxPrevEdge = segmentUniqueIndex[idx];
                 pattern[0] = segmentUniqueIdxPrevEdge;
                 assert(segmentUniqueIdxPrevEdge != -1);
                 for (int neighIdx=0; neighIdx<4; ++neighIdx) {
                   int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx];
-                  if (processedNode[edgeNeighNodeIdx]) {
+                  if (isNeigbourSane[edgeNeighNodeIdx]) {
                     neighbNodes[segmentUniqueIdxPrevEdge] |= toPrevEdgeNeighMask[dir][neighIdx];
                   }
                 }
@@ -329,39 +325,28 @@ struct RasterScanTrisoupEdges {
         }
       }
 
-      goNextWedge(processedNode);
+      goNextWedge(isNeigbourSane);
     }
     numUniqueIndexes = uniqueIndex;
   }
 private:
   bool nextIsAvailable() const { return edgesNeighNodes[0] < leaves.size(); }
 
-  void goNextWedge(const std::array<bool, 8>& processedNode) {
-    bool nextWedgeIsNext = false;
-    if (processedNode[0])
+  void goNextWedge(const std::array<bool, 8>& isNeigbourSane) {
+    if (isNeigbourSane[0])
       edgesNeighNodes[7] = edgesNeighNodes[0];
-    // handle neighboring nodes with same z as wedge
-    for (int i=0; i<7; i+=2)
-      if (processedNode[i]) {
-        nextWedgeIsNext = true;
-        edgesNeighNodes[i]++;
-      }
-    for (int i=1; i<7; i+=2)
-      if (processedNode[i]) {
-        edgesNeighNodes[i]++;
-      }
-    if (nextWedgeIsNext) {
-      currWedgePos += pos00W;
-    }
-    else {
-      currWedgePos = leaves[edgesNeighNodes[0]].pos - offsets[0];
-      for (int i=1; i<7; ++i) {
-        if (edgesNeighNodes[i] >= leaves.size())
-          break;
-        auto wedgePos = leaves[edgesNeighNodes[i]].pos - offsets[i];
-        if (currWedgePos > wedgePos) {
-          currWedgePos = wedgePos;
-        }
+
+    // move ++ sane neigbours
+    for (int i=0; i<7; i++)
+        edgesNeighNodes[i] += isNeigbourSane[i];
+
+    currWedgePos = leaves[edgesNeighNodes[0]].pos - offsets[0];
+    for (int i=1; i<7; ++i) {
+      if (edgesNeighNodes[i] >= leaves.size())
+        break;
+      auto wedgePos = leaves[edgesNeighNodes[i]].pos - offsets[i];
+      if (currWedgePos > wedgePos) {
+        currWedgePos = wedgePos;
       }
     }
   }
