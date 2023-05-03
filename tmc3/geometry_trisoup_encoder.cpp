@@ -102,15 +102,6 @@ encodeGeometryTrisoup(
   int Nunique;
   determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder);
 
-  // Determine vertices
-  std::vector<bool> segind;
-  std::vector<uint8_t> vertices;
-  for (int i = 0; i < TriSoupVertices.size(); i++) {
-    segind.push_back(TriSoupVertices[i] >= 0);
-    if (TriSoupVertices[i] >= 0)
-      vertices.push_back(TriSoupVertices[i]);
-  }
-
   // determine vertices from compensated point cloud
   std::vector<bool> segindPred;
   std::vector<uint8_t> verticesPred;
@@ -120,12 +111,12 @@ encodeGeometryTrisoup(
       gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true, segmentUniqueIndex, Nunique);
   }
 
-  gbh.num_unique_segments_minus1 = segind.size() - 1;
+  gbh.num_unique_segments_minus1 = TriSoupVertices.size() - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
   // Encode vertex presence and position into bitstream
-  assert(segind.size() > 0);
-  encodeTrisoupVertices(segind, vertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped,gps, gbh, arithmeticEncoder, ctxtMemOctree);
+  assert(TriSoupVertices.size() > 0);
+  encodeTrisoupVertices(TriSoupVertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped,gps, gbh, arithmeticEncoder, ctxtMemOctree);
 
   // Decode vertices with certain sampling value
   bool haloFlag = gbh.trisoup_halo_flag;
@@ -141,7 +132,7 @@ encodeGeometryTrisoup(
   recPointCloud.addRemoveAttributes(pointCloud);
 
   decodeTrisoupCommon(
-    nodes, segind, vertices, pointCloud, recPointCloud,
+    nodes, TriSoupVertices, pointCloud, recPointCloud,
     compensatedPointCloud, gps, gbh, blockWidth,
     maxval, bitDropped, isCentroidDriftActivated, false,
     haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL,  arithmeticEncoder, ctxtMemOctree, segmentUniqueIndex);
@@ -304,8 +295,7 @@ determineTrisoupVertices(
 //------------------------------------------------------------------------------------
 void
 encodeTrisoupVertices(
-  std::vector<bool>& segind,
-  std::vector<uint8_t>& vertices,
+  std::vector<int8_t> &TriSoupVertices,
   std::vector<bool>& segindPred,
   std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
@@ -320,9 +310,7 @@ encodeTrisoupVertices(
   const int max2bits = nbitsVertices > 1 ? 3 : 1;
   const int mid2bits = nbitsVertices > 1 ? 2 : 1;
 
-  int iV = 0;
   int iVPred = 0;
-  std::vector<int> correspondanceSegment2V(segind.size(), -1);
 
   for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
     // reduced neighbour contexts
@@ -353,9 +341,9 @@ encodeTrisoupVertices(
 
       if (patternIdx[v18] != -1) {
         int idxEdge = patternIdx[v18];
-        if (segind[idxEdge]) {
+        if (TriSoupVertices[idxEdge]>=0) {
           pattern |= 1 << v;
-          int vertexPos2bits = vertices[correspondanceSegment2V[idxEdge]] >> std::max(0, nbitsVertices - 2);
+          int vertexPos2bits = TriSoupVertices[idxEdge] >> std::max(0, nbitsVertices - 2);
           if (towardOrAway[v18])
             vertexPos2bits = max2bits - vertexPos2bits; // reverses for away
           if (vertexPos2bits >= mid2bits)
@@ -418,18 +406,17 @@ encodeTrisoupVertices(
     int ctxInter =  isInter ? 1 + segindPred[i] : 0;
 
     int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(
-      segind[i], ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+      TriSoupVertices[i]>=0, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
       ctxtMemOctree._BufferOBUFleavesTrisoup);
     arithmeticEncoder->encode(
-      (int)segind[i], ctxTrisoup >> 3,
+      (int)(TriSoupVertices[i]>=0), ctxTrisoup >> 3,
       ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxTrisoup],
       ctxtMemOctree.ctxTriSoup[0][ctxInter].obufSingleBound);
 
     // encode position vertex
-    if (segind[i]) {
+    if (TriSoupVertices[i]>=0) {
       int v = 0;
-      auto vertex = vertices[iV];
-      correspondanceSegment2V[i] = iV;
+      auto vertex = TriSoupVertices[i];
 
       int ctxFullNbounds = (4 * (ctx0 <= 1 ? 0 : (ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctx1) - 1)) * 2 + (ctxE == 3);
       int b = nbitsVertices - 1;
@@ -497,7 +484,6 @@ encodeTrisoupVertices(
       // remaining bits are bypassed
       for (; b >= 0; b--)
         arithmeticEncoder->encode((vertex >> b) & 1);
-      iV++;
     }
 
     if (isInter && segindPred[i])

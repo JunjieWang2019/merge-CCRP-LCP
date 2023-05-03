@@ -102,9 +102,7 @@ decodeGeometryTrisoup(
   }
 
   // Decode vertex presence and position into bitstream
-  std::vector<bool> segind;
-  std::vector<uint8_t> vertices;
-  decodeTrisoupVertices(segind, vertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped, gps, gbh, arithmeticDecoder, ctxtMemOctree);
+  decodeTrisoupVertices(TriSoupVertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped, gps, gbh, arithmeticDecoder, ctxtMemOctree);
 
   PCCPointSet3 recPointCloud;
   recPointCloud.addRemoveAttributes(pointCloud);
@@ -117,7 +115,7 @@ decodeGeometryTrisoup(
   int thickness = gbh.trisoup_thickness;
 
   decodeTrisoupCommon(
-    nodes, segind, vertices, pointCloud, recPointCloud,
+    nodes, TriSoupVertices, pointCloud, recPointCloud,
     compensatedPointCloud, gps, gbh, blockWidth, maxval,
     bitDropped, isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag, thickness,
     &arithmeticDecoder,  NULL, ctxtMemOctree, segmentUniqueIndex);
@@ -830,8 +828,7 @@ decodeCentroidResidual(
 void
 decodeTrisoupCommon(
   const std::vector<PCCOctree3Node>& leaves,
-  const std::vector<bool>& segind,
-  const std::vector<uint8_t>& vertices,
+  const std::vector<int8_t> &TriSoupVertices,
   PCCPointSet3& pointCloud,
   PCCPointSet3& recPointCloud,
   PCCPointSet3& compensatedPointCloud,
@@ -861,11 +858,6 @@ decodeTrisoupCommon(
   // Width of block. In future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  std::vector<int> vertexList(segind.size());
-  int vertexCount = 0;
-  for (int i = 0; i < segind.size(); i++)
-    vertexList[i] = segind[i] ? vertices[vertexCount++] : -1;
-
   const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
   const int endCorner[12] =   { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
 
@@ -883,7 +875,7 @@ decodeTrisoupCommon(
 
     for (int j = 0; j < 12; j++) {
       int uniqueIndex = segmentUniqueIndex[idxSegment++];
-      int vertex = vertexList[uniqueIndex];
+      int vertex = TriSoupVertices[uniqueIndex];
 
       if (vertex < 0)
         continue;  // skip segments that do not intersect the surface
@@ -1047,8 +1039,7 @@ decodeTrisoupCommon(
 
 // ---------------------------------------------------------------------------
 void decodeTrisoupVertices(
-  std::vector<bool>& segind,
-  std::vector<uint8_t>& vertices,
+  std::vector<int8_t>& TriSoupVertices,
   std::vector<bool>& segindPred,
   std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
@@ -1063,9 +1054,7 @@ void decodeTrisoupVertices(
   const int max2bits = nbitsVertices > 1 ? 3 : 1;
   const int mid2bits = nbitsVertices > 1 ? 2 : 1;
 
-  int iV = 0;
   int iVPred = 0;
-  std::vector<int> correspondanceSegment2V;
 
   for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
     // reduced neighbour contexts
@@ -1096,9 +1085,9 @@ void decodeTrisoupVertices(
 
       if (patternIdx[v18] != -1) {
         int idxEdge = patternIdx[v18];
-        if (segind[idxEdge]) {
+        if (TriSoupVertices[idxEdge] >=0 ) {
           pattern |= 1 << v;
-          int vertexPos2bits = vertices[correspondanceSegment2V[idxEdge]] >> std::max(0, nbitsVertices - 2);
+          int vertexPos2bits = TriSoupVertices[idxEdge] >> std::max(0, nbitsVertices - 2);
           if (towardOrAway[v18])
             vertexPos2bits = max2bits - vertexPos2bits; // reverses for away
           if (vertexPos2bits >= mid2bits)
@@ -1164,13 +1153,11 @@ void decodeTrisoupVertices(
       ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
       ctxtMemOctree._BufferOBUFleavesTrisoup);
 
-    segind.push_back(c);
-    correspondanceSegment2V.push_back(-1);
+    if (!c)
+      TriSoupVertices.push_back(-1);
 
     // encode position vertex 
     if (c) {
-      correspondanceSegment2V.back() = iV;
-
       uint8_t v = 0;
       int ctxFullNbounds = (4 * (ctx0 <= 1 ? 0 : (ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctx1) - 1)) * 2 + (ctxE == 3);
       int b = nbitsVertices - 1;
@@ -1229,8 +1216,8 @@ void decodeTrisoupVertices(
       // remaining bits are bypassed
       for (; b >= 0; b--)
         v = (v << 1) | arithmeticDecoder.decode();
-      vertices.push_back(v);
-      iV++;
+
+      TriSoupVertices.push_back(v);
     }
 
     if (isInter && segindPred[i])

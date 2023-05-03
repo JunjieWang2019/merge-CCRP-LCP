@@ -114,8 +114,7 @@ void determineTrisoupNeighbours(
   int distanceSearchEncoder);
 
 void encodeTrisoupVertices(  
-  std::vector<bool>& segind,
-  std::vector<uint8_t>& vertices,
+  std::vector<int8_t> &TriSoupVertices,
   std::vector<bool>& segindPred,
   std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
@@ -127,8 +126,7 @@ void encodeTrisoupVertices(
   GeometryOctreeContexts& ctxtMemOctree);
 
 void decodeTrisoupVertices(  
-  std::vector<bool>& segind,
-  std::vector<uint8_t>& vertices,
+  std::vector<int8_t>& TriSoupVertices,
   std::vector<bool>& segindPred,
   std::vector<uint8_t>& verticesPred,
   std::vector<uint16_t>& neighbNodes,
@@ -163,8 +161,7 @@ int decodeCentroidResidual(
 
 void decodeTrisoupCommon(
   const std::vector<PCCOctree3Node>& leaves,
-  const std::vector<bool>& segind,
-  const std::vector<uint8_t>& vertices,
+  const std::vector<int8_t>& TriSoupVertices,
   PCCPointSet3& pointCloud,
   PCCPointSet3& recPointCloud,
   PCCPointSet3& compensatedPointCloud,
