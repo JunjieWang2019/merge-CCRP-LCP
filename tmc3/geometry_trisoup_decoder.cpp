@@ -827,14 +827,15 @@ decodeTrisoupCommon(
 
   // ----------- loop on leaf nodes ----------------------
   int idxSegment = 0;
+  std::vector<Vec3<int32_t>> refinedVerticesBlock;
+  refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
   for (int i = 0; i < leaves.size(); i++) {
     Vec3<int32_t> nodepos, nodew, corner[8];
     nonCubicNode( gps, gbh, leaves[i].pos, defaultBlockWidth, sliceBB, nodepos, nodew, corner );
 
     // Find up to 12 vertices for this leaf.
     std::vector<Vertex> leafVertices;
-    std::vector<Vec3<int32_t>> refinedVerticesBlock;
-    refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
+    refinedVerticesBlock.resize(0);
 
     for (int j = 0; j < 12; j++) {
       int uniqueIndex = segmentUniqueIndex[idxSegment++];
