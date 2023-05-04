@@ -85,21 +85,6 @@ namespace pcc {
 
 
  //============================================================================
-void determineTrisoupVertices(
-  const std::vector<PCCOctree3Node>& leaves,
-  std::vector<bool>& segind,
-  std::vector<uint8_t>& vertices,  
-  const PCCPointSet3& pointCloud,
-  const PCCPointSet3& compensatedPointCloud,
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  const int defaultBlockWidth,
-  const int bitDropped,
-  int distanceSearchEncoder,
-  bool isCompensated,
-  std::vector<int>& segmentUniqueIndex,
-  int Nunique);
-
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves, 
   std::vector<uint16_t>& neighbNodes, 
@@ -111,12 +96,15 @@ void determineTrisoupNeighbours(
   std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
   int bitDropped,
-  int distanceSearchEncoder);
+  int distanceSearchEncoder,
+  bool isInter,
+  const PCCPointSet3& refPointCloud,
+  const PCCPointSet3& compensatedPointCloud,
+  std::vector<int8_t>& TriSoupVerticesPred);
 
 void encodeTrisoupVertices(  
   std::vector<int8_t> &TriSoupVertices,
-  std::vector<bool>& segindPred,
-  std::vector<uint8_t>& verticesPred,
+  std::vector<int8_t>& TriSoupVerticesPred,
   std::vector<uint16_t>& neighbNodes,
   std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,
@@ -127,8 +115,7 @@ void encodeTrisoupVertices(
 
 void decodeTrisoupVertices(  
   std::vector<int8_t>& TriSoupVertices,
-  std::vector<bool>& segindPred,
-  std::vector<uint8_t>& verticesPred,
+  std::vector<int8_t>& TriSoupVerticesPred,
   std::vector<uint16_t>& neighbNodes,
   std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,

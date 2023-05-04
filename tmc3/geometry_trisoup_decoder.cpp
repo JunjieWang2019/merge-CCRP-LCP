@@ -81,28 +81,22 @@ decodeGeometryTrisoup(
   const int bitDropped =  std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
   const bool isCentroidDriftActivated = gbh.trisoup_centroid_vertex_residual_flag;
 
+
+  std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
+  std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
+
   // Determine neighbours
   std::vector<uint16_t> neighbNodes;
   std::vector<std::array<int, 18>> edgePattern;
   std::vector<int> segmentUniqueIndex;
   std::vector<int8_t> TriSoupVertices;
+  std::vector<int8_t> TriSoupVerticesPred;
   int Nunique;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/);
-
-  // determine vertices from compensated point cloud
-  std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
-  std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
-
-  std::vector<bool> segindPred;
-  std::vector<uint8_t> verticesPred;
-  if (isInter) {
-    determineTrisoupVertices(
-      nodes, segindPred, verticesPred, refFrame->cloud, compensatedPointCloud,
-      gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true, segmentUniqueIndex, Nunique);
-  }
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
+    isInter, refFrame->cloud, compensatedPointCloud, TriSoupVerticesPred);
 
   // Decode vertex presence and position into bitstream
-  decodeTrisoupVertices(TriSoupVertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped, gps, gbh, arithmeticDecoder, ctxtMemOctree);
+  decodeTrisoupVertices(TriSoupVertices, TriSoupVerticesPred, neighbNodes, edgePattern, bitDropped, gps, gbh, arithmeticDecoder, ctxtMemOctree);
 
   PCCPointSet3 recPointCloud;
   recPointCloud.addRemoveAttributes(pointCloud);
@@ -164,14 +158,20 @@ struct RasterScanTrisoupEdges {
   const bool isEncoder;
   const int bitDropped;
   const int distanceSearchEncoder;
+  const bool isInter;
+  const PCCPointSet3& refPointCloud;
+  const PCCPointSet3& compensatedPointCloud;
 
-  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, const PCCPointSet3& pointCloud, bool isEncoder, int bitDropped, int distanceSearchEncoder)
+  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, const PCCPointSet3& pointCloud, bool isEncoder, int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& refPointCloud, const PCCPointSet3& compensatedPointCloud)
   : leaves(leaves)
   , blockWidth(blockWidth)
   , pointCloud(pointCloud)
   , isEncoder(isEncoder)
   , bitDropped(bitDropped)
   , distanceSearchEncoder(distanceSearchEncoder)
+  , isInter(isInter)
+  , refPointCloud(refPointCloud)
+  , compensatedPointCloud(compensatedPointCloud)
   , currWedgePos(leaves.empty() ? Vec3<int32_t>{0,0,0} : leaves[0].pos)
   , edgesNeighNodes {0,0,0,0,0,0,0,0}
   {}
@@ -181,7 +181,8 @@ struct RasterScanTrisoupEdges {
       std::vector<std::array<int, 18>>& edgePattern,
       std::vector<int>& segmentUniqueIndex,
       int& numUniqueIndexes,
-      std::vector<int8_t>& TriSoupVertices)
+      std::vector<int8_t>& TriSoupVertices,
+      std::vector<int8_t>& TriSoupVerticesPred)
   {
     neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
     segmentUniqueIndex.clear();
@@ -293,6 +294,10 @@ struct RasterScanTrisoupEdges {
         int dir1 = axisdirection[dir][1];
         int dir2 = axisdirection[dir][2];
 
+        // for TriSoup Vertex inter prediction
+        int countNearPointsPred = 0;
+        int distanceSumPred = 0;
+
         for (int neighIdx=0; neighIdx<4; ++neighIdx) { // this the loop on the 4 nodes to interesect the edge
           int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx]; // gives the neighbour inde in the list of 8 neighbours
 
@@ -335,6 +340,21 @@ struct RasterScanTrisoupEdges {
                 }
               }
             }
+
+            // determine TriSoup Vertex inter prediction
+            if (isInter) {
+              int idxStart = leaves[neighbNodeIndex].predStart;
+              int idxEnd = leaves[neighbNodeIndex].predEnd;
+              int offset1 = leaves[neighbNodeIndex].pos[dir1] < currWedgePos[dir1];
+              int offset2 = leaves[neighbNodeIndex].pos[dir2] < currWedgePos[dir2];
+              for (int j = idxStart; j < idxEnd; j++) {
+                Vec3<int> voxel = isInter && leaves[neighbNodeIndex].isCompensated ? compensatedPointCloud[j] : refPointCloud[j];
+                if (std::abs(voxel[dir1] + offset1 - currWedgePos[dir1]) < 1 && std::abs(voxel[dir2] + offset2 - currWedgePos[dir2]) < 1) {
+                  countNearPointsPred++;
+                  distanceSumPred += voxel[dir0] - currWedgePos[dir0];
+                }
+              }
+            }
           }
         }
 
@@ -373,6 +393,16 @@ struct RasterScanTrisoupEdges {
               vertexPos = (temp + (1 << 9 - bitDropped)) >> 10;
             }
             TriSoupVertices.push_back(vertexPos);
+          }
+
+          // determine TriSoup Vertex inter prediction
+          if (isInter) {
+            int8_t vertexPos = -1;
+            if (countNearPointsPred > 0) {
+              int temp = (distanceSumPred  << (10 - bitDropped)) / countNearPointsPred;
+              vertexPos = (temp + (1 << 9 - bitDropped)) >> 10;
+            }
+            TriSoupVerticesPred.push_back(vertexPos);
           }
         }
       }
@@ -416,14 +446,18 @@ void determineTrisoupNeighbours(
   std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
   int bitDropped,
-  int distanceSearchEncoder) {
+  int distanceSearchEncoder,
+  bool isInter,
+  const PCCPointSet3& refPointCloud,
+  const PCCPointSet3& compensatedPointCloud,
+  std::vector<int8_t>& TriSoupVerticesPred) {
 
   // Width of block.
   // in future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder);
-  rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique, TriSoupVertices);
+  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud);
+  rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique, TriSoupVertices, TriSoupVerticesPred);
 }
 //============================================================================
 
@@ -1040,8 +1074,7 @@ decodeTrisoupCommon(
 // ---------------------------------------------------------------------------
 void decodeTrisoupVertices(
   std::vector<int8_t>& TriSoupVertices,
-  std::vector<bool>& segindPred,
-  std::vector<uint8_t>& verticesPred,
+  std::vector<int8_t>& TriSoupVerticesPred,
   std::vector<uint16_t>& neighbNodes,
   std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,
@@ -1053,8 +1086,6 @@ void decodeTrisoupVertices(
   const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
   const int max2bits = nbitsVertices > 1 ? 3 : 1;
   const int mid2bits = nbitsVertices > 1 ? 2 : 1;
-
-  int iVPred = 0;
 
   for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
     // reduced neighbour contexts
@@ -1146,7 +1177,7 @@ void decodeTrisoupVertices(
     ctxMap2 |= orderedPclosePar;
 
     bool isInter = gbh.interPredictionEnabledFlag  ;
-    int ctxInter =  isInter ? 1 + segindPred[i] : 0;
+    int ctxInter =  isInter ? 1 + (TriSoupVerticesPred[i] >=0 ): 0;
 
     bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(
       &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2,
@@ -1172,7 +1203,7 @@ void decodeTrisoupVertices(
 
       ctxInter = 0;
       if (isInter) {
-        ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b-1) & 3) : 0;
+        ctxInter = TriSoupVerticesPred[i] >=0 ? 1 + ((TriSoupVerticesPred[i] >> b-1) & 3) : 0;
       }
 
       int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(
@@ -1194,7 +1225,7 @@ void decodeTrisoupVertices(
 
         ctxInter = 0;
         if (isInter) {
-          ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b) <= (v << 1)) : 0;
+          ctxInter = TriSoupVerticesPred[i] >=0 ? 1 + ((TriSoupVerticesPred[i] >> b) <= (v << 1)) : 0;
         }
 
         bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(
@@ -1219,9 +1250,6 @@ void decodeTrisoupVertices(
 
       TriSoupVertices.push_back(v);
     }
-
-    if (isInter && segindPred[i])
-      iVPred++;
 
   }
 

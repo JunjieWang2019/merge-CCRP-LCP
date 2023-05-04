@@ -99,24 +99,17 @@ encodeGeometryTrisoup(
   std::vector<std::array<int, 18>> edgePattern;
   std::vector<int> segmentUniqueIndex;
   std::vector<int8_t> TriSoupVertices;
+  std::vector<int8_t> TriSoupVerticesPred;
   int Nunique;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder);
-
-  // determine vertices from compensated point cloud
-  std::vector<bool> segindPred;
-  std::vector<uint8_t> verticesPred;
-  if (isInter) {
-    determineTrisoupVertices(
-      nodes, segindPred, verticesPred, refFrame.cloud, compensatedPointCloud,
-      gps, gbh, blockWidth, bitDropped, 1 /*distanceSearchEncoder*/, true, segmentUniqueIndex, Nunique);
-  }
+  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder,
+    isInter, refFrame.cloud, compensatedPointCloud, TriSoupVerticesPred);
 
   gbh.num_unique_segments_minus1 = TriSoupVertices.size() - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
   // Encode vertex presence and position into bitstream
   assert(TriSoupVertices.size() > 0);
-  encodeTrisoupVertices(TriSoupVertices, segindPred, verticesPred, neighbNodes, edgePattern, bitDropped,gps, gbh, arithmeticEncoder, ctxtMemOctree);
+  encodeTrisoupVertices(TriSoupVertices, TriSoupVerticesPred, neighbNodes, edgePattern, bitDropped,gps, gbh, arithmeticEncoder, ctxtMemOctree);
 
   // Decode vertices with certain sampling value
   bool haloFlag = gbh.trisoup_halo_flag;
@@ -148,156 +141,12 @@ encodeGeometryTrisoup(
   }
 }
 
-//---------------------------------------------------------------------------
-// Determine where the surface crosses each leaf
-// (i.e., determine the segment indicators and vertices)
-// from the set of leaves and the points in each leaf.
-//
-// @param leaves, list of blocks containing the surface
-// @param segind, indicators for edges of blocks if they intersect the surface
-// @param vertices, locations of intersections
-
-void
-determineTrisoupVertices(
-  const std::vector<PCCOctree3Node>& leaves,
-  std::vector<bool>& segind,
-  std::vector<uint8_t>& vertices,
-  const PCCPointSet3& pointCloud,
-  const PCCPointSet3& compensatedPointCloud,
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  const int defaultBlockWidth,
-  const int bitDropped,
-  int distanceSearchEncoder,
-  bool isCompensated,
-  std::vector<int>& segmentUniqueIndex,
-  int Nunique)
-{
-  Box3<int32_t> sliceBB;
-  sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
-  sliceBB.max = sliceBB.min + ( gbh.slice_bb_width << gbh.slice_bb_width_log2_scale );
-
-  // prepare accumulators
-  std::vector<int> count(Nunique, 0);
-  std::vector<int> count2(Nunique, 0);
-  std::vector<int> distanceSum(Nunique, 0);
-  std::vector<int> distanceSum2(Nunique, 0);
-
-  // Put all leaves' edges into a list.
-  const int bufferIdx0[27] = { 12, 12, 12, 12, 4, 7, 12, 5, 6, 12, 1, 3, 0, 4, 7, 2, 5, 6, 12, 9, 11, 8, 4, 7, 10, 5, 6 };
-  const int voxelComp0[27] = { 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 2, 2 };
-  const int bufferIdx1[27] = { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 0, 0, 12, 2, 2, 12, 12, 12, 12, 8, 8, 12, 10, 10 };
-  const int voxelComp1[27] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-  const int bufferIdx2[27] = { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 3, 12, 1, 3, 12, 12, 12, 12, 9, 11, 12, 9, 11 };
-  const int voxelComp2[27] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 1 };
-
-  // create segments
-  int segIdx = 0; // for stable ordering
-  for (int i = 0; i < leaves.size(); i++) {
-    const auto& leaf = leaves[i];
-
-    // Size of block
-    Vec3<int32_t> newP, newW, corner[8];
-    nonCubicNode( gps, gbh, leaf.pos, defaultBlockWidth, sliceBB, newP, newW, corner );
-
-    // Each voxel votes for a position along each edge it is close to
-    const int tmin = 1;
-    const Vec3<int> tmax( newW.x() - tmin - 1,
-                          newW.y() - tmin - 1,
-                          newW.z() - tmin - 1 );
-    const int tmin2 = distanceSearchEncoder;
-    const Vec3<int> tmax2( newW.x() - tmin2 - 1,
-                           newW.y() - tmin2 - 1,
-                           newW.z() - tmin2 - 1 );
-
-    // pick adequate point cloud
-    int idxStart = leaf.start;
-    int idxEnd = leaf.end;
-    if (isCompensated) {
-      idxStart = leaf.predStart;
-      idxEnd = leaf.predEnd;
-    }
-
-    // loop on voxels
-    for (int j = idxStart; j < idxEnd; j++) {
-      Vec3<int> voxel = (isCompensated && leaf.isCompensated ? compensatedPointCloud[j] : pointCloud[j]) - newP;
-
-      // parameter indicating threshold of how close voxels must be to edge
-      // ----------- 1 -------------------
-      int check0 = (voxel[0] < tmin) + 2 * (voxel[0] > tmax.x());
-      int check1 = (voxel[1] < tmin) + 2 * (voxel[1] > tmax.y());
-      int check2 = (voxel[2] < tmin) + 2 * (voxel[2] > tmax.z());
-      if (check0 > 2) check0 = 1;
-      if (check1 > 2) check1 = 1;
-      if (check2 > 2) check2 = 1;
-
-      int check = check0 + 3 * check1 + 9 * check2; // in [0,26]
-      if (bufferIdx0[check] < 12) {
-        int unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
-        count[unique0]++;
-        distanceSum[unique0] += voxel[voxelComp0[check]];
-      }
-      if (bufferIdx1[check] < 12) {
-        int unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
-        count[unique1]++;
-        distanceSum[unique1] += voxel[voxelComp1[check]];
-      }
-      if (bufferIdx2[check] < 12) {
-        int unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
-        count[unique2]++;
-        distanceSum[unique2] += voxel[voxelComp2[check]];
-      }
-
-
-      // parameter indicating threshold of how close voxels must be to edge
-      // ----------- 2 -------------------
-      if (distanceSearchEncoder > 1) {
-
-        check0 = (voxel[0] < tmin2) + 2 * (voxel[0] > tmax2.x());
-        check1 = (voxel[1] < tmin2) + 2 * (voxel[1] > tmax2.y());
-        check2 = (voxel[2] < tmin2) + 2 * (voxel[2] > tmax2.z());
-        if (check0 > 2) check0 = 1;
-        if (check1 > 2) check1 = 1;
-        if (check2 > 2) check2 = 1;
-
-        check = check0 + 3 * check1 + 9 * check2; // in [0,26]
-
-        if (bufferIdx0[check] < 12) {
-          int unique0 = segmentUniqueIndex[12 * i + bufferIdx0[check]];
-          count2[unique0]++;
-          distanceSum2[unique0] += voxel[voxelComp0[check]];
-        }
-        if (bufferIdx1[check] < 12) {
-          int unique1 = segmentUniqueIndex[12 * i + bufferIdx1[check]];
-          count2[unique1]++;
-          distanceSum2[unique1] += voxel[voxelComp1[check]];
-        }
-        if (bufferIdx2[check] < 12) {
-          int unique2 = segmentUniqueIndex[12 * i + bufferIdx2[check]];
-          count2[unique2]++;
-          distanceSum2[unique2] += voxel[voxelComp2[check]];
-        }
-      }
-    }
-  }
-
-  segind.resize(Nunique);
-  for (int t = 0; t < Nunique; t++) {
-    segind[t] = count[t] > 0 || count2[t] > 1;
-    if (segind[t]) {
-      int temp = ((2 * distanceSum[t] + distanceSum2[t]) << (10 - bitDropped))/ (2 * count[t] + count2[t]);
-      int8_t vertex = (temp + (1 << 9 - bitDropped)) >> 10;
-      vertices.push_back(vertex);
-    }
-  }
-}
 
 //------------------------------------------------------------------------------------
 void
 encodeTrisoupVertices(
   std::vector<int8_t> &TriSoupVertices,
-  std::vector<bool>& segindPred,
-  std::vector<uint8_t>& verticesPred,
+  std::vector<int8_t>& TriSoupVerticesPred,
   std::vector<uint16_t>& neighbNodes,
   std::vector<std::array<int, 18>>& edgePattern,
   int bitDropped,
@@ -309,8 +158,6 @@ encodeTrisoupVertices(
   const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
   const int max2bits = nbitsVertices > 1 ? 3 : 1;
   const int mid2bits = nbitsVertices > 1 ? 2 : 1;
-
-  int iVPred = 0;
 
   for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
     // reduced neighbour contexts
@@ -403,7 +250,7 @@ encodeTrisoupVertices(
     ctxMap2 |= orderedPclosePar;
 
     bool isInter = gbh.interPredictionEnabledFlag  ;
-    int ctxInter =  isInter ? 1 + segindPred[i] : 0;
+    int ctxInter =  isInter ? 1 + (TriSoupVerticesPred[i] >=0) : 0;
 
     int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(
       TriSoupVertices[i]>=0, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
@@ -431,7 +278,7 @@ encodeTrisoupVertices(
 
       ctxInter = 0;
       if (isInter) {
-        ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b-1) & 3) : 0;
+        ctxInter = TriSoupVerticesPred[i] >=0 ? 1 + ((TriSoupVerticesPred[i] >> b-1) & 3) : 0;
       }
 
       int bit = (vertex >> b--) & 1;
@@ -457,7 +304,7 @@ encodeTrisoupVertices(
 
         ctxInter = 0;
         if (isInter) {
-          ctxInter = segindPred[i] ? 1 + ((verticesPred[iVPred] >> b) <= (v << 1)) : 0;
+          ctxInter = TriSoupVerticesPred[i] >= 0 ? 1 + ((TriSoupVerticesPred[i] >> b) <= (v << 1)) : 0;
         }
 
         bit = (vertex >> b--) & 1;
@@ -485,9 +332,6 @@ encodeTrisoupVertices(
       for (; b >= 0; b--)
         arithmeticEncoder->encode((vertex >> b) & 1);
     }
-
-    if (isInter && segindPred[i])
-      iVPred++;
   }
 
 }
