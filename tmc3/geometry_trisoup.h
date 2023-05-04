@@ -44,19 +44,70 @@
 
 namespace pcc {
 //============================================================================
-
-  struct CentroidDrift {
-    int driftQ;
-    int driftQPred;
-    int lowBound;
-    int highBound;
-    int ctxMinMax;
-    int lowBoundSurface;
-    int  highBoundSurface;
-
+  struct codeVertexCtxInfo {
+    int ctxE;
+    int ctx0;
+    int ctx1;
+    int direction;
+    int pattern = 0;
+    int patternClose = 0;
+    int patternClosest = 0;
+    int nclosestPattern = 0;
+    int missedCloseStart;
+    int nclosestStart;
+    int neighbEdge;
+    int neighbEnd;
+    int neighbStart;
+    int orderedPclosePar;
+    int orderedPcloseParPos;
   };
 
+  static const int towardOrAway[18] = { // 0 = toward; 1 = away
+   0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  };
 
+  static const int mapping18to9[3][9] = {
+    { 0, 1, 2, 3,  4, 15, 14, 5,  7},
+    { 0, 1, 2, 3,  9, 15, 14, 7, 12},
+    { 0, 1, 2, 9, 10, 15, 14, 7, 12}
+  };
+
+  void constructCtxInfo(
+    codeVertexCtxInfo& ctxInfo,
+    int neigh, std::array<int, 18>& patternIdx,
+    std::vector<int8_t>& TriSoupVertices,
+    int nbitsVertices,
+    int max2bits,
+    int mid2bits);
+
+  void constructCtxPresence(
+    int& ctxMap1,
+    int& ctxMap2,
+    int& ctxInter,
+    codeVertexCtxInfo& ctxInfo,
+    bool isInter,
+    int8_t TriSoupVerticesPred);
+
+  void constructCtxPos1(
+    int& ctxMap1,
+    int& ctxMap2,
+    int& ctxInter,
+    codeVertexCtxInfo& ctxInfo,
+    bool isInter,
+    int8_t TriSoupVerticesPred,
+    int b);
+
+  void constructCtxPos2(
+    int& ctxMap1,
+    int& ctxMap2,
+    int& ctxInter,
+    codeVertexCtxInfo& ctxInfo,
+    bool isInter,
+    int8_t TriSoupVerticesPred,
+    int b,
+    int v);
+
+  //============================================================================
   // Representation for a vertex in preparation for sorting.
   struct Vertex {
     Vec3<int32_t> pos;  // position of vertex
@@ -85,6 +136,87 @@ namespace pcc {
 
 
  //============================================================================
+  // index in edgesNeighNodes of neighboring nodes for each edge
+  static const int edgesNeighNodesIdx[3][4] = {
+    {6, 4, 0, 2}, // along z
+    {6, 2, 5, 1}, // along y
+    {6, 4, 5, 3}, // along x
+  };
+
+  // axis direction
+  static const int axisdirection[3][3] = { {2,0,1}, {1, 0,2}, {0, 1, 2 } }; // z, y ,x
+
+  // edge index in existing order
+  static const int edgeIdx[3][4] = {
+    {4, 5, 6, 7},
+    {1, 3, 9, 11},
+    {0, 2, 8, 10},
+  };
+
+  static const uint16_t neighMask[3][4] = {
+    {0x4001, 0x4002, 0x4004, 0x4008},
+    {0x2001, 0x2002, 0x2004, 0x2008},
+    {0x0001, 0x0002, 0x0004, 0x0008},
+  };
+
+  // index in edgesNeighNodes of other neighboring nodes for the wedge
+  static const int wedgeNeighNodesIdx[3][4] = {
+    {1, 5, 3, 7}, // along z
+    {0, 3, 4, 7}, // along y
+    {0, 1, 2, 7}, // along x
+  };
+
+  // edge index in existing order
+  static const int wedgeNeighNodesEdgeIdx[3][4] = {
+    {7, 4, 5,  6},
+    {3, 9, 1, 11},
+    {2, 8, 0, 10},
+  };
+
+  static const uint16_t wedgeNeighMask[3][4] = {
+    {0x0800, 0x0100, 0x0200, 0x0400},
+    {0x0200, 0x0400, 0x0100, 0x0800},
+    {0x0200, 0x0400, 0x0100, 0x0800},
+  };
+
+  static const uint16_t toPrevEdgeNeighMask[3][4] = {
+    {0x0010, 0x0020, 0x0040, 0x0080},
+    {0x0010, 0x0020, 0x0040, 0x0080},
+    {0x0010, 0x0020, 0x0040, 0x0080},
+  };
+
+  // neighbourhood staic tables
+  // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
+  static const int localEdgeindex[12][11] = {
+    { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
+    { 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
+    { 1,  5,  4,  9,  0,  8, -1, -1, -1, -1, -1}, // vertex 2
+    { 0,  7,  4,  8,  2, 10,  1,  9, -1, -1, -1}, // vertex 3
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
+    { 1,  0,  9,  4, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
+    { 3,  2,  0, 10, 11,  9,  8,  7,  5,  4, -1}, // vertex 6
+    { 0,  1,  2,  8, 10,  4,  5, -1, -1, -1, -1}, // vertex 7
+    { 4,  9,  1,  0, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
+    { 4,  0,  1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
+    { 5,  9,  1,  2,  8,  0, -1, -1, -1, -1, -1}, // vertex 10
+    { 7,  8,  0, 10,  5,  2,  3,  9,  1, -1, -1}  // vertex 11
+  };
+  static const int patternIndex[12][11] = {
+    { 3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
+    { 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
+    { 2,  3,  5,  8, 15, 17, -1, -1, -1, -1, -1}, // vertex 2
+    { 2,  3,  5,  8,  9, 12, 15, 17, -1, -1, -1}, // vertex 3
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
+    { 1,  7, 10, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
+    { 1,  2,  6,  9, 10, 11, 13, 14, 15, 16, -1}, // vertex 6
+    { 2,  5,  8,  9, 12, 15, 17, -1, -1, -1, -1}, // vertex 7
+    { 1,  4,  7, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
+    { 1,  7, 14, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
+    { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
+    { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
+  };
+
+
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves, 
   std::vector<uint16_t>& neighbNodes, 
@@ -100,30 +232,15 @@ void determineTrisoupNeighbours(
   bool isInter,
   const PCCPointSet3& refPointCloud,
   const PCCPointSet3& compensatedPointCloud,
-  std::vector<int8_t>& TriSoupVerticesPred);
-
-void encodeTrisoupVertices(  
-  std::vector<int8_t> &TriSoupVertices,
   std::vector<int8_t>& TriSoupVerticesPred,
-  std::vector<uint16_t>& neighbNodes,
-  std::vector<std::array<int, 18>>& edgePattern,
-  int bitDropped,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  pcc::EntropyEncoder* arithmeticEncoder,
-  GeometryOctreeContexts& ctxtMemOctree);
-
-void decodeTrisoupVertices(  
-  std::vector<int8_t>& TriSoupVertices,
-  std::vector<int8_t>& TriSoupVerticesPred,
-  std::vector<uint16_t>& neighbNodes,
-  std::vector<std::array<int, 18>>& edgePattern,
-  int bitDropped,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
+  pcc::EntropyEncoder* arithmeticEncoder,
   pcc::EntropyDecoder& arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree);
 
+
+//============================================================================
 void encodeCentroidResidual(
   int driftQ,
   pcc::EntropyEncoder* arithmeticEncoder,

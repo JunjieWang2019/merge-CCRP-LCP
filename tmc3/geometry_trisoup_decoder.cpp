@@ -44,7 +44,6 @@
 namespace pcc {
 
 //============================================================================
-
 // The number of fractional bits used in trisoup triangle voxelisation
 const int kTrisoupFpBits = 8;
 
@@ -54,7 +53,6 @@ const int kTrisoupFpHalf = 1 << (kTrisoupFpBits - 1);
 const int truncateValue = kTrisoupFpHalf;
 
 //============================================================================
-
 void
 decodeGeometryTrisoup(
   const GeometryParameterSet& gps,
@@ -93,10 +91,7 @@ decodeGeometryTrisoup(
   std::vector<int8_t> TriSoupVerticesPred;
   int Nunique;
   determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
-    isInter, refFrame->cloud, compensatedPointCloud, TriSoupVerticesPred);
-
-  // Decode vertex presence and position into bitstream
-  decodeTrisoupVertices(TriSoupVertices, TriSoupVerticesPred, neighbNodes, edgePattern, bitDropped, gps, gbh, arithmeticDecoder, ctxtMemOctree);
+    isInter, refFrame->cloud, compensatedPointCloud, TriSoupVerticesPred, gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
 
   PCCPointSet3 recPointCloud;
   recPointCloud.addRemoveAttributes(pointCloud);
@@ -124,7 +119,6 @@ decodeGeometryTrisoup(
 
 
 //============================================================================
-
 struct RasterScanTrisoupEdges {
   const int32_t blockWidth;
   // Eight corners of block.
@@ -162,7 +156,16 @@ struct RasterScanTrisoupEdges {
   const PCCPointSet3& refPointCloud;
   const PCCPointSet3& compensatedPointCloud;
 
-  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, const PCCPointSet3& pointCloud, bool isEncoder, int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& refPointCloud, const PCCPointSet3& compensatedPointCloud)
+  // for coding
+  const GeometryParameterSet& gps;
+  const GeometryBrickHeader& gbh;
+  pcc::EntropyEncoder* arithmeticEncoder;
+  pcc::EntropyDecoder& arithmeticDecoder;
+  GeometryOctreeContexts& ctxtMemOctree;
+
+  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, const PCCPointSet3& pointCloud, bool isEncoder,
+    int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& refPointCloud, const PCCPointSet3& compensatedPointCloud,
+    const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree)
   : leaves(leaves)
   , blockWidth(blockWidth)
   , pointCloud(pointCloud)
@@ -172,10 +175,161 @@ struct RasterScanTrisoupEdges {
   , isInter(isInter)
   , refPointCloud(refPointCloud)
   , compensatedPointCloud(compensatedPointCloud)
+  , gps(gps)
+  , gbh(gbh)
+  , arithmeticEncoder(arithmeticEncoder)
+  , arithmeticDecoder(arithmeticDecoder)
+  , ctxtMemOctree(ctxtMemOctree)
   , currWedgePos(leaves.empty() ? Vec3<int32_t>{0,0,0} : leaves[0].pos)
   , edgesNeighNodes {0,0,0,0,0,0,0,0}
   {}
 
+  //---------------------------------------------------------------------------
+  void  encodeOneTriSoupVertexRasterScan(
+      int8_t vertex,
+      pcc::EntropyEncoder* arithmeticEncoder,
+      GeometryOctreeContexts& ctxtMemOctree,
+      std::vector<int8_t>& TriSoupVertices,
+      int neigh,
+      std::array<int, 18>& patternIdx,
+      int8_t interPredictor,
+      int nbitsVertices,
+      int max2bits,
+      int mid2bits) {
+
+    codeVertexCtxInfo ctxInfo;
+    constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices, nbitsVertices, max2bits, mid2bits);
+
+    // encode vertex presence
+    int ctxMap1, ctxMap2, ctxInter;
+    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor);
+
+    int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(
+      vertex >= 0, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+      ctxtMemOctree._BufferOBUFleavesTrisoup);
+    arithmeticEncoder->encode(
+      (int)(vertex >= 0), ctxTrisoup >> 3,
+      ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxTrisoup],
+      ctxtMemOctree.ctxTriSoup[0][ctxInter].obufSingleBound);
+
+    // encode  vertex position
+    if (vertex >= 0) {
+      int v = 0;
+      int b = nbitsVertices - 1;
+
+      // first position bit
+      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b);
+      int bit = (vertex >> b--) & 1;
+
+      ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].getEvolve(
+        bit, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+        ctxtMemOctree._BufferOBUFleavesTrisoup);
+      arithmeticEncoder->encode(
+        bit, ctxTrisoup >> 3,
+        ctxtMemOctree.ctxTriSoup[1][ctxInter][ctxTrisoup],
+        ctxtMemOctree.ctxTriSoup[1][ctxInter].obufSingleBound);
+      v = bit;
+
+      // second position bit
+      if (b >= 0) {
+        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, v);
+
+        bit = (vertex >> b--) & 1;
+        ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].getEvolve(
+          bit, ctxMap2, (ctxMap1 << 1) + v,
+          &ctxtMemOctree._OBUFleafNumberTrisoup,
+          ctxtMemOctree._BufferOBUFleavesTrisoup);
+        arithmeticEncoder->encode(
+          bit, ctxTrisoup >> 3,
+          ctxtMemOctree.ctxTriSoup[2][ctxInter][ctxTrisoup],
+          ctxtMemOctree.ctxTriSoup[2][ctxInter].obufSingleBound);
+        v = (v << 1) | bit;
+      }
+
+      // third bit
+      if (b >= 0) {
+        int ctxFullNboundsReduced1 = (6 * (ctxInfo.ctx0 >> 1) + ctxInfo.missedCloseStart) * 2 + (ctxInfo.ctxE == 3);
+        bit = (vertex >> b--) & 1;
+        arithmeticEncoder->encode(
+          bit, ctxtMemOctree.ctxTempV2[4 * ctxFullNboundsReduced1 + v]);
+        v = (v << 1) | bit;
+      }
+
+      // remaining bits are bypassed
+      for (; b >= 0; b--)
+        arithmeticEncoder->encode((vertex >> b) & 1);
+    }
+  }
+
+  //---------------------------------------------------------------------------
+  void  decodeOneTriSoupVertexRasterScan(
+    pcc::EntropyDecoder& arithmeticDecoder,
+    GeometryOctreeContexts& ctxtMemOctree,
+    std::vector<int8_t>& TriSoupVertices,
+    int neigh,
+    std::array<int, 18>& patternIdx,
+    int8_t interPredictor,
+    int nbitsVertices,
+    int max2bits,
+    int mid2bits) {
+
+    codeVertexCtxInfo ctxInfo;
+    constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices, nbitsVertices, max2bits, mid2bits);
+
+    // decode vertex presence
+    int ctxMap1, ctxMap2, ctxInter;
+    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor);
+
+    bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(
+      &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2,
+      ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+      ctxtMemOctree._BufferOBUFleavesTrisoup);
+
+    if (!c)
+      TriSoupVertices.push_back(-1);
+
+    // decode vertex position
+    if (c) {
+      uint8_t v = 0;
+      int b = nbitsVertices - 1;
+
+      // first position bit
+      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b);
+      int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(
+        &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[1][ctxInter], ctxMap2,
+        ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
+        ctxtMemOctree._BufferOBUFleavesTrisoup);
+      v = (v << 1) | bit;
+      b--;
+
+      // second position bit
+      if (b >= 0) {
+        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, v);
+        bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(
+          &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[2][ctxInter], ctxMap2,
+          (ctxMap1 << 1) + v, &ctxtMemOctree._OBUFleafNumberTrisoup,
+          ctxtMemOctree._BufferOBUFleavesTrisoup);
+        v = (v << 1) | bit;
+        b--;
+      }
+
+      // third bit
+      if (b >= 0) {
+        int ctxFullNboundsReduced1 = (6 * (ctxInfo.ctx0 >> 1) + ctxInfo.missedCloseStart) * 2 + (ctxInfo.ctxE == 3);
+        v = (v << 1) | arithmeticDecoder.decode(ctxtMemOctree.ctxTempV2[4 * ctxFullNboundsReduced1 + v]);
+        b--;
+      }
+
+      // remaining bits are bypassed
+      for (; b >= 0; b--)
+        v = (v << 1) | arithmeticDecoder.decode();
+
+      TriSoupVertices.push_back(v);
+    }
+  }
+
+
+  //---------------------------------------------------------------------------
   void buildSegments(
       std::vector<uint16_t>& neighbNodes,
       std::vector<std::array<int, 18>>& edgePattern,
@@ -186,10 +340,16 @@ struct RasterScanTrisoupEdges {
   {
     neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
     segmentUniqueIndex.clear();
-    segmentUniqueIndex.resize(12 * leaves.size(), -1); // temporarily set to -1 to check everithing is working
+    segmentUniqueIndex.resize(12 * leaves.size(), -1); // temporarily set to -1 to check everything is working
     // TODO: set to -1 could be removed when everything will work properly
 
     int uniqueIndex = 0;
+    int lastWedgex = currWedgePos[0];
+    int firstVertexToCode = 0;
+    std::vector<int> xForedgeOfVertex;
+    const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
+    const int max2bits = nbitsVertices > 1 ? 3 : 1;
+    const int mid2bits = nbitsVertices > 1 ? 2 : 1;
 
     while (nextIsAvailable()) { // this a loop on start position of edges; 3 edges along x,y and z per start position
       // process current wedge position
@@ -197,88 +357,6 @@ struct RasterScanTrisoupEdges {
       std::array<bool, 8> isNeigbourSane;
       for (int i=0; i<8; ++i) // sanity of neighbouring nodes
         isNeigbourSane[i] = edgesNeighNodes[i] < leaves.size() && currWedgePos + offsets[i] == leaves[edgesNeighNodes[i]].pos;
-
-      // edge along z, then y, then x
-
-      // index in edgesNeighNodes of neighboring nodes for each edge
-      static const int edgesNeighNodesIdx[3][4] = {
-        {6, 4, 0, 2}, // along z
-        {6, 2, 5, 1}, // along y
-        {6, 4, 5, 3}, // along x
-      };
-
-      // axis direction
-      static const int axisdirection[3][3] = { {2,0,1}, {1, 0,2}, {0, 1, 2 } }; // z, y ,x
-
-      // edge index in existing order
-      static const int edgeIdx[3][4] = {
-        {4, 5, 6, 7},
-        {1, 3, 9, 11},
-        {0, 2, 8, 10},
-      };
-
-      static const uint16_t neighMask[3][4] = {
-        {0x4001, 0x4002, 0x4004, 0x4008},
-        {0x2001, 0x2002, 0x2004, 0x2008},
-        {0x0001, 0x0002, 0x0004, 0x0008},
-      };
-
-      // index in edgesNeighNodes of other neighboring nodes for the wedge
-      static const int wedgeNeighNodesIdx[3][4] = {
-        {1, 5, 3, 7}, // along z
-        {0, 3, 4, 7}, // along y
-        {0, 1, 2, 7}, // along x
-      };
-
-      // edge index in existing order
-      static const int wedgeNeighNodesEdgeIdx[3][4] = {
-        {7, 4, 5,  6},
-        {3, 9, 1, 11},
-        {2, 8, 0, 10},
-      };
-
-      static const uint16_t wedgeNeighMask[3][4] = {
-        {0x0800, 0x0100, 0x0200, 0x0400},
-        {0x0200, 0x0400, 0x0100, 0x0800},
-        {0x0200, 0x0400, 0x0100, 0x0800},
-      };
-
-      static const uint16_t toPrevEdgeNeighMask[3][4] = {
-        {0x0010, 0x0020, 0x0040, 0x0080},
-        {0x0010, 0x0020, 0x0040, 0x0080},
-        {0x0010, 0x0020, 0x0040, 0x0080},
-      };
-
-      // neighbourhood staic tables
-      // ---------    8-bit pattern = 0 before, 1-4 perp, 5-12 others
-      static const int localEdgeindex[12][11] = {
-        { 4,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
-        { 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
-        { 1,  5,  4,  9,  0,  8, -1, -1, -1, -1, -1}, // vertex 2
-        { 0,  7,  4,  8,  2, 10,  1,  9, -1, -1, -1}, // vertex 3
-        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
-        { 1,  0,  9,  4, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
-        { 3,  2,  0, 10, 11,  9,  8,  7,  5,  4, -1}, // vertex 6
-        { 0,  1,  2,  8, 10,  4,  5, -1, -1, -1, -1}, // vertex 7
-        { 4,  9,  1,  0, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
-        { 4,  0,  1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
-        { 5,  9,  1,  2,  8,  0, -1, -1, -1, -1, -1}, // vertex 10
-        { 7,  8,  0, 10,  5,  2,  3,  9,  1, -1, -1}  // vertex 11
-      };
-      static const int patternIndex[12][11] = {
-        { 3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 0
-        { 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 1
-        { 2,  3,  5,  8, 15, 17, -1, -1, -1, -1, -1}, // vertex 2
-        { 2,  3,  5,  8,  9, 12, 15, 17, -1, -1, -1}, // vertex 3
-        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 4
-        { 1,  7, 10, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 5
-        { 1,  2,  6,  9, 10, 11, 13, 14, 15, 16, -1}, // vertex 6
-        { 2,  5,  8,  9, 12, 15, 17, -1, -1, -1, -1}, // vertex 7
-        { 1,  4,  7, 14, -1, -1, -1, -1, -1, -1, -1}, // vertex 8
-        { 1,  7, 14, -1, -1, -1, -1, -1, -1, -1, -1}, // vertex 9
-        { 1,  2,  6, 14, 15, 16, -1, -1, -1, -1, -1}, // vertex 10
-        { 1,  2,  6,  9, 11, 13, 14, 15, 16, -1, -1}  // vertex 11
-      };
 
       for (int dir=0; dir<3; ++dir) { // this the loop on the 3 edges along z, then y, then x
         bool processedEdge = false;
@@ -383,6 +461,7 @@ struct RasterScanTrisoupEdges {
           ++uniqueIndex;
           neighbNodes.push_back(neighboursMask);
           edgePattern.push_back(pattern);
+          xForedgeOfVertex.push_back(currWedgePos[0]);
 
           // determine TriSoup Vertex by the encoder
           if (isEncoder)
@@ -408,12 +487,32 @@ struct RasterScanTrisoupEdges {
       }
 
       goNextWedge(isNeigbourSane);
+
+      // code vertices of preceding slices in case the loop has moved up one slice or if finished
+      if (!nextIsAvailable() || currWedgePos[0] > lastWedgex) {
+        int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0];
+
+        while (firstVertexToCode< xForedgeOfVertex.size() && xForedgeOfVertex[firstVertexToCode] < upperxForCoding - blockWidth) {
+          int8_t  interPredictor = isInter ? TriSoupVerticesPred[firstVertexToCode] : 0;
+          if (isEncoder) { // encode vertex
+            auto vertex = TriSoupVertices[firstVertexToCode];
+            encodeOneTriSoupVertexRasterScan(vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], edgePattern[firstVertexToCode], interPredictor, nbitsVertices, max2bits, mid2bits);
+          }
+          else
+            decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], edgePattern[firstVertexToCode], interPredictor, nbitsVertices, max2bits, mid2bits);
+          firstVertexToCode++;
+        }
+      }
+
+      lastWedgex = currWedgePos[0];
     }
     numUniqueIndexes = uniqueIndex;
   }
 private:
+  //---------------------------------------------------------------------------
   bool nextIsAvailable() const { return edgesNeighNodes[0] < leaves.size(); }
 
+  //---------------------------------------------------------------------------
   void goNextWedge(const std::array<bool, 8>& isNeigbourSane) {
     if (isNeigbourSane[0])
       edgesNeighNodes[7] = edgesNeighNodes[0];
@@ -432,9 +531,10 @@ private:
       }
     }
   }
-
 };
 
+
+//---------------------------------------------------------------------------
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
   std::vector<uint16_t>& neighbNodes,
@@ -450,17 +550,22 @@ void determineTrisoupNeighbours(
   bool isInter,
   const PCCPointSet3& refPointCloud,
   const PCCPointSet3& compensatedPointCloud,
-  std::vector<int8_t>& TriSoupVerticesPred) {
+  std::vector<int8_t>& TriSoupVerticesPred,
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  pcc::EntropyEncoder* arithmeticEncoder,
+  pcc::EntropyDecoder& arithmeticDecoder,
+  GeometryOctreeContexts& ctxtMemOctree) {
 
   // Width of block.
   // in future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud);
+  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree);
   rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique, TriSoupVertices, TriSoupVerticesPred);
 }
-//============================================================================
 
+//============================================================================
 template<typename T>
 Vec3<T>
 crossProduct(const Vec3<T> a, const Vec3<T> b)
@@ -473,7 +578,6 @@ crossProduct(const Vec3<T> a, const Vec3<T> b)
 }
 
 //---------------------------------------------------------------------------
-
 Vec3<int32_t>
 truncate(const Vec3<int32_t> in, const int32_t offset)
 {
@@ -497,7 +601,6 @@ boundaryinsidecheck(const Vec3<int32_t> a, const int bbsize)
 }
 
 //---------------------------------------------------------------------------
-
 void nonCubicNode
 (
  const GeometryParameterSet& gps,
@@ -649,7 +752,6 @@ determineCentroidPredictor(
   int lowBound,
   int  highBound)
 {
-
   int driftQPred = -100;
   // determine quantized drift for predictor
   if (end > start) {
@@ -687,7 +789,6 @@ determineCentroidPredictor(
     driftQPred = std::min(std::max(driftQPred, -2 * lowBound), 2 * highBound);  // drift in [-lowBound; highBound] but quantization is twice better
 
   }
-
   return driftQPred;
 }
 
@@ -826,7 +927,6 @@ decodeCentroidResidual(
     // code remaining bits 1 to 7 at most
     int magBound = (sign ? highBound : lowBound) - 1;
     bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && sign) || (driftQPred < 0 && !sign);
-
 
     int ctx = 0;
     while (magBound > 0) {
@@ -1009,7 +1109,6 @@ decodeTrisoupCommon(
       blockCentroid[2] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[2]);
     } // end refinement of the centroid
 
-
     // Divide vertices into triangles around centroid
     // and upsample each triangle by an upsamplingFactor.
     if (triCount > 3) {
@@ -1067,201 +1166,162 @@ decodeTrisoupCommon(
   }// end loop on leaves
 
   recPointCloud.resize(nRecPoints);
-
 }
 
 
 // ---------------------------------------------------------------------------
-void decodeTrisoupVertices(
+void
+constructCtxInfo(
+  codeVertexCtxInfo& ctxInfo,
+  int neigh,
+  std::array<int, 18>& patternIdx,
   std::vector<int8_t>& TriSoupVertices,
-  std::vector<int8_t>& TriSoupVerticesPred,
-  std::vector<uint16_t>& neighbNodes,
-  std::vector<std::array<int, 18>>& edgePattern,
-  int bitDropped,
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  pcc::EntropyDecoder& arithmeticDecoder,
-  GeometryOctreeContexts& ctxtMemOctree)
-{
-  const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
-  const int max2bits = nbitsVertices > 1 ? 3 : 1;
-  const int mid2bits = nbitsVertices > 1 ? 2 : 1;
+  int nbitsVertices,
+  int max2bits,
+  int mid2bits) {
 
-  for (int i = 0; i <= gbh.num_unique_segments_minus1; i++) {
-    // reduced neighbour contexts
-    int ctxE = (!!(neighbNodes[i] & 1)) + (!!(neighbNodes[i] & 2)) + (!!(neighbNodes[i] & 4)) + (!!(neighbNodes[i] & 8)) - 1; // at least one node is occupied 
-    int ctx0 = (!!(neighbNodes[i] & 16)) + (!!(neighbNodes[i] & 32)) + (!!(neighbNodes[i] & 64)) + (!!(neighbNodes[i] & 128));
-    int ctx1 = (!!(neighbNodes[i] & 256)) + (!!(neighbNodes[i] & 512)) + (!!(neighbNodes[i] & 1024)) + (!!(neighbNodes[i] & 2048));
-    int direction = neighbNodes[i] >> 13; // 0=x, 1=y, 2=z
+  ctxInfo.ctxE = (!!(neigh & 1)) + (!!(neigh & 2)) + (!!(neigh & 4)) + (!!(neigh & 8)) - 1; // at least one node is occupied
+  ctxInfo.ctx0 = (!!(neigh & 16)) + (!!(neigh & 32)) + (!!(neigh & 64)) + (!!(neigh & 128));
+  ctxInfo.ctx1 = (!!(neigh & 256)) + (!!(neigh & 512)) + (!!(neigh & 1024)) + (!!(neigh & 2048));
+  int direction = neigh >> 13; // 0=x, 1=y, 2=z
+  ctxInfo.direction = direction;
 
-    // construct pattern
-    auto patternIdx = edgePattern[i];
-    int pattern = 0;
-    int patternClose  = 0;
-    int patternClosest  = 0;
-    int nclosestPattern = 0;
+  for (int v = 0; v < 9; v++) {
+    int v18 = mapping18to9[direction][v];
 
-    int towardOrAway[18] = { // 0 = toward; 1 = away
-      0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    };
-
-    int mapping18to9[3][9] = {
-      { 0, 1, 2, 3,  4, 15, 14, 5,  7},
-      { 0, 1, 2, 3,  9, 15, 14, 7, 12},
-      { 0, 1, 2, 9, 10, 15, 14, 7, 12}
-    };
-
-    for (int v = 0; v < 9; v++) {
-      int v18 = mapping18to9[direction][v];
-
-      if (patternIdx[v18] != -1) {
-        int idxEdge = patternIdx[v18];
-        if (TriSoupVertices[idxEdge] >=0 ) {
-          pattern |= 1 << v;
-          int vertexPos2bits = TriSoupVertices[idxEdge] >> std::max(0, nbitsVertices - 2);
-          if (towardOrAway[v18])
-            vertexPos2bits = max2bits - vertexPos2bits; // reverses for away
-          if (vertexPos2bits >= mid2bits)
-            patternClose |= 1 << v;
-          if (vertexPos2bits >= max2bits)
-            patternClosest |= 1 << v;
-          nclosestPattern += vertexPos2bits >= max2bits && v <= 4;
-        }
+    if (patternIdx[v18] != -1) {
+      int idxEdge = patternIdx[v18];
+      if (TriSoupVertices[idxEdge] >= 0) {
+        ctxInfo.pattern |= 1 << v;
+        int vertexPos2bits = TriSoupVertices[idxEdge] >> std::max(0, nbitsVertices - 2);
+        if (towardOrAway[v18])
+          vertexPos2bits = max2bits - vertexPos2bits; // reverses for away
+        if (vertexPos2bits >= mid2bits)
+          ctxInfo.patternClose |= 1 << v;
+        if (vertexPos2bits >= max2bits)
+          ctxInfo.patternClosest |= 1 << v;
+        ctxInfo.nclosestPattern += vertexPos2bits >= max2bits && v <= 4;
       }
     }
-
-    int missedCloseStart = /*!(pattern & 1)*/ + !(pattern & 2) + !(pattern & 4);
-    int nclosestStart = !!(patternClosest & 1) + !!(patternClosest & 2) + !!(patternClosest & 4);
-    if (direction == 0) {
-      missedCloseStart +=  !(pattern & 8) + !(pattern & 16);
-      nclosestStart +=  !!(patternClosest & 8) + !!(patternClosest & 16);
-    }
-    if (direction == 1) {
-      missedCloseStart +=  !(pattern & 8);
-      nclosestStart +=  !!(patternClosest & 8) - !!(patternClosest & 16) ;
-    }
-    if (direction == 2) {
-      nclosestStart +=  - !!(patternClosest & 8) - !!(patternClosest & 16) ;
-    }
-
-    // reorganize neighbours of vertex /edge (endpoint) independently on xyz
-    int neighbEdge = (neighbNodes[i] >> 0) & 15;
-    int neighbEnd = (neighbNodes[i] >> 4) & 15;
-    int neighbStart = (neighbNodes[i] >> 8) & 15;
-    if (direction == 2) {
-      neighbEdge = ((neighbNodes[i] >> 0 + 0) & 1);
-      neighbEdge += ((neighbNodes[i] >> 0 + 3) & 1) << 1;
-      neighbEdge += ((neighbNodes[i] >> 0 + 1) & 1) << 2;
-      neighbEdge += ((neighbNodes[i] >> 0 + 2) & 1) << 3;
-
-      neighbEnd = ((neighbNodes[i] >> 4 + 0) & 1);
-      neighbEnd += ((neighbNodes[i] >> 4 + 3) & 1) << 1;
-      neighbEnd += ((neighbNodes[i] >> 4 + 1) & 1) << 2;
-      neighbEnd += ((neighbNodes[i] >> 4 + 2) & 1) << 3;
-
-      neighbStart = ((neighbNodes[i] >> 8 + 0) & 1);
-      neighbStart += ((neighbNodes[i] >> 8 + 3) & 1) << 1;
-      neighbStart += ((neighbNodes[i] >> 8 + 1) & 1) << 2;
-      neighbStart += ((neighbNodes[i] >> 8 + 2) & 1) << 3;
-    }
-
-    // encode flag vertex
-
-    int ctxMap1 = std::min(nclosestPattern, 2) * 15 * 2 +  (neighbEdge-1) * 2 + ((ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits
-    int ctxMap2 = neighbEnd << 11;
-    ctxMap2 |= (patternClose & (0b00000110)) << 9 - 1 ; // perp that do not depend on direction = to start
-    ctxMap2 |= direction << 7;
-    ctxMap2 |= (patternClose & (0b00011000))<< 5-3; // perp that  depend on direction = to start or to end
-    ctxMap2 |= (patternClose & (0b00000001))<< 4;  // before
-    int orderedPclosePar = (((pattern >> 5) & 3) << 2) + (!!(pattern & 128) << 1) + !!(pattern & 256);
-    ctxMap2 |= orderedPclosePar;
-
-    bool isInter = gbh.interPredictionEnabledFlag  ;
-    int ctxInter =  isInter ? 1 + (TriSoupVerticesPred[i] >=0 ): 0;
-
-    bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(
-      &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2,
-      ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
-      ctxtMemOctree._BufferOBUFleavesTrisoup);
-
-    if (!c)
-      TriSoupVertices.push_back(-1);
-
-    // encode position vertex 
-    if (c) {
-      uint8_t v = 0;
-      int ctxFullNbounds = (4 * (ctx0 <= 1 ? 0 : (ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctx1) - 1)) * 2 + (ctxE == 3);
-      int b = nbitsVertices - 1;
-
-      // first bit
-      ctxMap1 = ctxFullNbounds * 2 + (nclosestStart > 0);
-      ctxMap2 = missedCloseStart << 8;
-      ctxMap2 |= (patternClosest & 1) << 7;
-      ctxMap2 |= direction << 5;
-      ctxMap2 |= patternClose & (0b00011111);
-      int orderedPclosePar = (((patternClose >> 5) & 3) << 2) + (!!(patternClose & 128) << 1) + !!(patternClose & 256);
-
-      ctxInter = 0;
-      if (isInter) {
-        ctxInter = TriSoupVerticesPred[i] >=0 ? 1 + ((TriSoupVerticesPred[i] >> b-1) & 3) : 0;
-      }
-
-      int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(
-        &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[1][ctxInter], ctxMap2,
-        ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
-        ctxtMemOctree._BufferOBUFleavesTrisoup);
-      v = (v << 1) | bit;
-      b--;
-
-      // second bit
-      if (b >= 0) {
-        ctxMap1 = ctxFullNbounds * 2 + (nclosestStart > 0);
-        ctxMap2 = missedCloseStart << 8;
-        ctxMap2 |= (patternClose & 1) << 7;
-        ctxMap2 |= (patternClosest & 1) << 6;
-        ctxMap2 |= direction << 4;
-        ctxMap2 |= (patternClose & (0b00011111)) >> 1;
-        ctxMap2 = (ctxMap2 << 4) + orderedPclosePar;
-
-        ctxInter = 0;
-        if (isInter) {
-          ctxInter = TriSoupVerticesPred[i] >=0 ? 1 + ((TriSoupVerticesPred[i] >> b) <= (v << 1)) : 0;
-        }
-
-        bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(
-          &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[2][ctxInter], ctxMap2,
-          (ctxMap1 << 1) + v, &ctxtMemOctree._OBUFleafNumberTrisoup,
-          ctxtMemOctree._BufferOBUFleavesTrisoup);
-        v = (v << 1) | bit;
-        b--;
-      }
-
-
-      // third bit
-      if (b >= 0) {
-        int ctxFullNboundsReduced1 = (6 * (ctx0 >> 1) + missedCloseStart) * 2 + (ctxE == 3);
-        v = (v << 1) | arithmeticDecoder.decode(ctxtMemOctree.ctxTempV2[4 * ctxFullNboundsReduced1 + v]);
-        b--;
-      }
-
-      // remaining bits are bypassed
-      for (; b >= 0; b--)
-        v = (v << 1) | arithmeticDecoder.decode();
-
-      TriSoupVertices.push_back(v);
-    }
-
   }
 
+  ctxInfo.missedCloseStart = /*!(ctxInfo.pattern & 1) + */  !(ctxInfo.pattern & 2) + !(ctxInfo.pattern & 4);
+  ctxInfo.nclosestStart = !!(ctxInfo.patternClosest & 1) + !!(ctxInfo.patternClosest & 2) + !!(ctxInfo.patternClosest & 4);
+  if (direction == 0) {
+    ctxInfo.missedCloseStart += !(ctxInfo.pattern & 8) + !(ctxInfo.pattern & 16);
+    ctxInfo.nclosestStart += !!(ctxInfo.patternClosest & 8) + !!(ctxInfo.patternClosest & 16);
+  }
+  if (direction == 1) {
+    ctxInfo.missedCloseStart += !(ctxInfo.pattern & 8);
+    ctxInfo.nclosestStart += !!(ctxInfo.patternClosest & 8) - !!(ctxInfo.patternClosest & 16);
+  }
+  if (direction == 2) {
+    ctxInfo.nclosestStart += -!!(ctxInfo.patternClosest & 8) - !!(ctxInfo.patternClosest & 16);
+  }
+
+  // reorganize neighbours of vertex /edge (endpoint) independently on xyz
+  ctxInfo.neighbEdge = (neigh >> 0) & 15;
+  ctxInfo.neighbEnd = (neigh >> 4) & 15;
+  ctxInfo.neighbStart = (neigh >> 8) & 15;
+  if (direction == 2) {
+    ctxInfo.neighbEdge = ((neigh >> 0 + 0) & 1);
+    ctxInfo.neighbEdge += ((neigh >> 0 + 3) & 1) << 1;
+    ctxInfo.neighbEdge += ((neigh >> 0 + 1) & 1) << 2;
+    ctxInfo.neighbEdge += ((neigh >> 0 + 2) & 1) << 3;
+
+    ctxInfo.neighbEnd = ((neigh >> 4 + 0) & 1);
+    ctxInfo.neighbEnd += ((neigh >> 4 + 3) & 1) << 1;
+    ctxInfo.neighbEnd += ((neigh >> 4 + 1) & 1) << 2;
+    ctxInfo.neighbEnd += ((neigh >> 4 + 2) & 1) << 3;
+
+    ctxInfo.neighbStart = ((neigh >> 8 + 0) & 1);
+    ctxInfo.neighbStart += ((neigh >> 8 + 3) & 1) << 1;
+    ctxInfo.neighbStart += ((neigh >> 8 + 1) & 1) << 2;
+    ctxInfo.neighbStart += ((neigh >> 8 + 2) & 1) << 3;
+  }
+
+  ctxInfo.orderedPclosePar = (((ctxInfo.pattern >> 5) & 3) << 2) + (!!(ctxInfo.pattern & 128) << 1) + !!(ctxInfo.pattern & 256);
+  ctxInfo.orderedPcloseParPos = (((ctxInfo.patternClose >> 5) & 3) << 2) + (!!(ctxInfo.patternClose & 128) << 1) + !!(ctxInfo.patternClose & 256);
+}
+
+// -------------------------------------------------------------------------- -
+void
+constructCtxPresence(
+  int& ctxMap1,
+  int& ctxMap2,
+  int& ctxInter,
+  codeVertexCtxInfo& ctxInfo,
+  bool isInter,
+  int8_t TriSoupVerticesPred) {
+
+  ctxMap1 = std::min(ctxInfo.nclosestPattern, 2) * 15 * 2 + (ctxInfo.neighbEdge - 1) * 2 + ((ctxInfo.ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits
+  ctxMap2 = ctxInfo.neighbEnd << 11;
+  ctxMap2 |= (ctxInfo.patternClose & (0b00000110)) << 9 - 1; // perp that do not depend on direction = to start
+  ctxMap2 |= ctxInfo.direction << 7;
+  ctxMap2 |= (ctxInfo.patternClose & (0b00011000)) << 5 - 3; // perp that  depend on direction = to start or to end
+  ctxMap2 |= (ctxInfo.patternClose & (0b00000001)) << 4;  // before
+  ctxMap2 |= ctxInfo.orderedPclosePar;
+
+  ctxInter = isInter ? 1 + (TriSoupVerticesPred >= 0) : 0;
+}
+
+// -------------------------------------------------------------------------- -
+void
+constructCtxPos1(
+  int& ctxMap1,
+  int& ctxMap2,
+  int& ctxInter,
+  codeVertexCtxInfo& ctxInfo,
+  bool isInter,
+  int8_t TriSoupVerticesPred,
+  int b) {
+
+  int ctxFullNbounds = (4 * (ctxInfo.ctx0 <= 1 ? 0 : (ctxInfo.ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctxInfo.ctx1) - 1)) * 2 + (ctxInfo.ctxE == 3);
+  ctxMap1 = ctxFullNbounds * 2 + (ctxInfo.nclosestStart > 0);
+  ctxMap2 = ctxInfo.missedCloseStart << 8;
+  ctxMap2 |= (ctxInfo.patternClosest & 1) << 7;
+  ctxMap2 |= ctxInfo.direction << 5;
+  ctxMap2 |= ctxInfo.patternClose & (0b00011111);
+
+  ctxInter = 0;
+  if (isInter) {
+    ctxInter = TriSoupVerticesPred >= 0 ? 1 + ((TriSoupVerticesPred >> b - 1) & 3) : 0;
+  }
+}
+
+// ------------------------------------------------------------------------
+void
+constructCtxPos2(
+  int& ctxMap1,
+  int& ctxMap2,
+  int& ctxInter,
+  codeVertexCtxInfo& ctxInfo,
+  bool isInter,
+  int8_t TriSoupVerticesPred,
+  int b,
+  int v){
+
+  int ctxFullNbounds = (4 * (ctxInfo.ctx0 <= 1 ? 0 : (ctxInfo.ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctxInfo.ctx1) - 1)) * 2 + (ctxInfo.ctxE == 3);
+  ctxMap1 = ctxFullNbounds * 2 + (ctxInfo.nclosestStart > 0);
+  ctxMap2 = ctxInfo.missedCloseStart << 8;
+  ctxMap2 |= (ctxInfo.patternClose & 1) << 7;
+  ctxMap2 |= (ctxInfo.patternClosest & 1) << 6;
+  ctxMap2 |= ctxInfo.direction << 4;
+  ctxMap2 |= (ctxInfo.patternClose & (0b00011111)) >> 1;
+  ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
+
+  ctxInter = 0;
+  if (isInter) {
+    ctxInter = TriSoupVerticesPred >= 0 ? 1 + ((TriSoupVerticesPred >> b) <= (v << 1)) : 0;
+  }
 }
 
 
-//-----------------------
+// ---------------------------------------------------------------------------
 // Project vertices along dominant axis (i.e., into YZ, XZ, or XY plane).
 // Sort projected vertices by decreasing angle in [-pi,+pi] around center
 // of block (i.e., clockwise) breaking ties in angle by
 // increasing distance along the dominant axis.   
-
 int findDominantAxis(
   std::vector<Vertex>& leafVertices,
   Vec3<uint32_t> blockWidth,
@@ -1269,7 +1329,6 @@ int findDominantAxis(
 
   int dominantAxis = 0;
   int triCount = leafVertices.size();
-
   auto leafVerticesTemp = leafVertices;
 
   if (triCount > 3) {
@@ -1320,16 +1379,13 @@ int findDominantAxis(
         leafVertices = leafVerticesTemp;
       }
     }
-  } // end find dominant axis
+  }
 
   return dominantAxis;
 }
 
 
-
-
-
-// -------------------------------------------
+// --------------------------------------------------------
 void rayTracingAlongdirection_samp1_optim(
   std::vector<Vec3<int32_t>>& refinedVerticesBlock,
   int direction,
@@ -1436,5 +1492,4 @@ void rayTracingAlongdirection_samp1_optim(
 }
 
 //============================================================================
-
 }  // namespace pcc
