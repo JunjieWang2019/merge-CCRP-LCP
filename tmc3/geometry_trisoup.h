@@ -218,12 +218,9 @@ namespace pcc {
 
 
 void determineTrisoupNeighbours(
-  const std::vector<PCCOctree3Node>& leaves, 
-  std::vector<uint16_t>& neighbNodes, 
-  std::vector<std::array<int, 18>>& edgePattern,
+  const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
   std::vector<int>& segmentUniqueIndex,
-  int& Nunique,
   const PCCPointSet3& pointCloud,
   std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
@@ -232,7 +229,6 @@ void determineTrisoupNeighbours(
   bool isInter,
   const PCCPointSet3& refPointCloud,
   const PCCPointSet3& compensatedPointCloud,
-  std::vector<int8_t>& TriSoupVerticesPred,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
   pcc::EntropyEncoder* arithmeticEncoder,

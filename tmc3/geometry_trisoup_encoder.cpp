@@ -94,20 +94,16 @@ encodeGeometryTrisoup(
   }
 
   // Determine neighbours
-  std::vector<uint16_t> neighbNodes;
-  std::vector<std::array<int, 18>> edgePattern;
   std::vector<int> segmentUniqueIndex;
   std::vector<int8_t> TriSoupVertices;
-  std::vector<int8_t> TriSoupVerticesPred;
-  int Nunique;
   EntropyDecoder foo;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder,
-    isInter, refFrame.cloud, compensatedPointCloud, TriSoupVerticesPred, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
+  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder,
+    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
 
   gbh.num_unique_segments_minus1 = TriSoupVertices.size() - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
-  // Decode vertices with certain sampling value
+  // reconstruct points  with some sampling value
   bool haloFlag = gbh.trisoup_halo_flag;
   bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
   bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;

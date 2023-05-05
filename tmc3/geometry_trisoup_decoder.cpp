@@ -84,14 +84,10 @@ decodeGeometryTrisoup(
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
 
   // Determine neighbours
-  std::vector<uint16_t> neighbNodes;
-  std::vector<std::array<int, 18>> edgePattern;
   std::vector<int> segmentUniqueIndex;
   std::vector<int8_t> TriSoupVertices;
-  std::vector<int8_t> TriSoupVerticesPred;
-  int Nunique;
-  determineTrisoupNeighbours(nodes, neighbNodes, edgePattern, blockWidth, segmentUniqueIndex, Nunique, pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
-    isInter, refFrame->cloud, compensatedPointCloud, TriSoupVerticesPred, gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
+  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex,  pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
+    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
 
   PCCPointSet3 recPointCloud;
   recPointCloud.addRemoveAttributes(pointCloud);
@@ -331,13 +327,13 @@ struct RasterScanTrisoupEdges {
 
   //---------------------------------------------------------------------------
   void buildSegments(
-      std::vector<uint16_t>& neighbNodes,
-      std::vector<std::array<int, 18>>& edgePattern,
       std::vector<int>& segmentUniqueIndex,
-      int& numUniqueIndexes,
-      std::vector<int8_t>& TriSoupVertices,
-      std::vector<int8_t>& TriSoupVerticesPred)
+      std::vector<int8_t>& TriSoupVertices)
   {
+    std::vector<uint16_t> neighbNodes;
+    std::vector<std::array<int, 18>> edgePattern;
+    std::vector<int8_t> TriSoupVerticesPred;
+
     neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
     segmentUniqueIndex.clear();
     segmentUniqueIndex.resize(12 * leaves.size(), -1); // temporarily set to -1 to check everything is working
@@ -486,6 +482,7 @@ struct RasterScanTrisoupEdges {
         }
       }
 
+      // move to next wedge
       goNextWedge(isNeigbourSane);
 
       // code vertices of preceding slices in case the loop has moved up one slice or if finished
@@ -506,7 +503,6 @@ struct RasterScanTrisoupEdges {
 
       lastWedgex = currWedgePos[0];
     }
-    numUniqueIndexes = uniqueIndex;
   }
 private:
   //---------------------------------------------------------------------------
@@ -537,11 +533,8 @@ private:
 //---------------------------------------------------------------------------
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
-  std::vector<uint16_t>& neighbNodes,
-  std::vector<std::array<int, 18>>& edgePattern,
   const int defaultBlockWidth,
   std::vector<int>& segmentUniqueIndex,
-  int& Nunique,
   const PCCPointSet3& pointCloud,
   std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
@@ -550,7 +543,6 @@ void determineTrisoupNeighbours(
   bool isInter,
   const PCCPointSet3& refPointCloud,
   const PCCPointSet3& compensatedPointCloud,
-  std::vector<int8_t>& TriSoupVerticesPred,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
   pcc::EntropyEncoder* arithmeticEncoder,
@@ -562,7 +554,7 @@ void determineTrisoupNeighbours(
   const int32_t blockWidth = defaultBlockWidth;
 
   RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree);
-  rste.buildSegments(neighbNodes, edgePattern, segmentUniqueIndex, Nunique, TriSoupVertices, TriSoupVerticesPred);
+  rste.buildSegments( segmentUniqueIndex, TriSoupVertices);
 }
 
 //============================================================================
