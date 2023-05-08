@@ -221,7 +221,7 @@ void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
   std::vector<int>& segmentUniqueIndex,
-  const PCCPointSet3& pointCloud,
+  PCCPointSet3& pointCloud,
   std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
   int bitDropped,
@@ -233,7 +233,11 @@ void determineTrisoupNeighbours(
   const GeometryBrickHeader& gbh,
   pcc::EntropyEncoder* arithmeticEncoder,
   pcc::EntropyDecoder& arithmeticDecoder,
-  GeometryOctreeContexts& ctxtMemOctree);
+  GeometryOctreeContexts& ctxtMemOctree,
+  const bool isCentroidDriftActivated,
+  bool haloFlag,
+  bool adaptiveHaloFlag,
+  int thickness);
 
 
 //============================================================================
@@ -257,29 +261,6 @@ int decodeCentroidResidual(
   int highBoundSurface,
   int lowBound,
   int highBound);
-
-
-void decodeTrisoupCommon(
-  const std::vector<PCCOctree3Node>& leaves,
-  const std::vector<int8_t>& TriSoupVertices,
-  PCCPointSet3& pointCloud,
-  PCCPointSet3& recPointCloud,
-  PCCPointSet3& compensatedPointCloud,
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  int defaultBlockWidth,
-  int poistionClipValue,
-  const int bitDropped,
-  const bool isCentroidDriftActivated,
-  bool isDecoder,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
-  bool fineRayflag,
-  int thickness,
-  pcc::EntropyDecoder* arithmeticDecoder,
-  pcc::EntropyEncoder* arithmeticEncoder,
-  GeometryOctreeContexts& ctxtMemOctree,
-  std::vector<int>& segmentUniqueIndex);
 
 int findDominantAxis(
   std::vector<Vertex>& leafVertices,
@@ -324,6 +305,60 @@ void nonCubicNode
  Vec3<int32_t>& neww,
  Vec3<int32_t>* corner
  );
+
+//============================================================================
+bool
+boundaryinsidecheck(const Vec3<int32_t> a, const int bbsize);
+
+template<typename T>
+Vec3<T>
+crossProduct(const Vec3<T> a, const Vec3<T> b);
+
+void
+determineCentroidAndDominantAxis(
+  Vec3<int32_t>& blockCentroid,
+  int& dominantAxis,
+  std::vector<Vertex>& leafVertices,
+  Vec3<int32_t> nodew);
+
+Vec3<int32_t>
+determineCentroidNormalAndBounds(
+  int& lowBound,
+  int& highBound,
+  int& lowBoundSurface,
+  int& highBoundSurface,
+  int& ctxMinMax,
+  int bitDropped,
+  int bitDropped2,
+  int triCount,
+  Vec3<int32_t> blockCentroid,
+  int dominantAxis,
+  std::vector<Vertex>& leafVertices,
+  int nodewDominant);
+
+int
+determineCentroidPredictor(
+  int bitDropped2,
+  Vec3<int32_t> normalV,
+  Vec3<int32_t> blockCentroid,
+  Vec3<int32_t> nodepos,
+  const PCCPointSet3& compensatedPointCloud,
+  int start,
+  int end,
+  int lowBound,
+  int  highBound);
+
+int
+determineCentroidResidual(
+  int bitDropped2,
+  Vec3<int32_t> normalV,
+  Vec3<int32_t> blockCentroid,
+  Vec3<int32_t> nodepos,
+  PCCPointSet3& pointCloud,
+  int start,
+  int end,
+  int lowBound,
+  int  highBound);
 
 //============================================================================
 

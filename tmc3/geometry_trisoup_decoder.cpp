@@ -83,30 +83,16 @@ decodeGeometryTrisoup(
   std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
 
-  // Determine neighbours
-  std::vector<int> segmentUniqueIndex;
-  std::vector<int8_t> TriSoupVertices;
-  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex,  pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
-    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
-
-  PCCPointSet3 recPointCloud;
-  recPointCloud.addRemoveAttributes(pointCloud);
-
-  // Compute refinedVertices.
-  int32_t maxval = (1 << gbh.maxRootNodeDimLog2) - 1;
   bool haloFlag = gbh.trisoup_halo_flag;
   bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
   bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;
   int thickness = gbh.trisoup_thickness;
 
-  decodeTrisoupCommon(
-    nodes, TriSoupVertices, pointCloud, recPointCloud,
-    compensatedPointCloud, gps, gbh, blockWidth, maxval,
-    bitDropped, isCentroidDriftActivated, true, haloFlag, adaptiveHaloFlag, fineRayFlag, thickness,
-    &arithmeticDecoder,  NULL, ctxtMemOctree, segmentUniqueIndex);
-
-  pointCloud.resize(0);
-  pointCloud = std::move(recPointCloud);
+  // Determine neighbours
+  std::vector<int> segmentUniqueIndex;
+  std::vector<int8_t> TriSoupVertices;
+  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex,  pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
+    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
@@ -138,13 +124,16 @@ struct RasterScanTrisoupEdges {
     { -blockWidth, -blockWidth, -blockWidth },//-posWWW, // left-bottom-front only useful for neighbors determination
   };
 
+  const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
+  const int endCorner[12] = { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
+
   std::array<int, 8> edgesNeighNodes; // neighboring nodes' index
   // The 7 firsts are used for unique segments generation/iteration
   // All the 8 are used for contextual information to be used by edge entropy coder
   Vec3<int32_t> currWedgePos;
 
   const std::vector<PCCOctree3Node>& leaves;
-  const PCCPointSet3& pointCloud;
+  PCCPointSet3& pointCloud;
   const bool isEncoder;
   const int bitDropped;
   const int distanceSearchEncoder;
@@ -159,9 +148,16 @@ struct RasterScanTrisoupEdges {
   pcc::EntropyDecoder& arithmeticDecoder;
   GeometryOctreeContexts& ctxtMemOctree;
 
-  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, const PCCPointSet3& pointCloud, bool isEncoder,
+  // for rendering
+  const bool isCentroidDriftActivated;
+  bool haloFlag;
+  bool adaptiveHaloFlag;
+  int thickness;
+
+  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, PCCPointSet3& pointCloud, bool isEncoder,
     int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& refPointCloud, const PCCPointSet3& compensatedPointCloud,
-    const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree)
+    const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree,
+    const bool isCentroidDriftActivated,  bool haloFlag, bool adaptiveHaloFlag,  int thickness)
   : leaves(leaves)
   , blockWidth(blockWidth)
   , pointCloud(pointCloud)
@@ -176,6 +172,10 @@ struct RasterScanTrisoupEdges {
   , arithmeticEncoder(arithmeticEncoder)
   , arithmeticDecoder(arithmeticDecoder)
   , ctxtMemOctree(ctxtMemOctree)
+  , isCentroidDriftActivated(isCentroidDriftActivated)
+  , haloFlag(haloFlag)
+  , adaptiveHaloFlag(adaptiveHaloFlag)
+  , thickness(thickness)
   , currWedgePos(leaves.empty() ? Vec3<int32_t>{0,0,0} : leaves[0].pos)
   , edgesNeighNodes {0,0,0,0,0,0,0,0}
   {}
@@ -326,6 +326,187 @@ struct RasterScanTrisoupEdges {
 
 
   //---------------------------------------------------------------------------
+  void generateTrianglesInNodeRasterScan(
+    const PCCOctree3Node& leaf,
+    int& nRecPoints,
+    std::vector<Vec3<int32_t>>& refinedVerticesBlock,
+    const std::vector<int8_t>& TriSoupVertices,
+    int& idxSegment,
+    PCCPointSet3& recPointCloud,
+    Box3<int32_t>& sliceBB,
+    const bool isCentroidDriftActivated,
+    bool haloFlag,
+    bool adaptiveHaloFlag,
+    int thickness,
+    std::vector<int>& segmentUniqueIndex)
+  {
+    Vec3<int32_t> nodepos, nodew, corner[8];
+    nonCubicNode(gps, gbh, leaf.pos, blockWidth, sliceBB, nodepos, nodew, corner);
+
+    // Find up to 12 vertices for this leaf.
+    std::vector<Vertex> leafVertices;
+    refinedVerticesBlock.resize(0);
+
+    for (int j = 0; j < 12; j++) {
+      int uniqueIndex = segmentUniqueIndex[idxSegment++];
+      int vertex = TriSoupVertices[uniqueIndex];
+
+      if (vertex < 0)
+        continue;  // skip segments that do not intersect the surface
+      auto startSegment = corner[startCorner[j]];
+      auto endSegment = corner[endCorner[j]];
+
+      // Get distance along edge of vertex.
+      // Vertex code is the index of the voxel along the edge of the block
+      // of surface intersection./ Put decoded vertex at center of voxel,
+      // unless voxel is first or last along the edge, in which case put the
+      // decoded vertex at the start or endpoint of the segment.
+      Vec3<int32_t> direction = endSegment - startSegment;
+      uint32_t segment_len = direction.max();
+
+      // Get 3D position of point of intersection.
+      Vec3<int32_t> point = startSegment << kTrisoupFpBits;
+      point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3
+
+      // points on edges are located at integer values
+      int32_t distance = (vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
+      if (direction[0])
+        point[0] += distance; // in {0,1,...,B-1}
+      else if (direction[1])
+        point[1] += distance;
+      else  // direction[2]
+        point[2] += distance;
+
+      // Add vertex to list of vertices.
+      leafVertices.push_back({ point, 0, 0 });
+
+      // vertex to list of points
+      if (bitDropped) {
+        Vec3<int32_t> foundvoxel = (point + truncateValue) >> kTrisoupFpBits;
+        if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
+          refinedVerticesBlock.push_back(nodepos + foundvoxel);
+      }
+    }
+
+    // Skip leaves that have fewer than 3 vertices.
+    int triCount = (int)leafVertices.size();
+    if (triCount < 3) {
+      std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+      refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+
+      // Move list of points to pointCloud
+      int nPointInCloud = recPointCloud.getPointCount();
+      int nPointInNode = refinedVerticesBlock.size();
+      if (nPointInCloud <= nRecPoints + nPointInNode)
+        recPointCloud.resize(nRecPoints + nPointInNode + 100000);
+
+      for (int i = 0; i < nPointInNode; i++)
+        recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
+      nRecPoints += nPointInNode;
+      return;
+    }
+
+    // compute centroid
+    Vec3<int32_t> blockCentroid;
+    int dominantAxis;
+    determineCentroidAndDominantAxis(blockCentroid, dominantAxis, leafVertices, nodew);
+
+    // Refinement of the centroid along the domiannt axis
+    if (triCount > 3 && isCentroidDriftActivated) {
+      int bitDropped2 = bitDropped;
+
+      int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
+      Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis]);
+
+      int driftQPred = determineCentroidPredictor(bitDropped2, normalV, blockCentroid, nodepos, compensatedPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound);
+
+      int driftQ = 0;
+      if (isEncoder) { // encode centroid residual
+        driftQ = determineCentroidResidual(bitDropped2, normalV, blockCentroid, nodepos, pointCloud, leaf.start, leaf.end, lowBound, highBound);
+        encodeCentroidResidual(driftQ, arithmeticEncoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
+      }
+      else { // decode centroid residual
+        driftQ = decodeCentroidResidual(&arithmeticDecoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
+      }
+
+      // dequantize and apply drift
+      int driftDQ = 0;
+      if (driftQ) {
+        driftDQ = std::abs(driftQ) << bitDropped2 + 6;
+        int half = 1 << 5 + bitDropped2;
+        int DZ = 2 * half / 3;
+        driftDQ += DZ - half;
+        if (driftQ < 0)
+          driftDQ = -driftDQ;
+      }
+
+      blockCentroid += (driftDQ * normalV) >> 6;
+      blockCentroid[0] = std::max(-kTrisoupFpHalf, blockCentroid[0]);
+      blockCentroid[1] = std::max(-kTrisoupFpHalf, blockCentroid[1]);
+      blockCentroid[2] = std::max(-kTrisoupFpHalf, blockCentroid[2]);
+      blockCentroid[0] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[0]);
+      blockCentroid[1] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[1]);
+      blockCentroid[2] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[2]);
+    } // end refinement of the centroid
+
+    // Divide vertices into triangles around centroid
+    // and upsample each triangle by an upsamplingFactor.
+    if (triCount > 3) {
+      Vec3<int32_t> foundvoxel = (blockCentroid + truncateValue) >> kTrisoupFpBits;
+      if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
+        refinedVerticesBlock.push_back(nodepos + foundvoxel);
+    }
+
+    int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
+    haloTriangle = (haloTriangle * 28) >> 5; // / 32;
+    haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
+
+    Vec3<int32_t> v2 = triCount == 3 ? leafVertices[2].pos : blockCentroid;
+    Vec3<int32_t> v1 = leafVertices[0].pos;
+    for (int triIndex = 0; triIndex < (triCount == 3 ? 1 : triCount); triIndex++) {
+      int j1 = triIndex == triCount - 1 ? 0 : triIndex + 1;
+      Vec3<int32_t> v0 = v1;
+      v1 = leafVertices[j1].pos;
+
+      // range
+      int minRange[3];
+      int maxRange[3];
+      for (int k = 0; k < 3; k++) {
+        minRange[k] = std::max(0, std::min(std::min(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
+        maxRange[k] = std::min(blockWidth - 1, std::max(std::max(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
+      }
+
+      // choose ray direction
+      Vec3<int32_t> edge1 = v1 - v0;
+      Vec3<int32_t> edge2 = v2 - v0;
+      Vec3<int32_t> h = crossProduct(edge1, edge2).abs() >> kTrisoupFpBits;
+      int directionOk = (h[0] > h[1] && h[0] > h[2]) ? 0 : h[1] > h[2] ? 1 : 2;
+
+      // applying ray tracing along direction
+      rayTracingAlongdirection_samp1_optim(
+        refinedVerticesBlock, directionOk, blockWidth, nodepos, minRange,
+        maxRange, edge1, edge2, v0, haloTriangle, thickness);
+
+    }  // end loop on triangles
+
+    // remove points present twice or more for node
+    std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
+    refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+
+    // Move list of points to pointCloud
+    int nPointInCloud = recPointCloud.getPointCount();
+    int nPointInNode = refinedVerticesBlock.size();
+    if (nPointInCloud <= nRecPoints + nPointInNode)
+      recPointCloud.resize(nRecPoints + nPointInNode + 100000);
+
+    for (int i = 0; i < nPointInNode; i++)
+      recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
+    nRecPoints += nPointInNode;
+
+  }
+
+
+  //---------------------------------------------------------------------------
   void buildSegments(
       std::vector<int>& segmentUniqueIndex,
       std::vector<int8_t>& TriSoupVertices)
@@ -339,13 +520,30 @@ struct RasterScanTrisoupEdges {
     segmentUniqueIndex.resize(12 * leaves.size(), -1); // temporarily set to -1 to check everything is working
     // TODO: set to -1 could be removed when everything will work properly
 
+    // for slice tracking
     int uniqueIndex = 0;
     int lastWedgex = currWedgePos[0];
     int firstVertexToCode = 0;
+    int firstNodeToRender = 0;
+
+    // for edge coding
     std::vector<int> xForedgeOfVertex;
     const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
     const int max2bits = nbitsVertices > 1 ? 3 : 1;
     const int mid2bits = nbitsVertices > 1 ? 2 : 1;
+
+    // for rendering
+    PCCPointSet3 recPointCloud;
+    recPointCloud.addRemoveAttributes(pointCloud);
+    recPointCloud.resize(100000);
+    int nRecPoints = 0;
+    Box3<int32_t> sliceBB;
+    sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
+    sliceBB.max = sliceBB.min + (gbh.slice_bb_width << gbh.slice_bb_width_log2_scale);
+
+    int idxSegment = 0;
+    std::vector<Vec3<int32_t>> refinedVerticesBlock;
+    refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
 
     while (nextIsAvailable()) { // this a loop on start position of edges; 3 edges along x,y and z per start position
       // process current wedge position
@@ -485,11 +683,12 @@ struct RasterScanTrisoupEdges {
       // move to next wedge
       goNextWedge(isNeigbourSane);
 
-      // code vertices of preceding slices in case the loop has moved up one slice or if finished
+      // code vertices and rendering of preceding slices in case the loop has moved up one slice or if finished
       if (!nextIsAvailable() || currWedgePos[0] > lastWedgex) {
-        int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0];
 
-        while (firstVertexToCode< xForedgeOfVertex.size() && xForedgeOfVertex[firstVertexToCode] < upperxForCoding - blockWidth) {
+        // coding
+        int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - blockWidth;
+        while (firstVertexToCode< xForedgeOfVertex.size() && xForedgeOfVertex[firstVertexToCode] < upperxForCoding ) {
           int8_t  interPredictor = isInter ? TriSoupVerticesPred[firstVertexToCode] : 0;
           if (isEncoder) { // encode vertex
             auto vertex = TriSoupVertices[firstVertexToCode];
@@ -499,11 +698,25 @@ struct RasterScanTrisoupEdges {
             decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], edgePattern[firstVertexToCode], interPredictor, nbitsVertices, max2bits, mid2bits);
           firstVertexToCode++;
         }
+
+        // rendering
+        int upperxForRendering = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - 2*blockWidth;
+        while (firstNodeToRender < leaves.size() && leaves[firstNodeToRender].pos[0] < upperxForRendering) {
+          auto leaf = leaves[firstNodeToRender];
+          generateTrianglesInNodeRasterScan(leaf, nRecPoints, refinedVerticesBlock, TriSoupVertices, idxSegment, recPointCloud, sliceBB, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness, segmentUniqueIndex);
+          firstNodeToRender++;
+        }
       }
 
       lastWedgex = currWedgePos[0];
-    }
+    } // end while loop on wedges
+
+    // copy reconstructed point cloud to point cloud
+    recPointCloud.resize(nRecPoints);
+    pointCloud.resize(0);
+    pointCloud = std::move(recPointCloud);
   }
+
 private:
   //---------------------------------------------------------------------------
   bool nextIsAvailable() const { return edgesNeighNodes[0] < leaves.size(); }
@@ -535,7 +748,7 @@ void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
   std::vector<int>& segmentUniqueIndex,
-  const PCCPointSet3& pointCloud,
+  PCCPointSet3& pointCloud,
   std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
   int bitDropped,
@@ -547,13 +760,17 @@ void determineTrisoupNeighbours(
   const GeometryBrickHeader& gbh,
   pcc::EntropyEncoder* arithmeticEncoder,
   pcc::EntropyDecoder& arithmeticDecoder,
-  GeometryOctreeContexts& ctxtMemOctree) {
+  GeometryOctreeContexts& ctxtMemOctree,
+  const bool isCentroidDriftActivated,
+  bool haloFlag,
+  bool adaptiveHaloFlag,
+  int thickness) {
 
   // Width of block.
   // in future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
-  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree);
+  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
   rste.buildSegments( segmentUniqueIndex, TriSoupVertices);
 }
 
@@ -567,21 +784,6 @@ crossProduct(const Vec3<T> a, const Vec3<T> b)
   ret[1] = a[2] * b[0] - a[0] * b[2];
   ret[2] = a[0] * b[1] - a[1] * b[0];
   return ret;
-}
-
-//---------------------------------------------------------------------------
-Vec3<int32_t>
-truncate(const Vec3<int32_t> in, const int32_t offset)
-{
-  Vec3<int32_t> out = in + offset;  
-  if (out[0] < 0)
-    out[0] = 0;
-  if (out[1] < 0)
-    out[1] = 0;
-  if (out[2] < 0)
-    out[2] = 0;
-
-  return out;
 }
 
 //---------------------------------------------------------------------------
@@ -738,7 +940,7 @@ determineCentroidPredictor(
   Vec3<int32_t> normalV,
   Vec3<int32_t> blockCentroid,
   Vec3<int32_t> nodepos,
-  PCCPointSet3& compensatedPointCloud,
+  const PCCPointSet3& compensatedPointCloud,
   int start,
   int end,
   int lowBound,
@@ -941,225 +1143,6 @@ decodeCentroidResidual(
   }
   return driftQ;
 }
-
-//---------------------------------------------------------------------------
-// Trisoup geometry decoding, at both encoder and decoder.
-// Compute from leaves, segment indicators, and vertices
-// a set of triangles, refine the triangles, and output their vertices.
-//
-// @param leaves  list of blocks containing the surface
-// @param segind, indicators for edges of blocks if they intersect the surface
-// @param vertices, locations of intersections
-
-void
-decodeTrisoupCommon(
-  const std::vector<PCCOctree3Node>& leaves,
-  const std::vector<int8_t> &TriSoupVertices,
-  PCCPointSet3& pointCloud,
-  PCCPointSet3& recPointCloud,
-  PCCPointSet3& compensatedPointCloud,
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  int defaultBlockWidth,
-  int poistionClipValue,
-  const int bitDropped,
-  const bool isCentroidDriftActivated,
-  bool isDecoder,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
-  bool fineRayflag,
-  int thickness,
-  pcc::EntropyDecoder* arithmeticDecoder,
-  pcc::EntropyEncoder* arithmeticEncoder,
-  GeometryOctreeContexts& ctxtMemOctree,
-  std::vector<int>& segmentUniqueIndex)
-{
-  recPointCloud.resize(100000);
-  int nRecPoints = 0;
-
-  Box3<int32_t> sliceBB;
-  sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
-  sliceBB.max = sliceBB.min + ( gbh.slice_bb_width << gbh.slice_bb_width_log2_scale );
-
-  // Width of block. In future, may override with leaf blockWidth
-  const int32_t blockWidth = defaultBlockWidth;
-
-  const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
-  const int endCorner[12] =   { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
-
-  // ----------- loop on leaf nodes ----------------------
-  int idxSegment = 0;
-  std::vector<Vec3<int32_t>> refinedVerticesBlock;
-  refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
-  for (int i = 0; i < leaves.size(); i++) {
-    Vec3<int32_t> nodepos, nodew, corner[8];
-    nonCubicNode( gps, gbh, leaves[i].pos, defaultBlockWidth, sliceBB, nodepos, nodew, corner );
-
-    // Find up to 12 vertices for this leaf.
-    std::vector<Vertex> leafVertices;
-    refinedVerticesBlock.resize(0);
-
-    for (int j = 0; j < 12; j++) {
-      int uniqueIndex = segmentUniqueIndex[idxSegment++];
-      int vertex = TriSoupVertices[uniqueIndex];
-
-      if (vertex < 0)
-        continue;  // skip segments that do not intersect the surface
-      auto startSegment = corner[startCorner[j]];
-      auto endSegment = corner[endCorner[j]];
-
-      // Get distance along edge of vertex.
-      // Vertex code is the index of the voxel along the edge of the block
-      // of surface intersection./ Put decoded vertex at center of voxel,
-      // unless voxel is first or last along the edge, in which case put the
-      // decoded vertex at the start or endpoint of the segment.
-      Vec3<int32_t> direction = endSegment - startSegment;
-      uint32_t segment_len = direction.max();
-
-      // Get 3D position of point of intersection.
-      Vec3<int32_t> point = startSegment << kTrisoupFpBits;
-      point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3
-
-      // points on edges are located at integer values
-      int32_t distance = (vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
-      if (direction[0])
-        point[0] += distance; // in {0,1,...,B-1}
-      else if (direction[1])
-        point[1] += distance;
-      else  // direction[2] 
-        point[2] += distance;
-
-      // Add vertex to list of vertices.
-      leafVertices.push_back({ point, 0, 0 });
-
-      // vertex to list of points
-      if (bitDropped) {
-        Vec3<int32_t> foundvoxel = (point + truncateValue) >> kTrisoupFpBits;
-        if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
-           refinedVerticesBlock.push_back(nodepos + foundvoxel);
-      }
-    }
-
-    // Skip leaves that have fewer than 3 vertices.
-    int triCount = (int)leafVertices.size();
-    if (triCount < 3) {
-      std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-      refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
-
-      // Move list of points to pointCloud
-      int nPointInCloud = recPointCloud.getPointCount();
-      int nPointInNode = refinedVerticesBlock.size();
-      if (nPointInCloud <= nRecPoints + nPointInNode)
-        recPointCloud.resize(nRecPoints + nPointInNode + 100000);
-
-      for (int i = 0; i < nPointInNode; i++)
-        recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
-      nRecPoints += nPointInNode;
-      continue;
-    }
-
-    // compute centroid
-    Vec3<int32_t> blockCentroid;
-    int dominantAxis;
-    determineCentroidAndDominantAxis(blockCentroid, dominantAxis, leafVertices, nodew);
-
-    // Refinement of the centroid along the domiannt axis
-    if (triCount > 3 && isCentroidDriftActivated) {
-      int bitDropped2 = bitDropped;
-
-      int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
-      Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis]);
-
-      int driftQPred = determineCentroidPredictor(bitDropped2, normalV, blockCentroid, nodepos, compensatedPointCloud, leaves[i].predStart, leaves[i].predEnd, lowBound, highBound);
-
-      int driftQ = 0;
-      if (!isDecoder) { // encode centroid residual
-        driftQ = determineCentroidResidual(bitDropped2, normalV, blockCentroid, nodepos, pointCloud, leaves[i].start, leaves[i].end, lowBound, highBound);
-        encodeCentroidResidual(driftQ, arithmeticEncoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
-      }
-      else { // decode centroid residual
-        driftQ = decodeCentroidResidual(arithmeticDecoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
-      }
-
-      // dequantize and apply drift 
-      int driftDQ = 0;
-      if (driftQ) {
-        driftDQ = std::abs(driftQ) << bitDropped2 + 6;
-        int half = 1 << 5 + bitDropped2;
-        int DZ = 2*half/3; 
-        driftDQ += DZ - half; 
-        if (driftQ < 0)
-          driftDQ = -driftDQ;
-      }
-
-      blockCentroid += (driftDQ * normalV) >> 6;
-      blockCentroid[0] = std::max(-kTrisoupFpHalf, blockCentroid[0]);
-      blockCentroid[1] = std::max(-kTrisoupFpHalf, blockCentroid[1]);
-      blockCentroid[2] = std::max(-kTrisoupFpHalf, blockCentroid[2]);
-      blockCentroid[0] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[0]);
-      blockCentroid[1] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[1]);
-      blockCentroid[2] = std::min(((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1, blockCentroid[2]);
-    } // end refinement of the centroid
-
-    // Divide vertices into triangles around centroid
-    // and upsample each triangle by an upsamplingFactor.
-    if (triCount > 3) {
-      Vec3<int32_t> foundvoxel = (blockCentroid + truncateValue) >> kTrisoupFpBits;
-      if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
-        refinedVerticesBlock.push_back(nodepos + foundvoxel);
-    }
-
-    int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
-    haloTriangle = (haloTriangle * 28) >> 5; // / 32;
-    haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
-
-    Vec3<int32_t> v2 = triCount == 3 ? leafVertices[2].pos : blockCentroid;
-    Vec3<int32_t> v1 = leafVertices[0].pos;
-    for (int triIndex = 0; triIndex < (triCount == 3 ? 1 : triCount); triIndex++) {
-      int j1 = triIndex == triCount - 1 ? 0 : triIndex + 1;
-      Vec3<int32_t> v0 = v1;
-      v1 = leafVertices[j1].pos;
-
-      // range      
-      int minRange[3];
-      int maxRange[3];
-      for (int k = 0; k < 3; k++) {
-        minRange[k] = std::max(0, std::min(std::min(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
-        maxRange[k] = std::min(blockWidth - 1, std::max(std::max(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
-      }
-
-      // choose ray direction
-      Vec3<int32_t> edge1 = v1 - v0;
-      Vec3<int32_t> edge2 = v2 - v0;
-      Vec3<int32_t> h = crossProduct(edge1, edge2).abs() >> kTrisoupFpBits;
-      int directionOk = (h[0]>h[1] && h[0]>h[2]) ? 0 : h[1] > h[2] ? 1 : 2;
-
-      // applying ray tracing along direction
-      rayTracingAlongdirection_samp1_optim(
-        refinedVerticesBlock, directionOk, blockWidth, nodepos, minRange,
-        maxRange, edge1, edge2, v0, haloTriangle, thickness);      
-
-    }  // end loop on triangles
-
-    // remove points present twice or more for node
-    std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-    refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
-
-    // Move list of points to pointCloud
-    int nPointInCloud = recPointCloud.getPointCount();
-    int nPointInNode = refinedVerticesBlock.size();
-    if (nPointInCloud <= nRecPoints + nPointInNode)
-      recPointCloud.resize(nRecPoints + nPointInNode + 100000);
-
-    for (int i = 0; i < nPointInNode; i++)
-      recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
-    nRecPoints += nPointInNode;
-
-  }// end loop on leaves
-
-  recPointCloud.resize(nRecPoints);
-}
-
 
 // ---------------------------------------------------------------------------
 void

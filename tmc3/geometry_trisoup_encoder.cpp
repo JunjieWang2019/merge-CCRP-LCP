@@ -93,40 +93,25 @@ encodeGeometryTrisoup(
     std::cout << "distanceSearchEncoder = " << distanceSearchEncoder << "\n";
   }
 
-  // Determine neighbours
-  std::vector<int> segmentUniqueIndex;
-  std::vector<int8_t> TriSoupVertices;
-  EntropyDecoder foo;
-  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder,
-    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
-
-  gbh.num_unique_segments_minus1 = TriSoupVertices.size() - 1;
-  gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
-
   // reconstruct points  with some sampling value
   bool haloFlag = gbh.trisoup_halo_flag;
   bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
   bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;
   int thickness = gbh.trisoup_thickness;
-
-  int subsample = 1;
-  int32_t maxval = (1 << gbh.maxRootNodeDimLog2) - 1;
   std::cout << "GeSTM  Sample is imposed to 1 \n";
+  gbh.trisoup_sampling_value_minus1 = 0;
 
-  PCCPointSet3 recPointCloud;
-  recPointCloud.addRemoveAttributes(pointCloud);
+  // Determine neighbours
+  std::vector<int> segmentUniqueIndex;
+  std::vector<int8_t> TriSoupVertices;
+  EntropyDecoder foo;
+  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder,
+    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
 
-  decodeTrisoupCommon(
-    nodes, TriSoupVertices, pointCloud, recPointCloud,
-    compensatedPointCloud, gps, gbh, blockWidth,
-    maxval, bitDropped, isCentroidDriftActivated, false,
-    haloFlag, adaptiveHaloFlag, fineRayFlag, thickness, NULL,  arithmeticEncoder, ctxtMemOctree, segmentUniqueIndex);
+  gbh.num_unique_segments_minus1 = TriSoupVertices.size() - 1;
+  gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
-  gbh.trisoup_sampling_value_minus1 = subsample - 1;
-
-  pointCloud.resize(0);
-  pointCloud = std::move(recPointCloud);
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
