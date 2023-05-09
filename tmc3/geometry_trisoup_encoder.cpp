@@ -102,13 +102,12 @@ encodeGeometryTrisoup(
   gbh.trisoup_sampling_value_minus1 = 0;
 
   // Determine neighbours
-  std::vector<int> segmentUniqueIndex;
-  std::vector<int8_t> TriSoupVertices;
   EntropyDecoder foo;
-  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex, pointCloud, TriSoupVertices, true, bitDropped, distanceSearchEncoder,
-    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
+  int nSegments = 0;
+  determineTrisoupNeighbours(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder,
+    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness, nSegments);
 
-  gbh.num_unique_segments_minus1 = TriSoupVertices.size() - 1;
+  gbh.num_unique_segments_minus1 = nSegments - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";

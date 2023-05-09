@@ -89,10 +89,9 @@ decodeGeometryTrisoup(
   int thickness = gbh.trisoup_thickness;
 
   // Determine neighbours
-  std::vector<int> segmentUniqueIndex;
-  std::vector<int8_t> TriSoupVertices;
-  determineTrisoupNeighbours(nodes, blockWidth, segmentUniqueIndex,  pointCloud, TriSoupVertices, false, bitDropped, 1 /*distanceSearchEncoder*/,
-    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
+  int nSegments = 0;
+  determineTrisoupNeighbours(nodes, blockWidth, pointCloud, false, bitDropped, 1 /*distanceSearchEncoder*/,
+    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness, nSegments);
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
@@ -507,16 +506,15 @@ struct RasterScanTrisoupEdges {
 
 
   //---------------------------------------------------------------------------
-  void buildSegments(
-      std::vector<int>& segmentUniqueIndex,
-      std::vector<int8_t>& TriSoupVertices)
+  void buildSegments(int& nSegments)
   {
+    std::vector<int8_t> TriSoupVertices;
     std::vector<uint16_t> neighbNodes;
     std::vector<std::array<int, 18>> edgePattern;
     std::vector<int8_t> TriSoupVerticesPred;
+    std::vector<int> segmentUniqueIndex;
 
     neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
-    segmentUniqueIndex.clear();
     segmentUniqueIndex.resize(12 * leaves.size(), -1); // temporarily set to -1 to check everything is working
     // TODO: set to -1 could be removed when everything will work properly
 
@@ -715,6 +713,7 @@ struct RasterScanTrisoupEdges {
     recPointCloud.resize(nRecPoints);
     pointCloud.resize(0);
     pointCloud = std::move(recPointCloud);
+    nSegments = TriSoupVertices.size();
   }
 
 private:
@@ -747,9 +746,7 @@ private:
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
-  std::vector<int>& segmentUniqueIndex,
   PCCPointSet3& pointCloud,
-  std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
   int bitDropped,
   int distanceSearchEncoder,
@@ -764,14 +761,15 @@ void determineTrisoupNeighbours(
   const bool isCentroidDriftActivated,
   bool haloFlag,
   bool adaptiveHaloFlag,
-  int thickness) {
+  int thickness,
+  int& nSegments) {
 
   // Width of block.
   // in future, may override with leaf blockWidth
   const int32_t blockWidth = defaultBlockWidth;
 
   RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
-  rste.buildSegments( segmentUniqueIndex, TriSoupVertices);
+  rste.buildSegments(nSegments);
 }
 
 //============================================================================

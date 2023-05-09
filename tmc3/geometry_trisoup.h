@@ -220,9 +220,7 @@ namespace pcc {
 void determineTrisoupNeighbours(
   const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
-  std::vector<int>& segmentUniqueIndex,
   PCCPointSet3& pointCloud,
-  std::vector<int8_t>& TriSoupVertices,
   bool isEncoder,
   int bitDropped,
   int distanceSearchEncoder,
@@ -237,7 +235,8 @@ void determineTrisoupNeighbours(
   const bool isCentroidDriftActivated,
   bool haloFlag,
   bool adaptiveHaloFlag,
-  int thickness);
+  int thickness,
+  int &nSegments);
 
 
 //============================================================================
