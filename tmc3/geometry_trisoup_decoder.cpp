@@ -34,6 +34,7 @@
  */
 
 #include <cstdio>
+#include <queue>
 
 #include "geometry_trisoup.h"
 
@@ -510,8 +511,8 @@ struct RasterScanTrisoupEdges {
   {
     std::vector<int8_t> TriSoupVertices;
     std::vector<uint16_t> neighbNodes;
-    std::vector<std::array<int, 18>> edgePattern;
-    std::vector<int8_t> TriSoupVerticesPred;
+    std::queue<std::array<int, 18>> edgePattern;
+    std::queue<int8_t> TriSoupVerticesPred;
     std::vector<int> segmentUniqueIndex;
 
     neighbNodes.reserve(leaves.size() * 12); // at most 12 edges per node (to avoid reallocations)
@@ -525,7 +526,7 @@ struct RasterScanTrisoupEdges {
     int firstNodeToRender = 0;
 
     // for edge coding
-    std::vector<int> xForedgeOfVertex;
+    std::queue<int> xForedgeOfVertex;
     const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
     const int max2bits = nbitsVertices > 1 ? 3 : 1;
     const int mid2bits = nbitsVertices > 1 ? 2 : 1;
@@ -652,8 +653,8 @@ struct RasterScanTrisoupEdges {
           }
           ++uniqueIndex;
           neighbNodes.push_back(neighboursMask);
-          edgePattern.push_back(pattern);
-          xForedgeOfVertex.push_back(currWedgePos[0]);
+          edgePattern.push(pattern);
+          xForedgeOfVertex.push(currWedgePos[0]);
 
           // determine TriSoup Vertex by the encoder
           if (isEncoder)
@@ -673,7 +674,7 @@ struct RasterScanTrisoupEdges {
               int temp = (distanceSumPred  << (10 - bitDropped)) / countNearPointsPred;
               vertexPos = (temp + (1 << 9 - bitDropped)) >> 10;
             }
-            TriSoupVerticesPred.push_back(vertexPos);
+            TriSoupVerticesPred.push(vertexPos);
           }
         }
       }
@@ -686,14 +687,20 @@ struct RasterScanTrisoupEdges {
 
         // coding
         int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - blockWidth;
-        while (firstVertexToCode< xForedgeOfVertex.size() && xForedgeOfVertex[firstVertexToCode] < upperxForCoding ) {
-          int8_t  interPredictor = isInter ? TriSoupVerticesPred[firstVertexToCode] : 0;
+        while (!xForedgeOfVertex.empty() && xForedgeOfVertex.front() < upperxForCoding) {
+          int8_t  interPredictor = isInter ? TriSoupVerticesPred.front() : 0;
+          auto pattern = edgePattern.front();
           if (isEncoder) { // encode vertex
             auto vertex = TriSoupVertices[firstVertexToCode];
-            encodeOneTriSoupVertexRasterScan(vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], edgePattern[firstVertexToCode], interPredictor, nbitsVertices, max2bits, mid2bits);
+            encodeOneTriSoupVertexRasterScan(vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], pattern, interPredictor, nbitsVertices, max2bits, mid2bits);
           }
           else
-            decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], edgePattern[firstVertexToCode], interPredictor, nbitsVertices, max2bits, mid2bits);
+            decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], pattern, interPredictor, nbitsVertices, max2bits, mid2bits);
+
+          xForedgeOfVertex.pop();
+          edgePattern.pop();
+          if (isInter)
+            TriSoupVerticesPred.pop();
           firstVertexToCode++;
         }
 
