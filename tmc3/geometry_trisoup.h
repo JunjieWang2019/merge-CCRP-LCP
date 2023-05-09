@@ -268,10 +268,10 @@ int findDominantAxis(
 
 
 void rayTracingAlongdirection_samp1_optim(
-  std::vector<Vec3<int32_t>>& refinedVerticesBlock,
+  std::vector<int64_t>& refinedVerticesBlock,
   int direction,
   int blockWidth,
-  Vec3<int32_t> posNnodeposode,
+  Vec3<int32_t> nodepos,
   int minRange[3],
   int maxRange[3],
   Vec3<int32_t> edge1,
@@ -279,6 +279,47 @@ void rayTracingAlongdirection_samp1_optim(
   Vec3<int32_t> v0,
   int haloTriangle,
   int thickness);
+
+
+  void rayTracingAlongdirection_samp1_optimX(
+    std::vector<int64_t>& refinedVerticesBlock,
+    int blockWidth,
+    Vec3<int32_t>& nodepos,
+    int minRange[3],
+    int maxRange[3],
+    Vec3<int32_t>& edge1,
+    Vec3<int32_t>& edge2,
+    Vec3<int32_t>& v0,
+    int64_t inva,
+    int haloTriangle,
+    int thickness);
+
+  void rayTracingAlongdirection_samp1_optimY(
+    std::vector<int64_t>& refinedVerticesBlock,
+    int blockWidth,
+    Vec3<int32_t>& nodepos,
+    int minRange[3],
+    int maxRange[3],
+    Vec3<int32_t>& edge1,
+    Vec3<int32_t>& edge2,
+    Vec3<int32_t>& v0,
+    int64_t inva,
+    int haloTriangle,
+    int thickness);
+
+
+  void rayTracingAlongdirection_samp1_optimZ(
+    std::vector<int64_t>& refinedVerticesBlock,
+    int blockWidth,
+    Vec3<int32_t>& nodepos,
+    int minRange[3],
+    int maxRange[3],
+    Vec3<int32_t>& edge1,
+    Vec3<int32_t>& edge2,
+    Vec3<int32_t>& v0,
+    int64_t inva,
+    int haloTriangle,
+    int thickness);
 
 //============================================================================
 

@@ -329,7 +329,7 @@ struct RasterScanTrisoupEdges {
   void generateTrianglesInNodeRasterScan(
     const PCCOctree3Node& leaf,
     int& nRecPoints,
-    std::vector<Vec3<int32_t>>& refinedVerticesBlock,
+    std::vector<int64_t>& refinedVerticesBlock,
     const std::vector<int8_t>& TriSoupVertices,
     int& idxSegment,
     PCCPointSet3& recPointCloud,
@@ -383,8 +383,10 @@ struct RasterScanTrisoupEdges {
       // vertex to list of points
       if (bitDropped) {
         Vec3<int32_t> foundvoxel = (point + truncateValue) >> kTrisoupFpBits;
-        if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
-          refinedVerticesBlock.push_back(nodepos + foundvoxel);
+        if (boundaryinsidecheck(foundvoxel, blockWidth - 1)) {
+          Vec3<int64_t> renderedPoint = nodepos + foundvoxel;
+          refinedVerticesBlock.push_back((renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2]);
+        }
       }
     }
 
@@ -392,16 +394,17 @@ struct RasterScanTrisoupEdges {
     int triCount = (int)leafVertices.size();
     if (triCount < 3) {
       std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-      refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+      auto last = std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
 
       // Move list of points to pointCloud
       int nPointInCloud = recPointCloud.getPointCount();
-      int nPointInNode = refinedVerticesBlock.size();
+      auto it = refinedVerticesBlock.begin();
+      int nPointInNode = last - it;
       if (nPointInCloud <= nRecPoints + nPointInNode)
         recPointCloud.resize(nRecPoints + nPointInNode + 100000);
 
-      for (int i = 0; i < nPointInNode; i++)
-        recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
+      for (int i = 0; it != last; it++, i++)
+        recPointCloud[nRecPoints + i] = { int(*it >> 40),   int(*it >> 20) & 0b1111111111111111111,  int(*it) & 0b1111111111111111111 };
       nRecPoints += nPointInNode;
       return;
     }
@@ -453,8 +456,10 @@ struct RasterScanTrisoupEdges {
     // and upsample each triangle by an upsamplingFactor.
     if (triCount > 3) {
       Vec3<int32_t> foundvoxel = (blockCentroid + truncateValue) >> kTrisoupFpBits;
-      if (boundaryinsidecheck(foundvoxel, blockWidth - 1))
-        refinedVerticesBlock.push_back(nodepos + foundvoxel);
+      if (boundaryinsidecheck(foundvoxel, blockWidth - 1)) {
+        Vec3<int64_t> renderedPoint = nodepos + foundvoxel;
+        refinedVerticesBlock.push_back((renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2]);
+      }
     }
 
     int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
@@ -468,6 +473,20 @@ struct RasterScanTrisoupEdges {
       Vec3<int32_t> v0 = v1;
       v1 = leafVertices[j1].pos;
 
+      // choose ray direction
+      Vec3<int32_t> edge1 = v1 - v0;
+      Vec3<int32_t> edge2 = v2 - v0;
+      Vec3<int32_t> a = crossProduct(edge2, edge1) >> kTrisoupFpBits;
+      Vec3<int32_t> h = a.abs();
+      int directionOk = (h[0] > h[1] && h[0] > h[2]) ? 0 : h[1] > h[2] ? 1 : 2;
+
+      // check if ray tracing is valid; if not skip triangle which is too small
+      if (h[directionOk] <= kTrisoupFpOne)
+        continue;
+
+      const int precDivA = 30;
+      int64_t inva = (int64_t(1) << precDivA) / a[directionOk];
+
       // range
       int minRange[3];
       int maxRange[3];
@@ -476,31 +495,37 @@ struct RasterScanTrisoupEdges {
         maxRange[k] = std::min(blockWidth - 1, std::max(std::max(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
       }
 
-      // choose ray direction
-      Vec3<int32_t> edge1 = v1 - v0;
-      Vec3<int32_t> edge2 = v2 - v0;
-      Vec3<int32_t> h = crossProduct(edge1, edge2).abs() >> kTrisoupFpBits;
-      int directionOk = (h[0] > h[1] && h[0] > h[2]) ? 0 : h[1] > h[2] ? 1 : 2;
-
       // applying ray tracing along direction
-      rayTracingAlongdirection_samp1_optim(
-        refinedVerticesBlock, directionOk, blockWidth, nodepos, minRange,
-        maxRange, edge1, edge2, v0, haloTriangle, thickness);
+      if (directionOk == 0)
+        rayTracingAlongdirection_samp1_optimX(
+          refinedVerticesBlock, blockWidth, nodepos, minRange,
+          maxRange, edge1, edge2, v0, inva, haloTriangle, thickness);
+
+      if (directionOk == 1)
+        rayTracingAlongdirection_samp1_optimY(
+          refinedVerticesBlock, blockWidth, nodepos, minRange,
+          maxRange, edge1, edge2, v0, inva, haloTriangle, thickness);
+
+      if (directionOk == 2)
+        rayTracingAlongdirection_samp1_optimZ(
+          refinedVerticesBlock, blockWidth, nodepos, minRange,
+          maxRange, edge1, edge2, v0, inva, haloTriangle, thickness);
 
     }  // end loop on triangles
 
     // remove points present twice or more for node
     std::sort(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
-    refinedVerticesBlock.erase(std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end()), refinedVerticesBlock.end());
+    auto last = std::unique(refinedVerticesBlock.begin(), refinedVerticesBlock.end());
 
     // Move list of points to pointCloud
     int nPointInCloud = recPointCloud.getPointCount();
-    int nPointInNode = refinedVerticesBlock.size();
+    auto it = refinedVerticesBlock.begin();
+    int nPointInNode = last - it;
     if (nPointInCloud <= nRecPoints + nPointInNode)
       recPointCloud.resize(nRecPoints + nPointInNode + 100000);
 
-    for (int i = 0; i < nPointInNode; i++)
-      recPointCloud[nRecPoints + i] = refinedVerticesBlock[i];
+    for (int i = 0; it != last; it++, i++)
+      recPointCloud[nRecPoints + i] = { int(*it >> 40),   int(*it >> 20) & 0b1111111111111111111,  int(*it) & 0b1111111111111111111 };
     nRecPoints += nPointInNode;
 
   }
@@ -541,7 +566,7 @@ struct RasterScanTrisoupEdges {
     sliceBB.max = sliceBB.min + (gbh.slice_bb_width << gbh.slice_bb_width_log2_scale);
 
     int idxSegment = 0;
-    std::vector<Vec3<int32_t>> refinedVerticesBlock;
+    std::vector<int64_t> refinedVerticesBlock;
     refinedVerticesBlock.reserve(blockWidth * blockWidth * 4);
 
     while (nextIsAvailable()) { // this a loop on start position of edges; 3 edges along x,y and z per start position
@@ -1367,7 +1392,7 @@ int findDominantAxis(
 
 // --------------------------------------------------------
 void rayTracingAlongdirection_samp1_optim(
-  std::vector<Vec3<int32_t>>& refinedVerticesBlock,
+  std::vector<int64_t>& refinedVerticesBlock,
   int direction,
   int blockWidth,
   Vec3<int32_t> nodepos,
@@ -1433,6 +1458,7 @@ void rayTracingAlongdirection_samp1_optim(
     int32_t u = u0;
     int32_t v = v0;
     int32_t t = t0;
+    bool hasIntersected = false;
 
     for (int32_t g2 = startposG2;
         g2 <= endposG2;
@@ -1440,12 +1466,16 @@ void rayTracingAlongdirection_samp1_optim(
 
       int w = kTrisoupFpOne - u - v;
       if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
+        hasIntersected = true;
+
         Vec3<int32_t>  intersection = rayOrigin;
         intersection[direction] += t;
         Vec3<int32_t> foundvoxel =
           (intersection + truncateValue) >> kTrisoupFpBits;
         if (foundvoxel[direction]>=0 && foundvoxel[direction] < blockWidth) {
-          refinedVerticesBlock.push_back(nodepos + foundvoxel);
+          Vec3<int64_t> renderedPoint = nodepos + foundvoxel;
+          int64_t renderedPoint1D = (renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2];
+          refinedVerticesBlock.push_back(renderedPoint1D);
         }
 
         intersection[direction] += thickness;
@@ -1454,7 +1484,9 @@ void rayTracingAlongdirection_samp1_optim(
         if (foundvoxelUp != foundvoxel
             && foundvoxelUp[direction] >= 0
             && foundvoxelUp[direction] < blockWidth) {
-          refinedVerticesBlock.push_back(nodepos + foundvoxelUp);
+          Vec3<int64_t> renderedPoint = nodepos + foundvoxelUp;
+          int64_t renderedPoint1D = (renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2];
+          refinedVerticesBlock.push_back(renderedPoint1D);
         }
 
         intersection[direction] -= 2 * thickness;
@@ -1463,12 +1495,197 @@ void rayTracingAlongdirection_samp1_optim(
         if (foundvoxelDown != foundvoxel
             && foundvoxelDown[direction] >= 0
             && foundvoxelDown[direction] < blockWidth) {
-          refinedVerticesBlock.push_back(nodepos + foundvoxelDown);
+          Vec3<int64_t> renderedPoint = nodepos + foundvoxelDown;
+          int64_t renderedPoint1D = (renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2];
+          refinedVerticesBlock.push_back(renderedPoint1D);
+        }
+      }
+      else if (hasIntersected)
+        break;
+    }// loop g2
+  }//loop g1
+
+}
+
+
+// --------------------------------------------------------
+void rayTracingAlongdirection_samp1_optimX(
+  std::vector<int64_t>& refinedVerticesBlock,
+  int blockWidth,
+  Vec3<int32_t>& nodepos,
+  int minRange[3],
+  int maxRange[3],
+  Vec3<int32_t>& edge1,
+  Vec3<int32_t>& edge2,
+  Vec3<int32_t>& Ver0,
+  int64_t inva,
+  int haloTriangle,
+  int thickness)
+{
+  const int precDivA = 30;
+
+  Vec3<int32_t>  rayOrigin0 = { minRange[0] << kTrisoupFpBits, minRange[1] << kTrisoupFpBits, minRange[2] << kTrisoupFpBits };
+  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
+  int32_t u0 = ((-s0[1] * edge2[2] + s0[2] * edge2[1]) * inva) >> precDivA;
+  Vec3<int32_t> q0 = crossProduct(s0, edge1);
+  int32_t v0 = (q0[0] * inva) >> precDivA;
+  int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
+
+  int32_t u1 = (-edge2[2] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t v1 = ((edge1[2] << kTrisoupFpBits) * inva) >> precDivA;
+  int32_t t1 = ((edge2[0]* edge1[2] - edge2[2] * edge1[0]) * inva) >> precDivA;
+
+  int32_t u2 = (edge2[1] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t v2 = ((-edge1[1] << kTrisoupFpBits )* inva) >> precDivA;
+  int32_t t2 = ((-edge2[0]* edge1[1] + edge2[1] * edge1[0]) * inva) >> precDivA;
+
+  int64_t renderedPoint1D0 = (int64_t(nodepos[0]) << 40) + (int64_t(nodepos[1]) << 20) + int64_t(nodepos[2]);
+  const int32_t startposG1 = minRange[1];
+  const int32_t startposG2 = minRange[2];
+  const int32_t endposG1 = maxRange[1];
+  const int32_t endposG2 = maxRange[2];
+  for (int32_t g1 = startposG1; g1 <= endposG1; g1++, u0 += u1, v0 += v1, t0 += t1) {
+    int32_t u = u0;
+    int32_t v = v0;
+    int32_t t = t0;
+    for (int32_t g2 = startposG2;  g2 <= endposG2; g2++, u += u2, v += v2, t += t2) {
+      int w = kTrisoupFpOne - u - v;
+      if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
+        int32_t foundvoxel = minRange[0] + (t + truncateValue >> kTrisoupFpBits);
+        if (foundvoxel >= 0 && foundvoxel < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(foundvoxel) << 40) + (int64_t(g1) << 20) + int64_t(g2));
+        }
+        int32_t foundvoxelUp = minRange[0] + (t + thickness + truncateValue >> kTrisoupFpBits);
+        if (foundvoxelUp != foundvoxel && foundvoxelUp >= 0 && foundvoxelUp < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(foundvoxelUp) << 40) + (int64_t(g1) << 20) + int64_t(g2));
+        }
+        int32_t foundvoxelDown = minRange[0] + (t - thickness + truncateValue >> kTrisoupFpBits);
+        if (foundvoxelDown != foundvoxel && foundvoxelDown >= 0 && foundvoxelDown < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(foundvoxelDown) << 40) + (int64_t(g1) << 20) + int64_t(g2));
         }
       }
     }// loop g2
   }//loop g1
+}
 
+// --------------------------------------------------------
+void rayTracingAlongdirection_samp1_optimY(
+  std::vector<int64_t>& refinedVerticesBlock,
+  int blockWidth,
+  Vec3<int32_t>& nodepos,
+  int minRange[3],
+  int maxRange[3],
+  Vec3<int32_t>& edge1,
+  Vec3<int32_t>& edge2,
+  Vec3<int32_t>& Ver0,
+  int64_t inva,
+  int haloTriangle,
+  int thickness)
+{
+  const int precDivA = 30;
+
+  Vec3<int32_t>  rayOrigin0 = { minRange[0] << kTrisoupFpBits, minRange[1] << kTrisoupFpBits, minRange[2] << kTrisoupFpBits };
+  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
+  int32_t u0 = ((s0[0] * edge2[2] - s0[2] * edge2[0]) * inva) >> precDivA;
+  Vec3<int32_t> q0 = crossProduct(s0, edge1);
+  int32_t v0 = (q0[1] * inva) >> precDivA;
+  int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
+
+  int32_t u1 = (edge2[2] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t v1 = ((-edge1[2] << kTrisoupFpBits) * inva) >> precDivA;
+  int32_t t1 = ((-edge2[1] * edge1[2] + edge2[2] * edge1[1]) * inva) >> precDivA;
+
+  int32_t u2 = (-edge2[0] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t v2 = ((edge1[0] << kTrisoupFpBits) * inva) >> precDivA;
+  int32_t t2 = ((-edge2[0] * edge1[1] + edge2[1] * edge1[0]) * inva) >> precDivA;
+
+  int64_t renderedPoint1D0 = (int64_t(nodepos[0]) << 40) + (int64_t(nodepos[1]) << 20) + int64_t(nodepos[2]);
+  const int32_t startposG1 = minRange[0];
+  const int32_t startposG2 = minRange[2];
+  const int32_t endposG1 = maxRange[0];
+  const int32_t endposG2 = maxRange[2];
+  for (int32_t g1 = startposG1; g1 <= endposG1; g1++, u0 += u1, v0 += v1, t0 += t1) {
+    int32_t u = u0;
+    int32_t v = v0;
+    int32_t t = t0;
+    for (int32_t g2 = startposG2; g2 <= endposG2; g2++, u += u2, v += v2, t += t2) {
+      int w = kTrisoupFpOne - u - v;
+      if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
+        int32_t foundvoxel = minRange[1] + (t + truncateValue >> kTrisoupFpBits);
+        if (foundvoxel >= 0 && foundvoxel < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(g1) << 40) + (int64_t(foundvoxel) << 20) + int64_t(g2));
+        }
+        int32_t foundvoxelUp = minRange[1] + (t + thickness + truncateValue >> kTrisoupFpBits);
+        if (foundvoxelUp >= 0 && foundvoxelUp < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(g1) << 40) + (int64_t(foundvoxelUp) << 20) + int64_t(g2));
+        }
+        int32_t foundvoxelDown = minRange[1] + (t - thickness + truncateValue >> kTrisoupFpBits);
+        if (foundvoxelDown >= 0 && foundvoxelDown < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(g1) << 40) + (int64_t(foundvoxelDown) << 20) + int64_t(g2));
+        }
+      }
+    }// loop g2
+  }//loop g1
+}
+
+// --------------------------------------------------------
+void rayTracingAlongdirection_samp1_optimZ(
+  std::vector<int64_t>& refinedVerticesBlock,
+  int blockWidth,
+  Vec3<int32_t>& nodepos,
+  int minRange[3],
+  int maxRange[3],
+  Vec3<int32_t>& edge1,
+  Vec3<int32_t>& edge2,
+  Vec3<int32_t>& Ver0,
+  int64_t inva,
+  int haloTriangle,
+  int thickness)
+{
+  const int precDivA = 30;
+
+  Vec3<int32_t>  rayOrigin0 = { minRange[0] << kTrisoupFpBits, minRange[1] << kTrisoupFpBits, minRange[2] << kTrisoupFpBits };
+  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
+  int32_t u0 = ((-s0[0] * edge2[1] + s0[1] * edge2[0]) * inva) >> precDivA;
+  Vec3<int32_t> q0 = crossProduct(s0, edge1);
+  int32_t v0 = (q0[2] * inva) >> precDivA;
+  int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
+
+  int32_t u1 = (-edge2[1] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t v1 = ((edge1[1] << kTrisoupFpBits) * inva) >> precDivA;
+  int32_t t1 = ((edge2[2] * edge1[1] - edge2[1] * edge1[2]) * inva) >> precDivA;
+
+  int32_t u2 = (edge2[0] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t v2 = ((-edge1[0] << kTrisoupFpBits) * inva) >> precDivA;
+  int32_t t2 = ((edge2[0] * edge1[2] - edge2[2] * edge1[0]) * inva) >> precDivA;
+
+  int64_t renderedPoint1D0 = (int64_t(nodepos[0]) << 40) + (int64_t(nodepos[1]) << 20) + int64_t(nodepos[2]);
+  const int32_t startposG1 = minRange[0];
+  const int32_t startposG2 = minRange[1];
+  const int32_t endposG1 = maxRange[0];
+  const int32_t endposG2 = maxRange[1];
+  for (int32_t g1 = startposG1; g1 <= endposG1; g1++, u0 += u1, v0 += v1, t0 += t1) {
+    int32_t u = u0;
+    int32_t v = v0;
+    int32_t t = t0;
+    for (int32_t g2 = startposG2; g2 <= endposG2; g2++, u += u2, v += v2, t += t2) {
+      int w = kTrisoupFpOne - u - v;
+      if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
+        int32_t foundvoxel = minRange[2] + (t + truncateValue >> kTrisoupFpBits);
+        if (foundvoxel >= 0 && foundvoxel < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(g1) << 40) + (int64_t(g2) << 20) + int64_t(foundvoxel));
+        }
+        int32_t foundvoxelUp = minRange[2] + (t + thickness + truncateValue >> kTrisoupFpBits);
+        if (foundvoxelUp != foundvoxel && foundvoxelUp >= 0 && foundvoxelUp < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(g1) << 40) + (int64_t(g2) << 20) + int64_t(foundvoxelUp));
+        }
+        int32_t foundvoxelDown = minRange[2] + (t - thickness + truncateValue >> kTrisoupFpBits);
+        if (foundvoxelDown != foundvoxel && foundvoxelDown >= 0 && foundvoxelDown < blockWidth) {
+          refinedVerticesBlock.push_back(renderedPoint1D0 + (int64_t(g1) << 40) + (int64_t(g2) << 20) + int64_t(foundvoxelDown));
+        }
+      }
+    }// loop g2
+  }//loop g1
 }
 
 //============================================================================
