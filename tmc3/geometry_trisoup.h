@@ -268,7 +268,7 @@ int findDominantAxis(
 
 
 void rayTracingAlongdirection_samp1_optim(
-  std::vector<int64_t>& refinedVerticesBlock,
+  std::vector<int64_t>& renderedBlock,
   int direction,
   int blockWidth,
   Vec3<int32_t> nodepos,
@@ -282,7 +282,8 @@ void rayTracingAlongdirection_samp1_optim(
 
 
   void rayTracingAlongdirection_samp1_optimX(
-    std::vector<int64_t>& refinedVerticesBlock,
+    std::vector<int64_t>& renderedBlock,
+    int& nPointsInBlock,
     int blockWidth,
     Vec3<int32_t>& nodepos,
     int minRange[3],
@@ -295,7 +296,8 @@ void rayTracingAlongdirection_samp1_optim(
     int thickness);
 
   void rayTracingAlongdirection_samp1_optimY(
-    std::vector<int64_t>& refinedVerticesBlock,
+    std::vector<int64_t>& renderedBlock,
+    int& nPointsInBlock,
     int blockWidth,
     Vec3<int32_t>& nodepos,
     int minRange[3],
@@ -309,7 +311,8 @@ void rayTracingAlongdirection_samp1_optim(
 
 
   void rayTracingAlongdirection_samp1_optimZ(
-    std::vector<int64_t>& refinedVerticesBlock,
+    std::vector<int64_t>& renderedBlock,
+    int& nPointsInBlock,
     int blockWidth,
     Vec3<int32_t>& nodepos,
     int minRange[3],
