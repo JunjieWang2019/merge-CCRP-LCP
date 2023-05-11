@@ -73,8 +73,6 @@ encodeGeometryTrisoup(
     : gbh.trisoupNodeSizeLog2(gps);
   const int bitDropped =
     std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
-  const bool isCentroidDriftActivated =
-    gbh.trisoup_centroid_vertex_residual_flag;
 
   std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
@@ -104,8 +102,8 @@ encodeGeometryTrisoup(
   // Determine neighbours
   EntropyDecoder foo;
   int nSegments = 0;
-  determineTrisoupNeighbours(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder,
-    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness, nSegments);
+  codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder,
+    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, nSegments);
 
   gbh.num_unique_segments_minus1 = nSegments - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;

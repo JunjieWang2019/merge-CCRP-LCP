@@ -217,7 +217,7 @@ namespace pcc {
   };
 
 
-void determineTrisoupNeighbours(
+void codeAndRenderTriSoupRasterScan(
   const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
   PCCPointSet3& pointCloud,
@@ -232,10 +232,6 @@ void determineTrisoupNeighbours(
   pcc::EntropyEncoder* arithmeticEncoder,
   pcc::EntropyDecoder& arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree,
-  const bool isCentroidDriftActivated,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
-  int thickness,
   int &nSegments);
 
 
@@ -266,21 +262,6 @@ int findDominantAxis(
   Vec3<uint32_t> blockWidth,
   Vec3<int32_t> blockCentroid);
 
-
-void rayTracingAlongdirection_samp1_optim(
-  std::vector<int64_t>& renderedBlock,
-  int direction,
-  int blockWidth,
-  Vec3<int32_t> nodepos,
-  int minRange[3],
-  int maxRange[3],
-  Vec3<int32_t> edge1,
-  Vec3<int32_t> edge2,
-  Vec3<int32_t> v0,
-  int haloTriangle,
-  int thickness);
-
-
   void rayTracingAlongdirection_samp1_optimX(
     std::vector<int64_t>& renderedBlock,
     int& nPointsInBlock,
@@ -290,7 +271,7 @@ void rayTracingAlongdirection_samp1_optim(
     int maxRange[3],
     Vec3<int32_t>& edge1,
     Vec3<int32_t>& edge2,
-    Vec3<int32_t>& v0,
+    Vec3<int32_t>& s0,
     int64_t inva,
     int haloTriangle,
     int thickness);
@@ -304,7 +285,7 @@ void rayTracingAlongdirection_samp1_optim(
     int maxRange[3],
     Vec3<int32_t>& edge1,
     Vec3<int32_t>& edge2,
-    Vec3<int32_t>& v0,
+    Vec3<int32_t>& s0,
     int64_t inva,
     int haloTriangle,
     int thickness);
@@ -319,7 +300,7 @@ void rayTracingAlongdirection_samp1_optim(
     int maxRange[3],
     Vec3<int32_t>& edge1,
     Vec3<int32_t>& edge2,
-    Vec3<int32_t>& v0,
+    Vec3<int32_t>& s0,
     int64_t inva,
     int haloTriangle,
     int thickness);

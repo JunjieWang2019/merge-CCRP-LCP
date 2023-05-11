@@ -44,6 +44,8 @@
 
 #define PC_PREALLOCATION_SIZE 200000
 
+static const int precDivA = 30;
+
 namespace pcc {
 
 //============================================================================
@@ -80,21 +82,13 @@ decodeGeometryTrisoup(
   int blockWidth = 1 << gbh.trisoupNodeSizeLog2(gps);
   const int maxVertexPrecisionLog2 = gbh.trisoup_vertex_quantization_bits ? gbh.trisoup_vertex_quantization_bits : gbh.trisoupNodeSizeLog2(gps);
   const int bitDropped =  std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
-  const bool isCentroidDriftActivated = gbh.trisoup_centroid_vertex_residual_flag;
 
-
-  std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
-
-  bool haloFlag = gbh.trisoup_halo_flag;
-  bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
-  bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;
-  int thickness = gbh.trisoup_thickness;
 
   // Determine neighbours
   int nSegments = 0;
-  determineTrisoupNeighbours(nodes, blockWidth, pointCloud, false, bitDropped, 1 /*distanceSearchEncoder*/,
-    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness, nSegments);
+  codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, false, bitDropped, 1 /*distanceSearchEncoder*/,
+    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, nSegments);
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
@@ -128,11 +122,13 @@ struct RasterScanTrisoupEdges {
 
   const int startCorner[12] = { POS_000, POS_000, POS_0W0, POS_W00, POS_000, POS_0W0, POS_WW0, POS_W00, POS_00W, POS_00W, POS_0WW, POS_W0W };
   const int endCorner[12] = { POS_W00, POS_0W0, POS_WW0, POS_WW0, POS_00W, POS_0WW, POS_WWW, POS_W0W, POS_W0W, POS_0WW, POS_WWW, POS_WWW };
+  const int LUTsegmentDirection[12] = { 0, 1, 0, 1, 2, 2, 2, 2, 0, 1, 0, 1 };
 
   std::array<int, 8> edgesNeighNodes; // neighboring nodes' index
   // The 7 firsts are used for unique segments generation/iteration
   // All the 8 are used for contextual information to be used by edge entropy coder
   Vec3<int32_t> currWedgePos;
+  int lastWedgex;
 
   const std::vector<PCCOctree3Node>& leaves;
   PCCPointSet3& pointCloud;
@@ -150,16 +146,9 @@ struct RasterScanTrisoupEdges {
   pcc::EntropyDecoder& arithmeticDecoder;
   GeometryOctreeContexts& ctxtMemOctree;
 
-  // for rendering
-  const bool isCentroidDriftActivated;
-  bool haloFlag;
-  bool adaptiveHaloFlag;
-  int thickness;
-
   RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, PCCPointSet3& pointCloud, bool isEncoder,
     int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& refPointCloud, const PCCPointSet3& compensatedPointCloud,
-    const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree,
-    const bool isCentroidDriftActivated,  bool haloFlag, bool adaptiveHaloFlag,  int thickness)
+    const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree)
   : leaves(leaves)
   , blockWidth(blockWidth)
   , pointCloud(pointCloud)
@@ -174,10 +163,6 @@ struct RasterScanTrisoupEdges {
   , arithmeticEncoder(arithmeticEncoder)
   , arithmeticDecoder(arithmeticDecoder)
   , ctxtMemOctree(ctxtMemOctree)
-  , isCentroidDriftActivated(isCentroidDriftActivated)
-  , haloFlag(haloFlag)
-  , adaptiveHaloFlag(adaptiveHaloFlag)
-  , thickness(thickness)
   , currWedgePos(leaves.empty() ? Vec3<int32_t>{0,0,0} : leaves[0].pos)
   , edgesNeighNodes {0,0,0,0,0,0,0,0}
   {}
@@ -326,19 +311,37 @@ struct RasterScanTrisoupEdges {
     }
   }
 
+  //---------------------------------------------------------------------------
+  void flush2PointCloud(
+    int& nRecPoints,
+    std::vector<int64_t>::iterator itBegingBlock,
+    int nPointsInBlock,
+    PCCPointSet3& recPointCloud
+    )
+  {
+    std::sort(itBegingBlock, itBegingBlock + nPointsInBlock);
+    auto last = std::unique(itBegingBlock, itBegingBlock + nPointsInBlock);
+
+    // Move list of points to pointCloud
+    int nPointInCloud = recPointCloud.getPointCount();
+
+    int nPointInNode = last - itBegingBlock;
+    if (nPointInCloud <= nRecPoints + nPointInNode)
+      recPointCloud.resize(nRecPoints + nPointInNode + PC_PREALLOCATION_SIZE);
+
+    for (auto it = itBegingBlock; it != last; it++)
+      recPointCloud[nRecPoints++] = { int(*it >> 40), int(*it >> 20) & 0xFFFFF, int(*it) & 0xFFFFF };
+  }
 
   //---------------------------------------------------------------------------
-  void generateTrianglesInNodeRasterScan(
+  int generateTrianglesInNodeRasterScan(
     const PCCOctree3Node& leaf,
-    int& nRecPoints,
     std::vector<int64_t>& renderedBlock,
     const std::vector<int8_t>& TriSoupVertices,
     int& idxSegment,
-    PCCPointSet3& recPointCloud,
     Box3<int32_t>& sliceBB,
     const bool isCentroidDriftActivated,
-    bool haloFlag,
-    bool adaptiveHaloFlag,
+    int haloTriangle,
     int thickness,
     std::vector<int>& segmentUniqueIndex)
   {
@@ -348,7 +351,6 @@ struct RasterScanTrisoupEdges {
     // Find up to 12 vertices for this leaf.
     std::vector<Vertex> leafVertices;
     int nPointsInBlock = 0;
-    auto itBegingBlock = renderedBlock.begin();
 
     for (int j = 0; j < 12; j++) {
       int uniqueIndex = segmentUniqueIndex[idxSegment++];
@@ -356,29 +358,14 @@ struct RasterScanTrisoupEdges {
 
       if (vertex < 0)
         continue;  // skip segments that do not intersect the surface
-      auto startSegment = corner[startCorner[j]];
-      auto endSegment = corner[endCorner[j]];
-
-      // Get distance along edge of vertex.
-      // Vertex code is the index of the voxel along the edge of the block
-      // of surface intersection./ Put decoded vertex at center of voxel,
-      // unless voxel is first or last along the edge, in which case put the
-      // decoded vertex at the start or endpoint of the segment.
-      Vec3<int32_t> direction = endSegment - startSegment;
-      uint32_t segment_len = direction.max();
 
       // Get 3D position of point of intersection.
-      Vec3<int32_t> point = startSegment << kTrisoupFpBits;
+      Vec3<int32_t> point = corner[startCorner[j]] << kTrisoupFpBits;
       point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3
 
       // points on edges are located at integer values
-      int32_t distance = (vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
-      if (direction[0])
-        point[0] += distance; // in {0,1,...,B-1}
-      else if (direction[1])
-        point[1] += distance;
-      else  // direction[2]
-        point[2] += distance;
+      int32_t dequantizedPosition = (vertex << (kTrisoupFpBits + bitDropped)) + (kTrisoupFpHalf << bitDropped);
+      point[LUTsegmentDirection[j]] += dequantizedPosition;
 
       // Add vertex to list of vertices.
       leafVertices.push_back({ point, 0, 0 });
@@ -395,23 +382,8 @@ struct RasterScanTrisoupEdges {
 
     // Skip leaves that have fewer than 3 vertices.
     int triCount = (int)leafVertices.size();
-    if (triCount < 3) {
-      std::sort(itBegingBlock, itBegingBlock + nPointsInBlock);
-      auto last = std::unique(itBegingBlock, itBegingBlock + nPointsInBlock);
-
-      // Move list of points to pointCloud
-      int nPointInCloud = recPointCloud.getPointCount();
-
-      int nPointInNode = last - itBegingBlock;
-      if (nPointInCloud <= nRecPoints + nPointInNode)
-        recPointCloud.resize(nRecPoints + nPointInNode + PC_PREALLOCATION_SIZE);
-
-      auto it = itBegingBlock;
-      for (int i = 0; it != last; it++, i++)
-        recPointCloud[nRecPoints + i] = { int(*it >> 40),   int(*it >> 20) & 0b1111111111111111111,  int(*it) & 0b1111111111111111111 };
-      nRecPoints += nPointInNode;
-      return;
-    }
+    if (triCount < 3)
+      return nPointsInBlock;
 
     // compute centroid
     Vec3<int32_t> blockCentroid;
@@ -466,17 +438,9 @@ struct RasterScanTrisoupEdges {
       }
     }
 
-    int haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth;
-    haloTriangle = (haloTriangle * 28) >> 5; // / 32;
-    haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
-
     Vec3<int32_t> v2 = triCount == 3 ? leafVertices[2].pos : blockCentroid;
     Vec3<int32_t> v1 = leafVertices[0].pos;
     for (int triIndex = 0; triIndex < (triCount == 3 ? 1 : triCount); triIndex++) {
-      // ensure there is enough space in the block buffer
-      if (renderedBlock.size() <= nPointsInBlock + blockWidth * blockWidth)
-        renderedBlock.resize(renderedBlock.size() + blockWidth * blockWidth);
-
       int j1 = triIndex == triCount - 1 ? 0 : triIndex + 1;
       Vec3<int32_t> v0 = v1;
       v1 = leafVertices[j1].pos;
@@ -489,10 +453,9 @@ struct RasterScanTrisoupEdges {
       int directionOk = (h[0] > h[1] && h[0] > h[2]) ? 0 : h[1] > h[2] ? 1 : 2;
 
       // check if ray tracing is valid; if not skip triangle which is too small
-      if (h[directionOk] <= kTrisoupFpOne)
+      if (h[directionOk] <= kTrisoupFpOne) // < 2*kTrisoupFpOne should be ok
         continue;
 
-      const int precDivA = 30;
       int64_t inva = (int64_t(1) << precDivA) / a[directionOk];
 
       // range
@@ -502,41 +465,31 @@ struct RasterScanTrisoupEdges {
         minRange[k] = std::max(0, std::min(std::min(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
         maxRange[k] = std::min(blockWidth - 1, std::max(std::max(v0[k], v1[k]), v2[k]) + truncateValue >> kTrisoupFpBits);
       }
+      Vec3<int32_t> s0 = { (minRange[0] << kTrisoupFpBits) - v0[0], (minRange[1] << kTrisoupFpBits) - v0[1], (minRange[2] << kTrisoupFpBits) - v0[2] };
+
+      // ensure there is enough space in the block buffer
+      if (renderedBlock.size() <= nPointsInBlock + blockWidth * blockWidth)
+        renderedBlock.resize(renderedBlock.size() + blockWidth * blockWidth);
 
       // applying ray tracing along direction
       if (directionOk == 0)
         rayTracingAlongdirection_samp1_optimX(
           renderedBlock, nPointsInBlock, blockWidth, nodepos, minRange,
-          maxRange, edge1, edge2, v0, inva, haloTriangle, thickness);
+          maxRange, edge1, edge2, s0, inva, haloTriangle, thickness);
 
       if (directionOk == 1)
         rayTracingAlongdirection_samp1_optimY(
           renderedBlock, nPointsInBlock, blockWidth, nodepos, minRange,
-          maxRange, edge1, edge2, v0, inva, haloTriangle, thickness);
+          maxRange, edge1, edge2, s0, inva, haloTriangle, thickness);
 
       if (directionOk == 2)
         rayTracingAlongdirection_samp1_optimZ(
           renderedBlock, nPointsInBlock, blockWidth, nodepos, minRange,
-          maxRange, edge1, edge2, v0, inva, haloTriangle, thickness);
+          maxRange, edge1, edge2, s0, inva, haloTriangle, thickness);
 
     }  // end loop on triangles
 
-    // remove points present twice or more for node
-    std::sort(itBegingBlock, itBegingBlock + nPointsInBlock);
-    auto last = std::unique(itBegingBlock, itBegingBlock + nPointsInBlock);
-
-    // Move list of points to pointCloud
-    int nPointInCloud = recPointCloud.getPointCount();
-
-    int nPointInNode = last - itBegingBlock;
-    if (nPointInCloud <= nRecPoints + nPointInNode)
-      recPointCloud.resize(nRecPoints + nPointInNode + PC_PREALLOCATION_SIZE);
-
-    auto it = itBegingBlock;
-    for (int i = 0; it != last; it++, i++)
-      recPointCloud[nRecPoints + i] = { int(*it >> 40),   int(*it >> 20) & 0b1111111111111111111,  int(*it) & 0b1111111111111111111 };
-    nRecPoints += nPointInNode;
-
+    return nPointsInBlock;
   }
 
 
@@ -555,7 +508,7 @@ struct RasterScanTrisoupEdges {
 
     // for slice tracking
     int uniqueIndex = 0;
-    int lastWedgex = currWedgePos[0];
+    lastWedgex = currWedgePos[0];
     int firstVertexToCode = 0;
     int firstNodeToRender = 0;
 
@@ -579,7 +532,19 @@ struct RasterScanTrisoupEdges {
 
     int idxSegment = 0;
     std::vector<int64_t> renderedBlock(blockWidth * blockWidth * 16, 0) ;
-    //renderedBlock.reserve(blockWidth * blockWidth * 4);
+
+    bool haloFlag = gbh.trisoup_halo_flag;
+    bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
+    int thickness = gbh.trisoup_thickness;
+    bool isCentroidDriftActivated = gbh.trisoup_centroid_vertex_residual_flag;
+
+    // halo
+    int haloTriangle = 0;
+    if (haloFlag) {
+      haloTriangle = (((1 << bitDropped) - 1) << kTrisoupFpBits) / blockWidth; // this division is a shift if width is a power of 2
+      haloTriangle = (haloTriangle * 28) >> 5; // / 32;
+      haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
+    }
 
     while (nextIsAvailable()) { // this a loop on start position of edges; 3 edges along x,y and z per start position
       // process current wedge position
@@ -626,23 +591,23 @@ struct RasterScanTrisoupEdges {
 
               int indexV = neighbNodeIndex * 12 + localEdgeindex[indexLow][v]; // index of segment
               int Vidx = segmentUniqueIndex[indexV];
-              assert(Vidx != -1); // check if already coded
+              //assert(Vidx != -1); // check if already coded
               pattern[patternIndex[indexLow][v]] = Vidx;
             }
 
             // determine TriSoup Vertex by the encoder
+            const int offset1 = leaves[neighbNodeIndex].pos[dir1] < currWedgePos[dir1];
+            const int offset2 = leaves[neighbNodeIndex].pos[dir2] < currWedgePos[dir2];
+            const int pos1 = currWedgePos[dir1] - offset1;
+            const int pos2 = currWedgePos[dir2] - offset2;
             if (isEncoder) {
-              int idxStart = leaves[neighbNodeIndex].start;
-              int idxEnd = leaves[neighbNodeIndex].end;
-              int offset1 = leaves[neighbNodeIndex].pos[dir1] < currWedgePos[dir1];
-              int offset2 = leaves[neighbNodeIndex].pos[dir2] < currWedgePos[dir2];
-              for (int j = idxStart; j < idxEnd; j++) {
+              for (int j = leaves[neighbNodeIndex].start; j < leaves[neighbNodeIndex].end; j++) {
                 Vec3<int> voxel = pointCloud[j];
-                if (std::abs(voxel[dir1] + offset1 - currWedgePos[dir1]) < 1 && std::abs(voxel[dir2] + offset2 - currWedgePos[dir2]) < 1) {
+                if (voxel[dir1] ==  pos1 && voxel[dir2] == pos2) {
                   countNearPoints++;
                   distanceSum += voxel[dir0] - currWedgePos[dir0];
                 }
-                if (std::abs(voxel[dir1] + offset1 - currWedgePos[dir1]) < distanceSearchEncoder && std::abs(voxel[dir2] + offset2 - currWedgePos[dir2]) < distanceSearchEncoder) {
+                if (distanceSearchEncoder > 1 && std::abs(voxel[dir1] - pos1) < distanceSearchEncoder && std::abs(voxel[dir2] - pos2) < distanceSearchEncoder) {
                   countNearPoints2++;
                   distanceSum2 += voxel[dir0] - currWedgePos[dir0];
                 }
@@ -651,23 +616,20 @@ struct RasterScanTrisoupEdges {
 
             // determine TriSoup Vertex inter prediction
             if (isInter) {
-              int idxStart = leaves[neighbNodeIndex].predStart;
-              int idxEnd = leaves[neighbNodeIndex].predEnd;
-              int offset1 = leaves[neighbNodeIndex].pos[dir1] < currWedgePos[dir1];
-              int offset2 = leaves[neighbNodeIndex].pos[dir2] < currWedgePos[dir2];
-              for (int j = idxStart; j < idxEnd; j++) {
-                Vec3<int> voxel = isInter && leaves[neighbNodeIndex].isCompensated ? compensatedPointCloud[j] : refPointCloud[j];
-                if (std::abs(voxel[dir1] + offset1 - currWedgePos[dir1]) < 1 && std::abs(voxel[dir2] + offset2 - currWedgePos[dir2]) < 1) {
+              const PCCPointSet3& PC = leaves[neighbNodeIndex].isCompensated ? compensatedPointCloud : refPointCloud;
+              for (int j = leaves[neighbNodeIndex].predStart; j < leaves[neighbNodeIndex].predEnd; j++) {
+                Vec3<int> voxel = PC[j];
+                if (voxel[dir1] == pos1 && voxel[dir2] == pos2) {
                   countNearPointsPred++;
                   distanceSumPred += voxel[dir0] - currWedgePos[dir0];
                 }
               }
             }
           }
-        }
+        } // end loop on 4 neighbouring nodes
 
 
-        if (processedEdge) { // the TriSoup edge and will be added to the list
+        if (processedEdge) { // the TriSoup edge is added to the list
           int segmentUniqueIdxPrevEdge = -1;
           for (int prevNeighIdx=0; prevNeighIdx<4; ++prevNeighIdx) {
             int wedgeNeighNodeIdx = wedgeNeighNodesIdx[dir][prevNeighIdx];
@@ -678,7 +640,7 @@ struct RasterScanTrisoupEdges {
                 int idx = edgesNeighNodes[wedgeNeighNodeIdx] * 12 + wedgeNeighNodesEdgeIdx[dir][prevNeighIdx];
                 segmentUniqueIdxPrevEdge = segmentUniqueIndex[idx];
                 pattern[0] = segmentUniqueIdxPrevEdge;
-                assert(segmentUniqueIdxPrevEdge != -1);
+                //assert(segmentUniqueIdxPrevEdge != -1);
                 for (int neighIdx=0; neighIdx<4; ++neighIdx) {
                   int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx];
                   if (isNeigbourSane[edgeNeighNodeIdx]) {
@@ -688,6 +650,7 @@ struct RasterScanTrisoupEdges {
               }
             }
           }
+
           ++uniqueIndex;
           neighbNodes.push_back(neighboursMask);
           edgePattern.push(pattern);
@@ -713,16 +676,15 @@ struct RasterScanTrisoupEdges {
             }
             TriSoupVerticesPred.push(vertexPos);
           }
-        }
-      }
+        } // end if on is a TriSoup wedge
+      } // end loop on three deirections
 
       // move to next wedge
       goNextWedge(isNeigbourSane);
 
-      // code vertices and rendering of preceding slices in case the loop has moved up one slice or if finished
-      if (!nextIsAvailable() || currWedgePos[0] > lastWedgex) {
-
-        // coding
+      // code vertices adn rfendering of preceding slices in case the loop has moved up one slice or if finished
+      if (changeSlice()) {
+        // coding vertices
         int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - blockWidth;
         while (!xForedgeOfVertex.empty() && xForedgeOfVertex.front() < upperxForCoding) {
           int8_t  interPredictor = isInter ? TriSoupVerticesPred.front() : 0;
@@ -741,14 +703,15 @@ struct RasterScanTrisoupEdges {
           firstVertexToCode++;
         }
 
-        // rendering
+        // rendering by TriSoup triangles
         int upperxForRendering = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - 2*blockWidth;
         while (firstNodeToRender < leaves.size() && leaves[firstNodeToRender].pos[0] < upperxForRendering) {
           auto leaf = leaves[firstNodeToRender];
-          generateTrianglesInNodeRasterScan(leaf, nRecPoints, renderedBlock, TriSoupVertices, idxSegment, recPointCloud, sliceBB, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness, segmentUniqueIndex);
+          int nPointsInBlock = generateTrianglesInNodeRasterScan(leaf, renderedBlock, TriSoupVertices, idxSegment, sliceBB, isCentroidDriftActivated, haloTriangle, thickness, segmentUniqueIndex);
+          flush2PointCloud(nRecPoints, renderedBlock.begin(), nPointsInBlock, recPointCloud);
           firstNodeToRender++;
         }
-      }
+      } // end if on slice chnage
 
       lastWedgex = currWedgePos[0];
     } // end while loop on wedges
@@ -763,6 +726,10 @@ struct RasterScanTrisoupEdges {
 private:
   //---------------------------------------------------------------------------
   bool nextIsAvailable() const { return edgesNeighNodes[0] < leaves.size(); }
+
+  //---------------------------------------------------------------------------
+  bool changeSlice() const {
+    return !nextIsAvailable() || currWedgePos[0] > lastWedgex;}
 
   //---------------------------------------------------------------------------
   void goNextWedge(const std::array<bool, 8>& isNeigbourSane) {
@@ -787,7 +754,7 @@ private:
 
 
 //---------------------------------------------------------------------------
-void determineTrisoupNeighbours(
+void codeAndRenderTriSoupRasterScan(
   const std::vector<PCCOctree3Node>& leaves,
   const int defaultBlockWidth,
   PCCPointSet3& pointCloud,
@@ -802,17 +769,10 @@ void determineTrisoupNeighbours(
   pcc::EntropyEncoder* arithmeticEncoder,
   pcc::EntropyDecoder& arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree,
-  const bool isCentroidDriftActivated,
-  bool haloFlag,
-  bool adaptiveHaloFlag,
-  int thickness,
-  int& nSegments) {
+  int &nSegments) {
 
-  // Width of block.
-  // in future, may override with leaf blockWidth
-  const int32_t blockWidth = defaultBlockWidth;
-
-  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree, isCentroidDriftActivated, haloFlag, adaptiveHaloFlag, thickness);
+  const int32_t blockWidth = defaultBlockWidth; // Width of block. In future, may override with leaf blockWidth
+  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree);
   rste.buildSegments(nSegments);
 }
 
@@ -1095,17 +1055,14 @@ encodeCentroidResidual(
   int lowBound,
   int highBound)
 {
-  if (driftQPred == -100) //intra
-    arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][0]);
-  else //inter
-    arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]);
+  arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][driftQPred == -100 ? 0 : 1 + std::min(3, std::abs(driftQPred))]);
 
   // if not 0, drift in [-lowBound; highBound]
   if (driftQ) {
     // code sign
-    int lowS = std::min(7, lowBoundSurface);
-    int highS = std::min(7, highBoundSurface);
     if (highBound && lowBound) {  // otherwise sign is known
+      int lowS = std::min(7, lowBoundSurface);
+      int highS = std::min(7, highBoundSurface);
       arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
     }
 
@@ -1115,9 +1072,10 @@ encodeCentroidResidual(
 
     int magDrift = std::abs(driftQ) - 1;
     int ctx = 0;
+    int ctx2 = driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0;
     while (magBound > 0 && magDrift >= 0) {
       if (ctx < 4)
-        arithmeticEncoder->encode(magDrift == 0, ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
+        arithmeticEncoder->encode(magDrift == 0, ctxtMemOctree.ctxDriftMag[ctx][ctx2]);
       else
         arithmeticEncoder->encode(magDrift == 0);
 
@@ -1141,49 +1099,43 @@ decodeCentroidResidual(
   int lowBound,
   int highBound)
 {
-  // decode drift
-  int driftQ = 0;
-  if (driftQPred == -100) //intra
-    driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][0]) ? 0 : 1;
-  else //inter
-    driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]) ? 0 : 1;
+  if (arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][driftQPred == -100 ? 0 : 1 + std::min(3, std::abs(driftQPred))]))
+    return 0;
 
+  int driftQ = 1;
   // if not 0, drift in [-lowBound; highBound]
-  if (driftQ) {
-    // code sign
+  // code sign
+  int sign = 1;
+  if (highBound && lowBound) {// otherwise sign is knwow
     int lowS = std::min(7, lowBoundSurface);
     int highS = std::min(7, highBoundSurface);
-
-    int sign = 1;
-    if (highBound && lowBound) // otherwise sign is knwow
-      sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
-    else if (!highBound) // highbound is 0 , so sign is negative; otherwise sign is already set to positive
-      sign = 0;
-
-    // code remaining bits 1 to 7 at most
-    int magBound = (sign ? highBound : lowBound) - 1;
-    bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && sign) || (driftQPred < 0 && !sign);
-
-    int ctx = 0;
-    while (magBound > 0) {
-      int bit;
-      if (ctx < 4)
-        bit = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftMag[ctx][driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0]);
-      else
-        bit = arithmeticDecoder->decode();
-
-      if (bit) // magDrift==0 and magnitude coding is finished
-        break;
-
-      driftQ++;
-      magBound--;
-      ctx++;
-    }
-
-    if (!sign)
-      driftQ = -driftQ;
+    sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
   }
-  return driftQ;
+  else if (!highBound) // highbound is 0 , so sign is negative; otherwise sign is already set to positive
+    sign = 0;
+
+  // code remaining bits 1 to 7 at most
+  int magBound = (sign ? highBound : lowBound) - 1;
+  bool sameSignPred = driftQPred != -100 && (driftQPred > 0 && sign) || (driftQPred < 0 && !sign);
+
+  int ctx = 0;
+  int ctx2 = driftQPred != -100 ? 1 + std::min(8, sameSignPred * std::abs(driftQPred)) : 0;
+  while (magBound > 0) {
+    int bit;
+    if (ctx < 4)
+      bit = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftMag[ctx][ctx2]);
+    else
+      bit = arithmeticDecoder->decode();
+
+    if (bit) // magDrift==0 and magnitude coding is finished
+      break;
+
+    driftQ++;
+    magBound--;
+    ctx++;
+  }
+
+  return sign ? driftQ : -driftQ;
 }
 
 // ---------------------------------------------------------------------------
@@ -1207,10 +1159,10 @@ constructCtxInfo(
     int v18 = mapping18to9[direction][v];
 
     if (patternIdx[v18] != -1) {
-      int idxEdge = patternIdx[v18];
-      if (TriSoupVertices[idxEdge] >= 0) {
+      int vertex = TriSoupVertices[patternIdx[v18]];
+      if (vertex >= 0) {
         ctxInfo.pattern |= 1 << v;
-        int vertexPos2bits = TriSoupVertices[idxEdge] >> std::max(0, nbitsVertices - 2);
+        int vertexPos2bits = vertex >> std::max(0, nbitsVertices - 2);
         if (towardOrAway[v18])
           vertexPos2bits = max2bits - vertexPos2bits; // reverses for away
         if (vertexPos2bits >= mid2bits)
@@ -1346,26 +1298,25 @@ int findDominantAxis(
 
   int dominantAxis = 0;
   int triCount = leafVertices.size();
-  auto leafVerticesTemp = leafVertices;
 
   if (triCount > 3) {
     Vertex vertex;
-    Vec3<int32_t> Width = blockWidth << kTrisoupFpBits;
-
     const int sIdx1[3] = { 2,2,1 };
     const int sIdx2[3] = { 1,0,0 };
+    auto leafVerticesTemp = leafVertices;
 
     int maxNormTri = 0;
     for (int axis = 0; axis <= 2; axis++) {
       int axis1 = sIdx1[axis];
       int axis2 = sIdx2[axis];
+      const int Width_x = blockWidth[axis1] << kTrisoupFpBits;
+      const int Width_y = blockWidth[axis2] << kTrisoupFpBits;
+
       // order along axis
       for (int j = 0; j < triCount; j++) {
         // compute score closckwise
         int x = leafVerticesTemp[j].pos[axis1] + kTrisoupFpHalf; // back to [0,B]^3 for ordering
         int y = leafVerticesTemp[j].pos[axis2] + kTrisoupFpHalf; // back to [0,B]^3 for ordering
-        int Width_x = Width[axis1];
-        int Width_y = Width[axis2];
 
         int flag3 = x <= 0;
         int score3 = Width_y - flag3 * y + (!flag3) * x;
@@ -1374,9 +1325,7 @@ int findDominantAxis(
         int flag1 = x >= Width_x;
         int score = flag1 * y + (!flag1) * score2;
         leafVerticesTemp[j].theta = score;
-
-        // stable sort if same score
-        leafVerticesTemp[j].tiebreaker = leafVerticesTemp[j].pos[axis] + kTrisoupFpHalf;
+        leafVerticesTemp[j].tiebreaker = leafVerticesTemp[j].pos[axis]; // stable sort if same score
       }
       std::sort(leafVerticesTemp.begin(), leafVerticesTemp.end(), vertex);
 
@@ -1401,125 +1350,6 @@ int findDominantAxis(
   return dominantAxis;
 }
 
-
-// --------------------------------------------------------
-void rayTracingAlongdirection_samp1_optim(
-  std::vector<int64_t>& renderedBlock,
-  int direction,
-  int blockWidth,
-  Vec3<int32_t> nodepos,
-  int minRange[3],
-  int maxRange[3],
-  Vec3<int32_t> edge1,
-  Vec3<int32_t> edge2,
-  Vec3<int32_t> Ver0,
-  int haloTriangle,
-  int thickness) {
-
-  // check if ray tracing is valid; if not skip the direction
-  Vec3<int32_t> rayVector = 0;
-  rayVector[direction] = 1;// << kTrisoupFpBits;
-  Vec3<int32_t> h = crossProduct(rayVector, edge2);// >> kTrisoupFpBits;
-  int32_t a = (edge1 * h) >> kTrisoupFpBits; // max is node size square, shifted left by kTrisoupFpBits; max bits = 2*log22Nodesize + kTrisoupFpBits <=2*6 +8 = 20 bits 
-  if (std::abs(a) <= kTrisoupFpOne)
-    return;
-
-  const int precDivA = 30;
-  int64_t inva = (int64_t(1) << precDivA) / a;
-
-  //bounds
-  const int g1pos[3] = { 1, 0, 0 };
-  const int g2pos[3] = { 2, 2, 1 };
-  const int i1 = g1pos[direction];
-  const int i2 = g2pos[direction];
-
-  const int32_t startposG1 = minRange[i1];
-  const int32_t startposG2 = minRange[i2];
-  const int32_t endposG1 = maxRange[i1];
-  const int32_t endposG2 = maxRange[i2];
-
-  Vec3<int32_t>  rayOrigin0 = minRange[direction] << kTrisoupFpBits;;
-  rayOrigin0[i1] = startposG1 << kTrisoupFpBits;
-  rayOrigin0[i2] = startposG2 << kTrisoupFpBits;
-
-  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
-  int32_t u0 =  ((s0 * h) * inva) >> precDivA;
-  Vec3<int32_t> q0 = crossProduct(s0, edge1);
-  int32_t v0 = (q0[direction] * inva) >> precDivA;
-  int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
-
-  Vec3<int32_t>  ray1 = { 0,0,0 };
-  ray1[i1] = kTrisoupFpOne;
-  int32_t u1 = (h[i1] * inva) >> (precDivA - kTrisoupFpBits); //(ray1 * h) / a;
-  Vec3<int32_t> q1 = crossProduct(ray1, edge1);
-  int32_t v1 = (q1[direction] * inva) >> precDivA;
-  int32_t t1 = ((edge2 * (q1 >> kTrisoupFpBits)) * inva) >> precDivA;
-
-  Vec3<int32_t>  ray2 = { 0,0,0 };
-  ray2[i2] = kTrisoupFpOne;
-  int32_t u2 = (h[i2] * inva) >> (precDivA - kTrisoupFpBits); //(ray2 * h) / a;
-  Vec3<int32_t> q2 = crossProduct(ray2, edge1);
-  int32_t v2 = (q2[direction] * inva) >> precDivA;
-  int32_t t2 = ((edge2 * (q2 >> kTrisoupFpBits)) * inva) >> precDivA;
-
-  for (int32_t g1 = startposG1;
-      g1 <= endposG1;
-      g1++, u0 += u1, v0 += v1, t0 += t1, rayOrigin0[i1] += kTrisoupFpOne) {
-
-    Vec3<int32_t> rayOrigin = rayOrigin0;
-    int32_t u = u0;
-    int32_t v = v0;
-    int32_t t = t0;
-    bool hasIntersected = false;
-
-    for (int32_t g2 = startposG2;
-        g2 <= endposG2;
-        g2++, u += u2, v += v2, t += t2, rayOrigin[i2] += kTrisoupFpOne) {
-
-      int w = kTrisoupFpOne - u - v;
-      if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
-        hasIntersected = true;
-
-        Vec3<int32_t>  intersection = rayOrigin;
-        intersection[direction] += t;
-        Vec3<int32_t> foundvoxel =
-          (intersection + truncateValue) >> kTrisoupFpBits;
-        if (foundvoxel[direction]>=0 && foundvoxel[direction] < blockWidth) {
-          Vec3<int64_t> renderedPoint = nodepos + foundvoxel;
-          int64_t renderedPoint1D = (renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2];
-          renderedBlock.push_back(renderedPoint1D);
-        }
-
-        intersection[direction] += thickness;
-        Vec3<int32_t> foundvoxelUp =
-          (intersection + truncateValue) >> kTrisoupFpBits;
-        if (foundvoxelUp != foundvoxel
-            && foundvoxelUp[direction] >= 0
-            && foundvoxelUp[direction] < blockWidth) {
-          Vec3<int64_t> renderedPoint = nodepos + foundvoxelUp;
-          int64_t renderedPoint1D = (renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2];
-          renderedBlock.push_back(renderedPoint1D);
-        }
-
-        intersection[direction] -= 2 * thickness;
-        Vec3<int32_t> foundvoxelDown =
-          (intersection + truncateValue) >> kTrisoupFpBits;
-        if (foundvoxelDown != foundvoxel
-            && foundvoxelDown[direction] >= 0
-            && foundvoxelDown[direction] < blockWidth) {
-          Vec3<int64_t> renderedPoint = nodepos + foundvoxelDown;
-          int64_t renderedPoint1D = (renderedPoint[0] << 40) + (renderedPoint[1] << 20) + renderedPoint[2];
-          renderedBlock.push_back(renderedPoint1D);
-        }
-      }
-      else if (hasIntersected)
-        break;
-    }// loop g2
-  }//loop g1
-
-}
-
-
 // --------------------------------------------------------
 void rayTracingAlongdirection_samp1_optimX(
   std::vector<int64_t>& renderedBlock,
@@ -1530,38 +1360,28 @@ void rayTracingAlongdirection_samp1_optimX(
   int maxRange[3],
   Vec3<int32_t>& edge1,
   Vec3<int32_t>& edge2,
-  Vec3<int32_t>& Ver0,
+  Vec3<int32_t>& s0,
   int64_t inva,
   int haloTriangle,
   int thickness)
 {
-  const int precDivA = 30;
-
-  Vec3<int32_t>  rayOrigin0 = { minRange[0] << kTrisoupFpBits, minRange[1] << kTrisoupFpBits, minRange[2] << kTrisoupFpBits };
-  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
   int32_t u0 = ((-s0[1] * edge2[2] + s0[2] * edge2[1]) * inva) >> precDivA;
   Vec3<int32_t> q0 = crossProduct(s0, edge1);
   int32_t v0 = (q0[0] * inva) >> precDivA;
   int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
 
-  int32_t u1 = (-edge2[2] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t u1 = ((-edge2[2] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t v1 = ((edge1[2] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t t1 = ((edge2[0]* edge1[2] - edge2[2] * edge1[0]) * inva) >> precDivA;
 
-  int32_t u2 = (edge2[1] * inva) >> (precDivA - kTrisoupFpBits);
-  int32_t v2 = ((-edge1[1] << kTrisoupFpBits )* inva) >> precDivA;
+  int32_t u2 = ((edge2[1] << kTrisoupFpBits) * inva) >> precDivA;
+  int32_t v2 = ((-edge1[1] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t t2 = ((-edge2[0]* edge1[1] + edge2[1] * edge1[0]) * inva) >> precDivA;
 
   int64_t renderedPoint1D0 = (int64_t(nodepos[0]) << 40) + (int64_t(nodepos[1]) << 20) + int64_t(nodepos[2]);
-  const int32_t startposG1 = minRange[1];
-  const int32_t startposG2 = minRange[2];
-  const int32_t endposG1 = maxRange[1];
-  const int32_t endposG2 = maxRange[2];
-  for (int32_t g1 = startposG1; g1 <= endposG1; g1++, u0 += u1, v0 += v1, t0 += t1) {
-    int32_t u = u0;
-    int32_t v = v0;
-    int32_t t = t0;
-    for (int32_t g2 = startposG2;  g2 <= endposG2; g2++, u += u2, v += v2, t += t2) {
+  for (int32_t g1 = minRange[1]; g1 <= maxRange[1]; g1++, u0 += u1, v0 += v1, t0 += t1) {
+    int32_t u = u0, v = v0, t = t0;
+    for (int32_t g2 = minRange[2];  g2 <= maxRange[2]; g2++, u += u2, v += v2, t += t2) {
       int w = kTrisoupFpOne - u - v;
       if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
         int32_t foundvoxel = minRange[0] + (t + truncateValue >> kTrisoupFpBits);
@@ -1591,38 +1411,28 @@ void rayTracingAlongdirection_samp1_optimY(
   int maxRange[3],
   Vec3<int32_t>& edge1,
   Vec3<int32_t>& edge2,
-  Vec3<int32_t>& Ver0,
+  Vec3<int32_t>& s0,
   int64_t inva,
   int haloTriangle,
   int thickness)
 {
-  const int precDivA = 30;
-
-  Vec3<int32_t>  rayOrigin0 = { minRange[0] << kTrisoupFpBits, minRange[1] << kTrisoupFpBits, minRange[2] << kTrisoupFpBits };
-  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
   int32_t u0 = ((s0[0] * edge2[2] - s0[2] * edge2[0]) * inva) >> precDivA;
   Vec3<int32_t> q0 = crossProduct(s0, edge1);
   int32_t v0 = (q0[1] * inva) >> precDivA;
   int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
 
-  int32_t u1 = (edge2[2] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t u1 = ((edge2[2] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t v1 = ((-edge1[2] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t t1 = ((-edge2[1] * edge1[2] + edge2[2] * edge1[1]) * inva) >> precDivA;
 
-  int32_t u2 = (-edge2[0] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t u2 = ((-edge2[0] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t v2 = ((edge1[0] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t t2 = ((-edge2[0] * edge1[1] + edge2[1] * edge1[0]) * inva) >> precDivA;
 
   int64_t renderedPoint1D0 = (int64_t(nodepos[0]) << 40) + (int64_t(nodepos[1]) << 20) + int64_t(nodepos[2]);
-  const int32_t startposG1 = minRange[0];
-  const int32_t startposG2 = minRange[2];
-  const int32_t endposG1 = maxRange[0];
-  const int32_t endposG2 = maxRange[2];
-  for (int32_t g1 = startposG1; g1 <= endposG1; g1++, u0 += u1, v0 += v1, t0 += t1) {
-    int32_t u = u0;
-    int32_t v = v0;
-    int32_t t = t0;
-    for (int32_t g2 = startposG2; g2 <= endposG2; g2++, u += u2, v += v2, t += t2) {
+  for (int32_t g1 = minRange[0]; g1 <= maxRange[0]; g1++, u0 += u1, v0 += v1, t0 += t1) {
+    int32_t u = u0, v = v0, t = t0;
+    for (int32_t g2 = minRange[2]; g2 <= maxRange[2]; g2++, u += u2, v += v2, t += t2) {
       int w = kTrisoupFpOne - u - v;
       if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
         int32_t foundvoxel = minRange[1] + (t + truncateValue >> kTrisoupFpBits);
@@ -1652,38 +1462,28 @@ void rayTracingAlongdirection_samp1_optimZ(
   int maxRange[3],
   Vec3<int32_t>& edge1,
   Vec3<int32_t>& edge2,
-  Vec3<int32_t>& Ver0,
+  Vec3<int32_t>& s0,
   int64_t inva,
   int haloTriangle,
   int thickness)
 {
-  const int precDivA = 30;
-
-  Vec3<int32_t>  rayOrigin0 = { minRange[0] << kTrisoupFpBits, minRange[1] << kTrisoupFpBits, minRange[2] << kTrisoupFpBits };
-  Vec3<int32_t> s0 = rayOrigin0 - Ver0;
   int32_t u0 = ((-s0[0] * edge2[1] + s0[1] * edge2[0]) * inva) >> precDivA;
   Vec3<int32_t> q0 = crossProduct(s0, edge1);
   int32_t v0 = (q0[2] * inva) >> precDivA;
   int32_t t0 = ((edge2 * (q0 >> kTrisoupFpBits)) * inva) >> precDivA;
 
-  int32_t u1 = (-edge2[1] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t u1 = ((-edge2[1] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t v1 = ((edge1[1] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t t1 = ((edge2[2] * edge1[1] - edge2[1] * edge1[2]) * inva) >> precDivA;
 
-  int32_t u2 = (edge2[0] * inva) >> (precDivA - kTrisoupFpBits);
+  int32_t u2 = ((edge2[0] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t v2 = ((-edge1[0] << kTrisoupFpBits) * inva) >> precDivA;
   int32_t t2 = ((edge2[0] * edge1[2] - edge2[2] * edge1[0]) * inva) >> precDivA;
 
   int64_t renderedPoint1D0 = (int64_t(nodepos[0]) << 40) + (int64_t(nodepos[1]) << 20) + int64_t(nodepos[2]);
-  const int32_t startposG1 = minRange[0];
-  const int32_t startposG2 = minRange[1];
-  const int32_t endposG1 = maxRange[0];
-  const int32_t endposG2 = maxRange[1];
-  for (int32_t g1 = startposG1; g1 <= endposG1; g1++, u0 += u1, v0 += v1, t0 += t1) {
-    int32_t u = u0;
-    int32_t v = v0;
-    int32_t t = t0;
-    for (int32_t g2 = startposG2; g2 <= endposG2; g2++, u += u2, v += v2, t += t2) {
+  for (int32_t g1 = minRange[0]; g1 <= maxRange[0]; g1++, u0 += u1, v0 += v1, t0 += t1) {
+    int32_t u = u0, v = v0, t = t0;
+    for (int32_t g2 = minRange[1]; g2 <= maxRange[1]; g2++, u += u2, v += v2, t += t2) {
       int w = kTrisoupFpOne - u - v;
       if (u >= -haloTriangle && v >= -haloTriangle && w >= -haloTriangle) {
         int32_t foundvoxel = minRange[2] + (t + truncateValue >> kTrisoupFpBits);
