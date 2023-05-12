@@ -45,6 +45,7 @@
 #define PC_PREALLOCATION_SIZE 200000
 
 static const int precDivA = 30;
+static const int LUTdivtriCount[13] = { 32767, 1024, 512, 341, 256, 205, 171, 146, 128, 114, 102, 93, 85 }; // 10 bits precision
 
 namespace pcc {
 
@@ -413,7 +414,7 @@ struct RasterScanTrisoupEdges {
       if (driftQ) {
         driftDQ = std::abs(driftQ) << bitDropped2 + 6;
         int half = 1 << 5 + bitDropped2;
-        int DZ = 2 * half / 3;
+        int DZ = 2 * half * 341 >> 10; // 2 * half / 3;
         driftDQ += DZ - half;
         if (driftQ < 0)
           driftDQ = -driftDQ;
@@ -456,7 +457,8 @@ struct RasterScanTrisoupEdges {
       if (h[directionOk] <= kTrisoupFpOne) // < 2*kTrisoupFpOne should be ok
         continue;
 
-      int64_t inva = (int64_t(1) << precDivA) / a[directionOk];
+      int64_t inva = divApprox(int64_t(1) << precDivA,  std::abs(a[directionOk]), 0);
+      inva = a[directionOk] > 0 ? inva : -inva;
 
       // range
       int minRange[3];
@@ -661,7 +663,7 @@ struct RasterScanTrisoupEdges {
           {
             int8_t vertexPos = -1;
             if (countNearPoints > 0 || countNearPoints2 > 1) {
-              int temp = ((2 * distanceSum + distanceSum2) << (10 - bitDropped)) / (2 * countNearPoints + countNearPoints2);
+              int temp = ((2 * distanceSum + distanceSum2) << (10 - bitDropped)) / (2 * countNearPoints + countNearPoints2); // division on the encoder side
               vertexPos = (temp + (1 << 9 - bitDropped)) >> 10;
             }
             TriSoupVertices.push_back(vertexPos);
@@ -671,7 +673,7 @@ struct RasterScanTrisoupEdges {
           if (isInter) {
             int8_t vertexPos = -1;
             if (countNearPointsPred > 0) {
-              int temp = (distanceSumPred  << (10 - bitDropped)) / countNearPointsPred;
+              int temp = divApprox(distanceSumPred << (10 - bitDropped), countNearPointsPred, 0);
               vertexPos = (temp + (1 << 9 - bitDropped)) >> 10;
             }
             TriSoupVerticesPred.push(vertexPos);
@@ -843,7 +845,7 @@ determineCentroidAndDominantAxis(
   for (int j = 0; j < triCount; j++) {
     blockCentroid += leafVertices[j].pos;
   }
-  blockCentroid /= triCount;
+  blockCentroid = blockCentroid * LUTdivtriCount[triCount] >> 10;
 
   // order vertices along a dominant axis only if more than three (otherwise only one triangle, whatever...)
   dominantAxis = findDominantAxis(leafVertices, nodew, blockCentroid);
@@ -908,8 +910,8 @@ determineCentroidNormalAndBounds(
       k2 -= triCount;
     accuNormal += crossProduct(leafVertices[k].pos - blockCentroid, leafVertices[k2].pos - blockCentroid);
   }
-  int64_t normN = isqrt(accuNormal[0] * accuNormal[0] + accuNormal[1] * accuNormal[1] + accuNormal[2] * accuNormal[2]);
-  Vec3<int32_t> normalV = ((accuNormal << kTrisoupFpBits) / normN);
+  int64_t invNormN = irsqrt(accuNormal[0] * accuNormal[0] + accuNormal[1] * accuNormal[1] + accuNormal[2] * accuNormal[2]);
+  Vec3<int32_t> normalV = accuNormal  * invNormN >> 40 - kTrisoupFpBits;
 
   // drift bounds
   ctxMinMax = std::min(8, (maxPos - minPos) >> (kTrisoupFpBits + bitDropped));
@@ -971,11 +973,11 @@ determineCentroidPredictor(
     }
 
     if (counter) { // drift is shift by kTrisoupFpBits
-      driftPred = (driftPred >> kTrisoupFpBits - 6) / counter; // drift is shift by 6 bits
+      driftPred = divApprox(driftPred >> kTrisoupFpBits - 6, counter, 0); // drift is shift by 6 bits
     }
 
     int half = 1 << 5 + bitDropped2;
-    int DZ = 2 * half / 3;
+    int DZ = 2 * half * 341 >> 10; //2 * half / 3;
 
     if (abs(driftPred) >= DZ) {
       driftQPred = (abs(driftPred) - DZ + 2 * half) >> 6 + bitDropped2 - 1;
@@ -1022,11 +1024,11 @@ determineCentroidResidual(
   }
 
   if (counter) { // drift is shift by kTrisoupFpBits
-    drift = (drift >> kTrisoupFpBits - 6) / counter; // drift is shift by 6 bits
+    drift = divApprox(drift >> kTrisoupFpBits - 6, counter, 0); // drift is shift by 6 bits
   }
 
   int half = 1 << 5 + bitDropped2;
-  int DZ = 2 * half / 3;
+  int DZ = 2 * half * 341 >> 10; //2 * half / 3;
 
   int driftQ = 0;
   if (abs(drift) >= DZ) {
