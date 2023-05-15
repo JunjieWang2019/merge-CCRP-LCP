@@ -811,11 +811,7 @@ encodeGeometryOctree(
   if (isInter && gps.localMotionEnabled) {
     bufferPoints.reset(new int8_t[3 * 128 * 10000]);
 
-    for (int i = 0; i < predPointCloud.getPointCount(); i++) {
-      predPointCloud[i] -= gbh.geomBoxOrigin;
-    }
     const int extended_window = gps.motion.motion_window_size;
-
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
     const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
 
@@ -824,28 +820,12 @@ encodeGeometryOctree(
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }
-    std::cout << "rootNodeSize for brick = " << (1 << gbh.rootNodeSizeLog2) << "\n";
-    std::cout << "LPU size = " << (1 << log2MotionBlockSize) << "\n";
-
-
-    LPUnumInAxis = (maxBB) >> log2MotionBlockSize;
-    if ((LPUnumInAxis << log2MotionBlockSize) != maxBB)
-      LPUnumInAxis++;
 
     // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
-    firstLpuActiveWindow = buildActiveWindow(LPUnumInAxis, predPointCloud, extended_window, log2MotionBlockSize);
-
-    // Remove all points outside boundaries
-    Box3<int> sliceBox(0, 1 << lvlNodeSizeLog2[0]);
-    int numPoints = 0;
-    for (int i = 0; i < predPointCloud.getPointCount(); i++) {
-      const auto & point = predPointCloud[i];
-      if (sliceBox.contains(point)) {
-        predPointCloud[numPoints++] = point;
-      }
-    }
-    predPointCloud.resize(numPoints);
-
+    point_t BBorig = gbh.geomBoxOrigin;
+    buildActiveWindowAndBoundToBB(firstLpuActiveWindow, LPUnumInAxis, maxBB, predPointCloud, extended_window, log2MotionBlockSize, lvlNodeSizeLog2[0], BBorig);
+    std::cout << "rootNodeSize for brick = " << (1 << gbh.rootNodeSizeLog2) << "\n";
+    std::cout << "LPU size = " << (1 << log2MotionBlockSize) << "\n";
     std::cout << "Predictor size = " << predPointCloud.getPointCount() << std::endl;
   }
 

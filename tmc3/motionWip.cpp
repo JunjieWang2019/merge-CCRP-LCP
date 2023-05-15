@@ -734,14 +734,18 @@ extracPUsubtree(
 
 
 //----------------------------------------------------------------------------
-
-std::vector<std::vector<Vec3<int>>>
-buildActiveWindow(
-  const int LPUnumInAxis,
-  const PCCPointSet3& predPointCloud,
+void
+buildActiveWindowAndBoundToBB(
+  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  int& LPUnumInAxis,
+  const int maxBB,
+  PCCPointSet3& predPointCloud,
   int motion_window_size,
-  const int log2MotionBlockSize)
+  const int log2MotionBlockSize,
+  Vec3<int> lvlNodeSizeLog2,
+  point_t BBorig)
 {
+  // prepare displacement list
   std::vector<int> th_dists;
   for (int i = 0; i <= motion_window_size >> log2MotionBlockSize; ++i) {
     th_dists.push_back(i << log2MotionBlockSize);
@@ -752,36 +756,59 @@ buildActiveWindow(
     if (motion_window_size)
       th_dists.push_back(-motion_window_size);
   }
+  std::sort(th_dists.begin(), th_dists.end());
 
-  std::vector<std::vector<Vec3<int>>> lpuActiveWindow;
-
+  // initialize search windows for LPUs
+  LPUnumInAxis = (maxBB) >> log2MotionBlockSize;
+  if ((LPUnumInAxis << log2MotionBlockSize) != maxBB)
+    LPUnumInAxis++;
   lpuActiveWindow.resize(LPUnumInAxis * LPUnumInAxis * LPUnumInAxis);
+
+  // pile up points in Windows for LPU; at the same time remove points outside the box
+  int boundx = 1 << lvlNodeSizeLog2[0];
+  int boundy = 1 << lvlNodeSizeLog2[1];
+  int boundz = 1 << lvlNodeSizeLog2[2];
+
+  int numPoints = 0;
   for (size_t i = 0; i < predPointCloud.getPointCount(); ++i) {
-    std::unordered_map<int, bool> lpuToAdd;
-    const Vec3<int> point = predPointCloud[i];
+    const auto point = predPointCloud[i] - BBorig;
+
+    // keep only pred poitns in BB
+    if (point[0] >= 0 && point[1] >= 0 && point[2] >= 0 && point[0] < boundx && point[1] < boundy && point[2] < boundz) {
+      predPointCloud[numPoints++] = point;
+    }
+
+    // build up window search for each LPU
+    int oldx = INT32_MIN;
     for (size_t m = 0; m < th_dists.size(); m++) {
       int xidx = (point[0] + th_dists[m]) >> log2MotionBlockSize;
-      if (xidx < 0 || xidx >= LPUnumInAxis)
+      if (oldx == xidx || xidx < 0 || xidx >= LPUnumInAxis)
         continue;
+
+      int oldy = INT32_MIN;
       for (size_t n = 0; n < th_dists.size(); n++) {
         int yidx = (point[1] + th_dists[n]) >> log2MotionBlockSize;
-        if (yidx < 0 || yidx >= LPUnumInAxis)
+        if (oldy == yidx || yidx < 0 || yidx >= LPUnumInAxis)
           continue;
+
+        int oldz = INT32_MIN;
         for (size_t k = 0; k < th_dists.size(); k++) {
           int zidx = (point[2] + th_dists[k]) >> log2MotionBlockSize;
-          if (zidx < 0 || zidx >= LPUnumInAxis)
-            continue;
-          int idx = (xidx * LPUnumInAxis + yidx) * LPUnumInAxis + zidx;
-          lpuToAdd[idx] = true;
-        }
-      }
-    }
-    for (auto idx : lpuToAdd) {
-      lpuActiveWindow[idx.first].push_back(point);
-    }
-  }
 
-  return lpuActiveWindow;
+          if (oldz != zidx && zidx >= 0 && zidx < LPUnumInAxis) {
+            int idx = (xidx * LPUnumInAxis + yidx) * LPUnumInAxis + zidx;
+            lpuActiveWindow[idx].push_back(point);
+          }
+
+          oldz = zidx;
+        }
+        oldy = yidx;
+      }
+      oldx = xidx;
+    }
+  } // end loop on points
+
+  predPointCloud.resize(numPoints);
 }
 //----------------------------------------------------------------------------
 bool

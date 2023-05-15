@@ -65,11 +65,15 @@ struct PUtree {
 int deriveMotionMaxPrefixBits(const GeometryParameterSet::Motion& param);
 int deriveMotionMaxSuffixBits(const GeometryParameterSet::Motion& param);
 
-std::vector<std::vector<Vec3<int>>> buildActiveWindow(
-  const int LPUnumInAxis,
-  const PCCPointSet3& predPointCloud,
+void buildActiveWindowAndBoundToBB(
+  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  int& LPUnumInAxis,
+  const int maxBB,
+  PCCPointSet3& predPointCloud,
   int th_dists,
-  const int log2MotionBlockSize);
+  const int log2MotionBlockSize,
+  Vec3<int> lvlNodeSizeLog2,
+  point_t BBorig);
 
 bool motionSearchForNode(
   const PCCPointSet3& pointCloud,
