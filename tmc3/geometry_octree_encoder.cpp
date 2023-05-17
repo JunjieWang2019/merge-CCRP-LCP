@@ -1203,9 +1203,7 @@ encodeGeometryOctree(
         // the number of occupied children in node0.
         int occupancy = 0;
         for (int i = 0; i < 8; i++) {
-          if (node0.childCounts[i]) {
-            occupancy |= 1 << i;
-          }
+            occupancy |= (node0.childCounts[i]>0) << i;
         }
         node0.childOccupancy = occupancy;
         node0.predPointsStartIdx = node0.predStart;
@@ -1222,12 +1220,8 @@ encodeGeometryOctree(
       for (int i = 0; i < 8; i++) {
         bool childOccupiedTmp = !!node0.childCounts[i];
         bool childPredicted = !!node0.predCounts[i];
-        if (childPredicted) {
-          predOccupancy |= 1 << i;
-        }
-        if (node0.predCounts[i] > 2) {
-          predOccupancyStrong |= 1 << i;
-        }
+        predOccupancy |= (childPredicted) << i;
+        predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
         predFailureCount += childOccupiedTmp != childPredicted;
       }
 

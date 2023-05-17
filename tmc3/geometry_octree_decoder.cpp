@@ -906,12 +906,8 @@ decodeGeometryOctree(
 
       // TODO avoid computing it at each pass?
       for (int i = 0; i < 8; i++) {
-        if (node0.predCounts[i]) {
-          predOccupancy |= 1 << i;
-        }
-        if (node0.predCounts[i] > 2) {
-          predOccupancyStrong |= 1 << i;
-        }
+          predOccupancy |= (node0.predCounts[i]>0) << i;
+          predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
       }
 
       bool occupancyIsPredictable =

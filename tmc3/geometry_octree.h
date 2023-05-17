@@ -108,8 +108,9 @@ struct PCCOctree3Node {
   // map of the child nodes in this node's parent.
   int8_t numSiblingsMispredicted;
 
-  // local motion
+  // local motion tracking; encoder only
   std::unique_ptr<PUtree> PU_tree;
+
   //PUtree* PU_tree = nullptr; // Prediction Unit tree (encoder only) attached to node
   bool isCompensated : 1; // prediction ranges refer to compensated reference
   bool hasMotion : 1;
