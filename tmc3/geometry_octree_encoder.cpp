@@ -850,8 +850,8 @@ encodeGeometryOctree(
   node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : uint32_t(0);
   node00.predStart = uint32_t(0);
   node00.siblingOccupancy = 0;
-  node00.idcmEligible = false;
-  node00.isDirectMode = false;
+  //node00.idcmEligible = false;
+  //node00.isDirectMode = false;
   node00.numSiblingsPlus1 = 8;
   node00.qp = 0;
   //node00.idcmEligible = 0;NOTE[FT]: idcmEligible is set to false at construction
@@ -864,7 +864,7 @@ encodeGeometryOctree(
 
   // map of pointCloud idx to DM idx, used to reorder the points
   // after coding.
-  std::vector<int> pointIdxToDmIdx(int(pointCloud.getPointCount()), -1);
+  //std::vector<int> pointIdxToDmIdx(int(pointCloud.getPointCount()), -1);
   int nextDmIdx = 0;
 
   // rotating mask used to enable idcm
@@ -1071,6 +1071,14 @@ encodeGeometryOctree(
         }
       }
     };
+
+
+    // planar mode as a container for QTBT at depth level
+    OctreeNodePlanar planar;
+    int codedAxesCurNode = codedAxesCurLvl;
+    int planarMask[3] = { 0, 0, 0 };
+    maskPlanar(planar, planarMask, codedAxesCurNode);
+
     for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
       PCCOctree3Node& node0 = *fifoCurrNode;
 
@@ -1088,18 +1096,18 @@ encodeGeometryOctree(
         continue;
 
       // make quantisation work with qtbt and planar.
-      int codedAxesCurNode = codedAxesCurLvl;
+      /*int codedAxesCurNode = codedAxesCurLvl;
       if (shiftBits != 0) {
         for (int k = 0; k < 3; k++) {
           if (effectiveChildSizeLog2[k] < 0)
             codedAxesCurNode &= ~(4 >> k);
         }
-      }
+      }*/
 
       if (numLvlsUntilQuantization == 0 && !tubeIndex && !nodeSliceIndex) {
         geometryQuantization(pointCloud, node0, quantNodeSizeLog2);
-        if (gps.geom_unique_points_flag)
-          checkDuplicatePoints(pointCloud, node0, pointIdxToDmIdx);
+        //if (gps.geom_unique_points_flag)
+        //  checkDuplicatePoints(pointCloud, node0, pointIdxToDmIdx);
       }
 
       GeometryNeighPattern gnp{};
@@ -1242,7 +1250,7 @@ encodeGeometryOctree(
 
       // N.B: contextualOccupancy is only valid during first pass on the node
       RasterScanContext::occupancy contextualOccupancy;
-      OctreeNodePlanar planar;
+      //OctreeNodePlanar planar;
       if (!isLeafNode(effectiveNodeSizeLog2) && !tubeIndex && !nodeSliceIndex) {
         // update contexts
         rsc.nextNode(&*fifoCurrNode, contextualOccupancy);
@@ -1293,8 +1301,8 @@ encodeGeometryOctree(
 
       //  continue;
       //}
-      if (node0.isDirectMode)
-        continue;
+      //if (node0.isDirectMode)
+      //  continue;
 
       // when all points are quantized to a single point
       if (!isLeafNode(effectiveNodeSizeLog2) && !tubeIndex && !nodeSliceIndex) {
@@ -1304,8 +1312,8 @@ encodeGeometryOctree(
         // planar mode for current node
         // mask to be used for the occupancy coding
         // (bit =1 => occupancy bit not coded due to not belonging to the plane)
-        int planarMask[3] = {0, 0, 0};
-        maskPlanar(planar, planarMask, codedAxesCurNode);
+        // int planarMask[3] = {0, 0, 0};
+        // maskPlanar(planar, planarMask, codedAxesCurNode);
 
         bool flagWord4 = gps.neighbour_avail_boundary_log2_minus1 > 0;
         encoder.encodeOccupancyFullNeihbourgs(
@@ -1331,11 +1339,11 @@ encodeGeometryOctree(
             continue;
           }
 
-          int childEnd = childStart + node0.childCounts[i];
-          for (auto idx = childStart; idx < childEnd; idx++)
-            pointIdxToDmIdx[idx] = nextDmIdx++;
-
-          childStart = childEnd;
+          //int childEnd = childStart + node0.childCounts[i];
+          //for (auto idx = childStart; idx < childEnd; idx++)
+          //  pointIdxToDmIdx[idx] = nextDmIdx++;
+          //childStart = childEnd;
+          nextDmIdx += node0.childCounts[i];
 
           // if the bitstream is configured to represent unique points,
           // no point count is sent.
@@ -1392,7 +1400,7 @@ encodeGeometryOctree(
 
             child.numSiblingsPlus1 = numOccupied;
             child.siblingOccupancy = node0.childOccupancy;
-            child.isDirectMode = false;
+            //child.isDirectMode = false;
 
             child.predStart = node0.predPointsStartIdx;
             node0.predPointsStartIdx += node0.predCounts[childIndex];
@@ -1473,7 +1481,7 @@ encodeGeometryOctree(
   // The following is to re-order the points according in the decoding
   // order since IDCM causes leaves to be coded earlier than they
   // otherwise would.
-  PCCPointSet3 pointCloud2;
+  /*PCCPointSet3 pointCloud2;
   pointCloud2.addRemoveAttributes(
     pointCloud.hasColors(), pointCloud.hasReflectances());
   pointCloud2.resize(pointCloud.getPointCount());
@@ -1496,6 +1504,7 @@ encodeGeometryOctree(
   }
   pointCloud2.resize(outIdx);
   swap(pointCloud, pointCloud2);
+  */
 }
 
 //============================================================================

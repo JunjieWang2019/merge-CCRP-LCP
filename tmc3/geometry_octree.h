@@ -68,7 +68,7 @@ struct PCCOctree3Node {
   , isCompensated(cp.isCompensated)
   , hasMotion(cp.hasMotion)
   , siblingOccupancy(cp.siblingOccupancy)
-  , idcmEligible(cp.idcmEligible)
+  //, idcmEligible(cp.idcmEligible)
   , qp(cp.qp)
   {
   }
@@ -118,8 +118,8 @@ struct PCCOctree3Node {
   uint8_t siblingOccupancy;
 
   // Indicatest hat the current node qualifies for IDCM
-  bool idcmEligible{false}; //NOTE[FT]: FORCING idcmEligible to false at construction
-  bool isDirectMode{false};
+  //bool idcmEligible{false}; //NOTE[FT]: FORCING idcmEligible to false at construction
+  //bool isDirectMode{false};
 
   // The occupancy map used describing the child nodes.
   uint8_t childOccupancy;

@@ -823,6 +823,14 @@ decodeGeometryOctree(
         }
       }
     };
+
+
+    // planar mode as a container for QTBT at depth level
+    OctreeNodePlanar planar;
+    int codedAxesCurNode = codedAxesCurLvl;
+    int planarMask[3] = { 0, 0, 0 };
+    maskPlanar(planar, planarMask, codedAxesCurNode);
+
     for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
       PCCOctree3Node& node0 = *fifoCurrNode;
 
@@ -922,13 +930,13 @@ decodeGeometryOctree(
       }
 
       // make quantisation work with qtbt and planar.
-      auto codedAxesCurNode = codedAxesCurLvl;
+      /*auto codedAxesCurNode = codedAxesCurLvl;
       if (shiftBits != 0) {
         for (int k = 0; k < 3; k++) {
           if (effectiveChildSizeLog2[k] < 0)
             codedAxesCurNode &= ~(4 >> k);
         }
-      }
+      }*/
 
       GeometryNeighPattern gnp{};
       // The position of the node in the parent's occupancy map
@@ -946,7 +954,7 @@ decodeGeometryOctree(
 
       // N.B: contextualOccupancy is only valid during first pass on the node
       RasterScanContext::occupancy contextualOccupancy;
-      OctreeNodePlanar planar;
+      //OctreeNodePlanar planar;
       uint8_t occupancy = 1;
       if (!isLeafNode(effectiveNodeSizeLog2) && !tubeIndex && !nodeSliceIndex) {
         // update contexts
@@ -993,15 +1001,15 @@ decodeGeometryOctree(
       //    continue;
       //  }
       //}
-      if (node0.isDirectMode)
-        continue;
+      //if (node0.isDirectMode)
+      //  continue;
 
       if (!isLeafNode(effectiveNodeSizeLog2) && !tubeIndex && !nodeSliceIndex) {
         // planar mode for current node
         // mask to be used for the occupancy coding
         // (bit =1 => occupancy bit not coded due to not belonging to the plane)
-        int planarMask[3] = {0, 0, 0};
-        maskPlanar(planar, planarMask, codedAxesCurNode);
+        //int planarMask[3] = {0, 0, 0};
+        //maskPlanar(planar, planarMask, codedAxesCurNode);
 
         bool flagWord4 =
           gps.neighbour_avail_boundary_log2_minus1 > 0;  //&& intraPredUsed;
@@ -1062,6 +1070,9 @@ decodeGeometryOctree(
         // do not recurse into leaf nodes
         continue;
       }
+
+
+
       if (!isLeafNode(effectiveChildSizeLog2)) {
         for (int i = 0; i < 2; ++i) {
           int childIndex = (nodeSliceIndex << 2) + (tubeIndex << 1) + i;
@@ -1089,7 +1100,7 @@ decodeGeometryOctree(
 
             child.numSiblingsPlus1 = numOccupied;
             child.siblingOccupancy = occupancy;
-            child.isDirectMode = false;
+            //child.isDirectMode = false;
 
             child.predStart = node0.predPointsStartIdx;
             node0.predPointsStartIdx += node0.predCounts[childIndex];
@@ -1146,7 +1157,7 @@ decodeGeometryOctree(
       node.pos <<= nodeSizeLog2 - QuantizerGeom::qpShift(node.qp);
       node.pos = invQuantPosition(node.qp, posQuantBitMasks, node.pos);
     }
-    *nodesRemaining = std::move(fifo);
+    *nodesRemaining = std::move(fifo);    
     return;
   }
 }
