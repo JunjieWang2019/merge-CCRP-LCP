@@ -832,12 +832,14 @@ encodeGeometryOctree(
   // init main fifo
   //  -- worst case size is the last level containing every input poit
   //     and each point being isolated in the previous level.
+  int reservedBufferSize = pointCloud.getPointCount();
+  if (gps.trisoup_enabled_flag && gbh.trisoupNodeSizeLog2(gps))
+    reservedBufferSize = std::max(1000, reservedBufferSize >> 2 * gbh.trisoupNodeSizeLog2(gps) - 1);
 
   std::vector<PCCOctree3Node> fifo;
   std::vector<PCCOctree3Node> fifoNext;
-
-  fifo.reserve(pointCloud.getPointCount());
-  fifoNext.reserve(pointCloud.getPointCount());
+  fifo.reserve(reservedBufferSize);
+  fifoNext.reserve(reservedBufferSize);
 
   // push the first node
   fifo.emplace_back();

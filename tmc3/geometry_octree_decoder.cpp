@@ -606,13 +606,12 @@ decodeGeometryOctree(
   //     octree nodes.  Blindly trusting the number of points to guide
   //     the ringbuffer size is problematic.
   // todo(df): derive buffer size from level limit
-  size_t ringBufferSize = gbh.footer.geom_num_points_minus1 + 1;
-  if (gbh.trisoupNodeSizeLog2(gps))
-    ringBufferSize = 5000000;
+  int ringBufferSize = gbh.footer.geom_num_points_minus1 + 1;
+  if (gps.trisoup_enabled_flag && gbh.trisoupNodeSizeLog2(gps))
+     ringBufferSize = std::max(1000,ringBufferSize  >> 2* gbh.trisoupNodeSizeLog2(gps) - 1);
 
   std::vector<PCCOctree3Node> fifo;
   std::vector<PCCOctree3Node> fifoNext;
-
   fifo.reserve(ringBufferSize);
   fifoNext.reserve(ringBufferSize);
 
