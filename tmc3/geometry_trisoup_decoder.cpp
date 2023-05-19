@@ -398,7 +398,7 @@ struct RasterScanTrisoupEdges {
       int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
       Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis]);
 
-      int driftQPred = determineCentroidPredictor(bitDropped2, normalV, blockCentroid, nodepos, compensatedPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound);
+      int driftQPred = determineCentroidPredictor(bitDropped2, normalV, blockCentroid, nodepos, leaf.isCompensated ? compensatedPointCloud : refPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound);
 
       int driftQ = 0;
       if (isEncoder) { // encode centroid residual
