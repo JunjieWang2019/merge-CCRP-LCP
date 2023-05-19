@@ -500,7 +500,7 @@ find_motion(
 
   // set loop search parameters
   double best_d[2] = { d, d };
-  std::vector<Vec3<int>> list_tested = { {0,0,0,} };
+  std::set<int32_t> list_tested = { ((0 + 128) << 16) + ((0 + 128) << 8) + 0 + 128 };
 
   const int searchPattern[3 * 18] = { 1,0,0,   0,1,0,  0,-1,0,  -1,0,0,  0,0,1, 0,0,-1,   1,1,0,     1,-1,0,  -1,1,0,  -1,-1,0,   0,1,1,    0,-1,1,  0,1,-1,  0,-1,-1,   -1,0,1,  1,0,-1,  -1,0,-1,  1,0,1 };
   //const int searchPattern[3 * 6] = {   1,0,0,   0,1,0,  0,-1,0,    -1,0,0,    0,0,1,   0,0,-1};
@@ -521,9 +521,10 @@ find_motion(
     for (int t = 0; t < 18; t++, pSearch += 3) {
 
       Vec3<int> V = Vs + Vec3<int>(pSearch[0] * Amotion, pSearch[1] * Amotion, pSearch[2] * Amotion);
-      if (std::find(list_tested.begin(), list_tested.end(), V) != list_tested.end())
+      int32_t V1D = ((V[0] + 128) << 16) + ((V[1] + 128) << 8) + V[2] + 128;
+      if (list_tested.find(V1D) != list_tested.end())
         continue;
-      list_tested.push_back(V);
+      list_tested.insert(V1D);
 
       int Vx = V[0];
       int Vy = V[1];

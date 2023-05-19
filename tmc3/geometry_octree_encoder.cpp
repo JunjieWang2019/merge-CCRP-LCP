@@ -811,7 +811,7 @@ encodeGeometryOctree(
   if (isInter && gps.localMotionEnabled) {
     bufferPoints.reset(new int8_t[3 * 128 * 10000]);
 
-    const int extended_window = gps.motion.motion_window_size;
+    const int extended_window = gps.motion.motion_window_size / 2;
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
     const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
 
