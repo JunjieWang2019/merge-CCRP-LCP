@@ -29,10 +29,212 @@ contents. The original implementation started from the experimental model
 being studied in EE13.60, and is based on the `release-v20.0-rc1` of G-PCC
 test model TMC13.
 
+
+### `ges-tm-v2.0`
+
+Tag `ges-tm-v2.0` will be released after reported issues are resolved, if any,
+and before the 2nd of June 2023.
+
+
+### `ges-tm-v2.0-rc1`
+
+Tag `ges-tm-v2.0-rc1` includes a few adoptions made during the meeting in
+Antalya (April 2023).
+
+- `octree: m62531 - nodes processing in raster scan order`:  
+    Use lexicographic order (a.k.a. raster scan order) in octree geometry
+    nodes processing to get same node ordering as used in trisoup.
+
+- `entropy: m62547 - probability bounds for dynamic OBUF coders`
+
+- `raht/enc: m63002 - replace log2() with LUT in RDOQ`:  
+    Current RDOQ code for RAHT uses the log2() function to estimate the
+    rate.
+
+    The proposal simplifies this by using a LUT with a maximum of 16
+    entries.
+
+- `trisoup/enc: m62527 - align slices to trisoup node size grid`
+
+- `trisoup: m62526 - Optimal weighted centroid`
+
+- `trisoup/enc: m62981 - centroid quantization offset`
+
+- `trisoup/enc: m62982 - determine more precise centroid`
+
+
+Adoption of raster-scan ordered nodes processing for octree provides an
+unified processing order between octree and trisoup elements.
+Tag `ges-tm-v2.0-rc1` includes important refactoring changes on trisoup and
+optimizations that were made possible by this unified raster scan ordering,
+as well as some code cleanups and simplifications.
+
+The input contribution **m63611: \[GPCC\] Report on new architecture for GeS TM 
+v2.0-rc1 and related integrations**
+is intended to provide more details on theses modifications.
+
+- `trisoup: m62531 - simplify with raster scan ordered nodes`:  
+    simplify trisoup processing by reusing raster scan ordered nodes to
+    build edges and vertex informations for trisoup.
+
+- `trisoup: optimize findDominantAxis`
+
+- `trisoup: unit sampling only, simplify accordingly`:  
+    GeS-TM is intended to adress solid content.
+    Unit sampling shall always be used for triangle projections.
+
+    Encoding is simplified and code is optimized accordingly.
+
+- `trisoup: refactor centroid operations to functions`:  
+
+    Centroid operations are moved to dedicated functions:
+    1. determination of centroid and dominant axis
+    2. determination of normal vector and bounds
+    3. determination of residual/drift
+    4. determination of inter predictor for residual/drift
+
+- `trisoup/tidy: cleaning in loop on triangles`
+
+- `trisoup/tidy: better memory management for recPointCloud`:  
+    Using preallocation for recPointCloud.
+
+- `trisoup/tidy: better memory management for reconstructed voxels`:  
+    Reserve memory for reconstructed voxels of current TriSoup node
+    to improve memory management.
+
+- `trisoup/tidy: clean and comment RasterScanTrisoupEdges`
+
+- `trisoup: refactor vertex determination`:  
+    Vertex determination is performed in same loop as neighbours and edges
+    determination thanks to raster-scan order.
+
+- `trisoup: optimize vertex encoding/decoding`
+
+- `trisoup: refactor vertex inter prediction determination`:  
+    Vertex determination for inter prediction is performed in same loop
+    as neighbours, edges and intra vertex determination thanks to raster-scan
+    order.
+
+    Obsolete determineTrisoupVertices() function is removed.
+
+- `trisoup: refactor vertices encoding/decoding`:  
+    Vertex encoding/decoding is performed in same loop as neighbours, edges
+    intra and inter vertex determination thanks to raster-scan order.
+
+    Obsolete functions encodeTrisoupVertices() and decodeTrisoupVertices()
+    are removed.
+
+- `trisoup/tidy: localize some buffers`:  
+    Some buffer are localized inside of function rather than being passed
+    as parameters, since they are not used outside anymore.
+
+- `trisoup: refactor triangles rendering`:  
+    Put rendering of triangles of a node in specific function.
+    Apply it in the same loop as the other trisoup operations,
+    to get a single raster scan ordered nodes traversal.
+
+    Remove obsolete function decodeTrisoupCommon().
+
+- `trisoup/tidy: localize some arrays`:  
+    Some array are now only used locally for raster scan traversal.
+
+- `trisoup: optimize memory usage`:  
+    Use queue instead of vector to get more localized memory, with
+    edgePattern, xForedgeOfVertex, and TriSoupVerticesPred.
+
+- `trisoup: optimize rendering/ray tracing`:  
+  - use int64 values to represent in 1D 3 dimensional coordinates to
+    accelerate duplicate points removal.
+  - use one optimized function for each ray tracing directions.
+  - optimize/simplify ray tracing.
+
+- `trisoup: optimize duplicates removal and buffer allocation`
+
+- `trisoup/tidy: various cleanups and optimizations`
+
+
+On trisoup, all the divisions at decoder have been removed and replaced
+by fixed point inverse multiplications (normative).
+
+- `trisoup: remove divisions`:  
+    remove all divisions at decoder.
+
+
+Additional cleanups, simplifications and code optimization have been made,
+mainly on inter-frame motion search and on octree coding.
+
+- `tidy: minor cleanups`
+
+- `geometry: optimize LPU inter search window generation`:  
+  - avoid using unnecessary unordered_map -> decoder twice faster.
+  - use BB for points inside the loop.
+  - offset the points to slice origin during the loop (avoid multiple passes).
+
+- `geometry: reduce size of LPU inter search window`
+
+- `octree/tidy: remove IDCM variables in node + moved planar container for QTBT up`:  
+  !! this may impact the code in case there are duplicated point removing turned on.
+
+- `octree/tidy: optimizations and cleanups`
+
+- `trisoup/tidy: more reasonable fifo size with trisoup`
+
+
+Other changes includes the disabling of non-cubic nodes that is currently not
+supported properly, and a bug fix for and issue that could happen outside of
+CTCs.
+
+- `ctc: disable non-cubic nodes`
+
+- `trisoup: fix - determination of centroid predictor`:  
+    When inter prediction is not used for a node, the centroid predictor
+    could be wrongly estimated.
+
+
+Documentation files for `ges-tm-v2.0-rc1` are also updated.
+
+- `doc: update documentation files`
+
+
 ### `ges-tm-v1.0`
 
-Tag `ges-tm-v1.0` will be released after additional cleanups of the source
-code.
+Tag `ges-tm-v1.0` adds a few fixes.
+
+- `hls/entropy: add backward compatibility flag for m62220`:  
+  Applies a fix for backward compatibility issue made in TMC13 for
+  entropy coding related contribution m62220.
+
+- `fix: read access outside of an array`:  
+  The encoder could read outside of an array.
+  Even if the value was not used, it could cause issues when debugging.
+  This is fixed by accessing the array only when necessary, and so,
+  when the index is inside of the array.
+
+- `raht: fix RDOQ overflows`:  
+  In rare cases overflows could occur during computation of Rate/Distortion,
+  if distortion was really huge (ex: DC coefficient).
+  This is fixed by limiting the computation to small coefficients only.
+
+
+Additional cleanups were also made, mainly removing unused tools previously
+commented out.
+
+- `QTBT is not yet supported, avoid using it`:  
+  QTBT is not yet supported by inter frame coding. When inter frame is
+  used the tool cannot be activated.
+- `removing global motion`
+- `removing predictive geometry`
+- `removing angular`
+- `removing bytewise coder`
+- `removing planar`  
+  Note: some planar things are kept for QTBT handling.
+- `removing predlift`
+
+
+And the documentation files for `ges-tm-v1.0-rc1` have been added.
+
+- `doc: update documentation files`
+
 
 ### `ges-tm-v1.0-rc1`
 
