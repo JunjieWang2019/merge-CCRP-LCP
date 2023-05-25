@@ -866,7 +866,7 @@ encodeGeometryOctree(
 
   // map of pointCloud idx to DM idx, used to reorder the points
   // after coding.
-  //std::vector<int> pointIdxToDmIdx(int(pointCloud.getPointCount()), -1);
+  std::vector<int> pointIdxToDmIdx(int(pointCloud.getPointCount()), -1);
   int nextDmIdx = 0;
 
   // rotating mask used to enable idcm
@@ -1108,8 +1108,8 @@ encodeGeometryOctree(
 
       if (numLvlsUntilQuantization == 0 && !tubeIndex && !nodeSliceIndex) {
         geometryQuantization(pointCloud, node0, quantNodeSizeLog2);
-        //if (gps.geom_unique_points_flag)
-        //  checkDuplicatePoints(pointCloud, node0, pointIdxToDmIdx);
+        if (gps.geom_unique_points_flag)
+          checkDuplicatePoints(pointCloud, node0, pointIdxToDmIdx);
       }
 
       GeometryNeighPattern gnp{};
@@ -1335,11 +1335,10 @@ encodeGeometryOctree(
             continue;
           }
 
-          //int childEnd = childStart + node0.childCounts[i];
-          //for (auto idx = childStart; idx < childEnd; idx++)
-          //  pointIdxToDmIdx[idx] = nextDmIdx++;
-          //childStart = childEnd;
-          nextDmIdx += node0.childCounts[i];
+          int childEnd = childStart + node0.childCounts[i];
+          for (auto idx = childStart; idx < childEnd; idx++)
+            pointIdxToDmIdx[idx] = nextDmIdx++;
+          childStart = childEnd;
 
           // if the bitstream is configured to represent unique points,
           // no point count is sent.
@@ -1477,7 +1476,7 @@ encodeGeometryOctree(
   // The following is to re-order the points according in the decoding
   // order since IDCM causes leaves to be coded earlier than they
   // otherwise would.
-  /*PCCPointSet3 pointCloud2;
+  PCCPointSet3 pointCloud2;
   pointCloud2.addRemoveAttributes(
     pointCloud.hasColors(), pointCloud.hasReflectances());
   pointCloud2.resize(pointCloud.getPointCount());
@@ -1500,7 +1499,6 @@ encodeGeometryOctree(
   }
   pointCloud2.resize(outIdx);
   swap(pointCloud, pointCloud2);
-  */
 }
 
 //============================================================================
