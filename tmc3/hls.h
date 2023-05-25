@@ -548,14 +548,14 @@ struct GeometryParameterSet {
 
   // inter
   struct Motion {
-    int motion_block_size;
-    int motion_window_size;
-    int motion_min_pu_size;
-    int motion_max_prefix_bits;
-    int motion_max_suffix_bits;
-    int Amotion0;
-    double lambda;
-    int decimate;
+    int motion_block_size = 0;
+    int motion_window_size = 0;
+    int motion_min_pu_size = 0;
+    int motion_max_prefix_bits = 0;
+    int motion_max_suffix_bits = 0;
+    int Amotion0 = 0;
+    double lambda = 0.;
+    int decimate = 0;
   } motion;
 };
 

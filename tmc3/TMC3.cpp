@@ -1189,9 +1189,8 @@ sanitizeEncoderOpts(
     params.encoder.gps.gof_geom_entropy_continuation_enabled_flag = false;
   }
 
-  if (params.encoder.gps.interPredictionEnabledFlag) {
-    params.encoder.sps.inter_frame_prediction_enabled_flag = true;
-  }
+  params.encoder.sps.inter_frame_prediction_enabled_flag
+   = params.encoder.gps.interPredictionEnabledFlag;
 
   // Separate bypass bin coding only when cabac_bypass_stream is disabled
   if (params.encoder.sps.cabac_bypass_stream_enabled_flag)

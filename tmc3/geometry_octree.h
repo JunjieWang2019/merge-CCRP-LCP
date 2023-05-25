@@ -934,10 +934,10 @@ public:
   CtxMapDynamicOBUF _MapOccupancySparse[2][8];
 
   uint8_t _BufferOBUFleaves[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
-  int _OBUFleafNumber;
+  int _OBUFleafNumber = 0;
 
   uint8_t _BufferOBUFleavesTrisoup[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
-  int _OBUFleafNumberTrisoup;
+  int _OBUFleafNumberTrisoup = 0;
 
 protected:
   AdaptiveBitModel _ctxSingleChild;

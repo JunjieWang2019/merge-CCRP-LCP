@@ -753,6 +753,7 @@ parseGps(const PayloadBuffer& buf)
   gps.interPredictionEnabledFlag = false;
   gps.globalMotionEnabled = false;
   gps.localMotionEnabled = false;
+  gps.gof_geom_entropy_continuation_enabled_flag = false;
   bool gps_extension_flag = bs.read();
   if (gps_extension_flag) {
     if(true)
