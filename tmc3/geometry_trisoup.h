@@ -60,6 +60,14 @@ namespace pcc {
     int neighbStart;
     int orderedPclosePar;
     int orderedPcloseParPos;
+
+    int nBadPredRef = 0;
+    int nBadPredRef1 = 0;
+    int nBadPredRef2 = 0;
+
+    int nBadPredComp = 0;
+    int nBadPredComp1 = 0;
+    int nBadPredComp2 = 0;
   };
 
   static const int towardOrAway[18] = { // 0 = toward; 1 = away
@@ -78,7 +86,9 @@ namespace pcc {
     std::vector<int8_t>& TriSoupVertices,
     int nbitsVertices,
     int max2bits,
-    int mid2bits);
+    int mid2bits,
+    std::vector<int8_t>& qualityRef,
+    std::vector<int8_t>& qualityComp);
 
   void constructCtxPresence(
     int& ctxMap1,
@@ -86,7 +96,8 @@ namespace pcc {
     int& ctxInter,
     codeVertexCtxInfo& ctxInfo,
     bool isInter,
-    int8_t TriSoupVerticesPred);
+    int8_t TriSoupVerticesPred,
+    int8_t colocatedVertex);
 
   void constructCtxPos1(
     int& ctxMap1,
@@ -95,7 +106,8 @@ namespace pcc {
     codeVertexCtxInfo& ctxInfo,
     bool isInter,
     int8_t TriSoupVerticesPred,
-    int b);
+    int b,
+    int8_t colocatedVertex);
 
   void constructCtxPos2(
     int& ctxMap1,
@@ -105,7 +117,8 @@ namespace pcc {
     bool isInter,
     int8_t TriSoupVerticesPred,
     int b,
-    int v);
+    int v,
+    int8_t colocatedVertex);
 
   //============================================================================
   // Representation for a vertex in preparation for sorting.
@@ -234,13 +247,21 @@ void codeAndRenderTriSoupRasterScan(
   GeometryOctreeContexts& ctxtMemOctree,
   int &nSegments);
 
+//============================================================================
+struct CentroidInfo{
+  int driftQPred = 0;
+  bool possibleSKIP;
+  int driftSKIP;
+  int qualitySKIP;
+};
+
 
 //============================================================================
 void encodeCentroidResidual(
   int driftQ,
   pcc::EntropyEncoder* arithmeticEncoder,
   GeometryOctreeContexts& ctxtMemOctree,
-  int driftQPred,
+  CentroidInfo centroidInfo,
   int ctxMinMax,
   int lowBoundSurface,
   int highBoundSurface,
@@ -250,7 +271,7 @@ void encodeCentroidResidual(
 int decodeCentroidResidual(
   pcc::EntropyDecoder* arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree,
-  int driftQPred,
+  CentroidInfo centroidInfo,
   int ctxMinMax,
   int lowBoundSurface,
   int highBoundSurface,
@@ -358,10 +379,12 @@ determineCentroidNormalAndBounds(
   Vec3<int32_t> blockCentroid,
   int dominantAxis,
   std::vector<Vertex>& leafVertices,
-  int nodewDominant);
+  int nodewDominant,
+  int blockWidth);
 
-int
+void
 determineCentroidPredictor(
+  CentroidInfo& centroidInfo,
   int bitDropped2,
   Vec3<int32_t> normalV,
   Vec3<int32_t> blockCentroid,
@@ -370,7 +393,11 @@ determineCentroidPredictor(
   int start,
   int end,
   int lowBound,
-  int  highBound);
+  int  highBound,
+  int badQualityComp,
+  int badQualityRef,
+  int driftRef,
+  bool possibleSKIPRef);
 
 int
 determineCentroidResidual(

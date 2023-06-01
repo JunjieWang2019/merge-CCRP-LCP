@@ -925,13 +925,24 @@ public:
   CtxModelDynamicOBUF ctxTriSoup[3][5];
   CtxMapDynamicOBUF MapOBUFTriSoup[5][3];
 
+  AdaptiveBitModel ctxDriftSKIP[12][2];
   AdaptiveBitModel ctxDrift0[8*8][5];
+  AdaptiveBitModel ctxDrift0Skip[4];
   AdaptiveBitModel ctxDriftSign[3][8][8][3];
+  AdaptiveBitModel ctxDriftSignSkip[5];
   AdaptiveBitModel ctxDriftMag[4][10];
 
 
   CtxMapDynamicOBUF _MapOccupancy[2][8];
   CtxMapDynamicOBUF _MapOccupancySparse[2][8];
+
+  // colocated edge
+  std::vector<int64_t> refFrameEdgeKeys;
+  std::vector<int8_t> refFrameEdgeValue;
+
+  //colocated centroid
+  std::vector<int64_t> refFrameNodeKeys;
+  std::vector<int8_t> refFrameCentroValue;
 
   uint8_t _BufferOBUFleaves[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
   int _OBUFleafNumber = 0;

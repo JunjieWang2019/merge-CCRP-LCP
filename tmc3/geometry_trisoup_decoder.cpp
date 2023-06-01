@@ -170,23 +170,27 @@ struct RasterScanTrisoupEdges {
 
   //---------------------------------------------------------------------------
   void  encodeOneTriSoupVertexRasterScan(
-      int8_t vertex,
-      pcc::EntropyEncoder* arithmeticEncoder,
-      GeometryOctreeContexts& ctxtMemOctree,
-      std::vector<int8_t>& TriSoupVertices,
-      int neigh,
-      std::array<int, 18>& patternIdx,
-      int8_t interPredictor,
-      int nbitsVertices,
-      int max2bits,
-      int mid2bits) {
+    int8_t vertex,
+    pcc::EntropyEncoder* arithmeticEncoder,
+    GeometryOctreeContexts& ctxtMemOctree,
+    std::vector<int8_t>& TriSoupVertices,
+    int neigh,
+    std::array<int, 18>& patternIdx,
+    int8_t interPredictor,
+    int8_t colocatedVertex,
+    std::vector<int8_t>& qualityRef,
+    std::vector<int8_t>& qualityComp,
+    int nbitsVertices,
+    int max2bits,
+    int mid2bits,
+    int i) {
 
     codeVertexCtxInfo ctxInfo;
-    constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices, nbitsVertices, max2bits, mid2bits);
+    constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices, nbitsVertices, max2bits, mid2bits, qualityRef, qualityComp);
 
     // encode vertex presence
     int ctxMap1, ctxMap2, ctxInter;
-    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor);
+    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex);
 
     int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(
       vertex >= 0, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
@@ -196,13 +200,31 @@ struct RasterScanTrisoupEdges {
       ctxtMemOctree.ctxTriSoup[0][ctxInter][ctxTrisoup],
       ctxtMemOctree.ctxTriSoup[0][ctxInter].obufSingleBound);
 
+    // quality ref edge
+    if (isInter && (vertex >= 0) == (colocatedVertex >= 0 ? 1 : 0)) {
+      qualityRef[i] = 1 + (vertex >= 0);
+      if (qualityRef[i] >= 2) {
+        qualityRef[i] += (vertex >> nbitsVertices - 1) == (colocatedVertex >> nbitsVertices - 1);
+        qualityRef[i] += (vertex >> nbitsVertices - 2) == (colocatedVertex >> nbitsVertices - 2);
+      }
+    }
+    // quality comp edge
+    if (isInter && (vertex >= 0) == (interPredictor >= 0 ? 1 : 0)) {
+      qualityComp[i] = 1 + (vertex >= 0);
+      if (qualityComp[i] >= 2) {
+        qualityComp[i] += (vertex >> nbitsVertices - 1) == (interPredictor >> nbitsVertices - 1);
+        qualityComp[i] += (vertex >> nbitsVertices - 2) == (interPredictor >> nbitsVertices - 2);
+      }
+    }
+
+
     // encode  vertex position
     if (vertex >= 0) {
       int v = 0;
       int b = nbitsVertices - 1;
 
       // first position bit
-      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b);
+      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, colocatedVertex);
       int bit = (vertex >> b--) & 1;
 
       ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].getEvolve(
@@ -216,7 +238,7 @@ struct RasterScanTrisoupEdges {
 
       // second position bit
       if (b >= 0) {
-        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, v);
+        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, v, colocatedVertex);
 
         bit = (vertex >> b--) & 1;
         ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].getEvolve(
@@ -253,16 +275,20 @@ struct RasterScanTrisoupEdges {
     int neigh,
     std::array<int, 18>& patternIdx,
     int8_t interPredictor,
+    int8_t colocatedVertex,
+    std::vector<int8_t>& qualityRef,
+    std::vector<int8_t>& qualityComp,
     int nbitsVertices,
     int max2bits,
-    int mid2bits) {
+    int mid2bits,
+    int i) {
 
     codeVertexCtxInfo ctxInfo;
-    constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices, nbitsVertices, max2bits, mid2bits);
+    constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices, nbitsVertices, max2bits, mid2bits, qualityRef, qualityComp);
 
     // decode vertex presence
     int ctxMap1, ctxMap2, ctxInter;
-    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor);
+    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex);
 
     bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(
       &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2,
@@ -272,13 +298,23 @@ struct RasterScanTrisoupEdges {
     if (!c)
       TriSoupVertices.push_back(-1);
 
+    // quality ref edge
+    if (isInter && c == (colocatedVertex >= 0 ? 1 : 0)) {
+      qualityRef[i] = 1 + (c != 0);
+    }
+    // quality comp edge
+    if (isInter && c == (interPredictor >= 0 ? 1 : 0)) {
+      qualityComp[i] = 1 + (c != 0);
+    }
+
+
     // decode vertex position
     if (c) {
       uint8_t v = 0;
       int b = nbitsVertices - 1;
 
       // first position bit
-      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b);
+      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, colocatedVertex);
       int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(
         &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[1][ctxInter], ctxMap2,
         ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
@@ -288,7 +324,7 @@ struct RasterScanTrisoupEdges {
 
       // second position bit
       if (b >= 0) {
-        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, v);
+        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, b, v, colocatedVertex);
         bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(
           &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[2][ctxInter], ctxMap2,
           (ctxMap1 << 1) + v, &ctxtMemOctree._OBUFleafNumberTrisoup,
@@ -309,6 +345,19 @@ struct RasterScanTrisoupEdges {
         v = (v << 1) | arithmeticDecoder.decode();
 
       TriSoupVertices.push_back(v);
+
+      // quality ref edge
+      if (isInter && qualityRef[i] >= 2) {
+        qualityRef[i] += (v >> nbitsVertices - 1) == (colocatedVertex >> nbitsVertices - 1);
+        qualityRef[i] += (v >> nbitsVertices - 2) == (colocatedVertex >> nbitsVertices - 2);
+      }
+
+      // quality comp edge
+      if (isInter && qualityComp[i] >= 2) {
+        qualityComp[i] += (v >> nbitsVertices - 1) == (interPredictor >> nbitsVertices - 1);
+        qualityComp[i] += (v >> nbitsVertices - 2) == (interPredictor >> nbitsVertices - 2);
+      }
+
     }
   }
 
@@ -344,7 +393,12 @@ struct RasterScanTrisoupEdges {
     const bool isCentroidDriftActivated,
     int haloTriangle,
     int thickness,
-    std::vector<int>& segmentUniqueIndex)
+    std::vector<int>& segmentUniqueIndex,
+    std::vector<int8_t>& qualityRef,
+    std::vector<int8_t>& qualityComp,
+    bool nodeRefExist,
+    int8_t colocatedCentroid,
+    std::vector<int8_t>& CentroValue)
   {
     Vec3<int32_t> nodepos, nodew, corner[8];
     nonCubicNode(gps, gbh, leaf.pos, blockWidth, sliceBB, nodepos, nodew, corner);
@@ -353,9 +407,18 @@ struct RasterScanTrisoupEdges {
     std::vector<Vertex> leafVertices;
     int nPointsInBlock = 0;
 
+    // inter quality for centroid
+    int badQualityRef = 0;
+    int badQualityComp = 0;
+
     for (int j = 0; j < 12; j++) {
       int uniqueIndex = segmentUniqueIndex[idxSegment++];
       int vertex = TriSoupVertices[uniqueIndex];
+
+      int qualityR = qualityRef[uniqueIndex];
+      int qualityC = qualityComp[uniqueIndex];
+      badQualityRef += qualityR == 0 || qualityR == 2 || qualityR == 3;
+      badQualityComp += qualityC == 0 || qualityC == 2 || qualityC == 3;
 
       if (vertex < 0)
         continue;  // skip segments that do not intersect the surface
@@ -395,19 +458,31 @@ struct RasterScanTrisoupEdges {
     if (triCount > 3 && isCentroidDriftActivated) {
       int bitDropped2 = bitDropped;
 
-      int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
-      Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis]);
+      // colocated centroid
+      bool possibleSKIPRef = nodeRefExist && badQualityRef <= 1;
+      int driftRef = possibleSKIPRef ? colocatedCentroid : 0;
 
-      int driftQPred = determineCentroidPredictor(bitDropped2, normalV, blockCentroid, nodepos, leaf.isCompensated ? compensatedPointCloud : refPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound);
+      int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
+      Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis], blockWidth);
+
+      CentroidInfo centroidInfo;
+      determineCentroidPredictor(centroidInfo, bitDropped2, normalV, blockCentroid, nodepos, leaf.isCompensated ? compensatedPointCloud : refPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef);
 
       int driftQ = 0;
       if (isEncoder) { // encode centroid residual
         driftQ = determineCentroidResidual(bitDropped2, normalV, blockCentroid, nodepos, pointCloud, leaf.start, leaf.end, lowBound, highBound);
-        encodeCentroidResidual(driftQ, arithmeticEncoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
+        // naive RDO
+        if (centroidInfo.possibleSKIP && std::abs(driftQ - centroidInfo.driftSKIP) <= 1)
+          driftQ = centroidInfo.driftSKIP;
+
+        encodeCentroidResidual(driftQ, arithmeticEncoder, ctxtMemOctree, centroidInfo, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
       }
       else { // decode centroid residual
-        driftQ = decodeCentroidResidual(&arithmeticDecoder, ctxtMemOctree, driftQPred, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
+        driftQ = decodeCentroidResidual(&arithmeticDecoder, ctxtMemOctree, centroidInfo, ctxMinMax, lowBoundSurface, highBoundSurface, lowBound, highBound);
       }
+
+      // store centroid residual for next frame
+      CentroValue.back() = driftQ;
 
       // dequantize and apply drift
       int driftDQ = 0;
@@ -498,6 +573,9 @@ struct RasterScanTrisoupEdges {
   //---------------------------------------------------------------------------
   void buildSegments(int& nSegments)
   {
+    point_t BBorig = gbh.geomBoxOrigin;
+    point_t keyshift = BBorig + (1 << 18);
+
     std::vector<int8_t> TriSoupVertices;
     std::vector<uint16_t> neighbNodes;
     std::queue<std::array<int, 18>> edgePattern;
@@ -519,6 +597,18 @@ struct RasterScanTrisoupEdges {
     const int nbitsVertices = gbh.trisoupNodeSizeLog2(gps) - bitDropped;
     const int max2bits = nbitsVertices > 1 ? 3 : 1;
     const int mid2bits = nbitsVertices > 1 ? 2 : 1;
+
+    // for colocated edge tracking
+    std::vector<int64_t> currentFrameEdgeKeys;
+    int colocatedEdgeIdx = 0;
+    std::vector<int8_t> qualityRef;
+    std::vector<int8_t> qualityComp;
+
+    // for colocated centroid tracking
+    std::vector<int64_t> currentFrameNodeKeys;
+    std::vector<int8_t> CentroValue;
+    int colocatedNodeIdx = 0;
+
 
     // for rendering
     PCCPointSet3 recPointCloud;
@@ -658,6 +748,12 @@ struct RasterScanTrisoupEdges {
           edgePattern.push(pattern);
           xForedgeOfVertex.push(currWedgePos[0]);
 
+          // for colocated edges
+          int64_t key = (int64_t(currWedgePos[0] + keyshift[0]) << 42) + (int64_t(currWedgePos[1] + keyshift[1]) << 22) + (int64_t(currWedgePos[2] + keyshift[2]) << 2) + dir;
+          currentFrameEdgeKeys.push_back(key);
+          qualityRef.push_back(0);
+          qualityComp.push_back(0);
+
           // determine TriSoup Vertex by the encoder
           if (isEncoder)
           {
@@ -689,14 +785,28 @@ struct RasterScanTrisoupEdges {
         // coding vertices
         int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - blockWidth;
         while (!xForedgeOfVertex.empty() && xForedgeOfVertex.front() < upperxForCoding) {
+          // spatial neighbour and inter comp predictors
           int8_t  interPredictor = isInter ? TriSoupVerticesPred.front() : 0;
           auto pattern = edgePattern.front();
+
+          // colocated edge predictor
+          int8_t colocatedVertex = -1;
+          if (isInter) {
+            auto keyCurrent = currentFrameEdgeKeys[firstVertexToCode];
+            while (colocatedEdgeIdx < ctxtMemOctree.refFrameEdgeKeys.size() - 1 && ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] < keyCurrent)
+              colocatedEdgeIdx++;
+
+            if (ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] == keyCurrent)
+              colocatedVertex = ctxtMemOctree.refFrameEdgeValue[colocatedEdgeIdx];
+          }
+
+          // code edge
           if (isEncoder) { // encode vertex
             auto vertex = TriSoupVertices[firstVertexToCode];
-            encodeOneTriSoupVertexRasterScan(vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], pattern, interPredictor, nbitsVertices, max2bits, mid2bits);
+            encodeOneTriSoupVertexRasterScan(vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], pattern, interPredictor, colocatedVertex, qualityRef, qualityComp, nbitsVertices, max2bits, mid2bits, firstVertexToCode);
           }
           else
-            decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], pattern, interPredictor, nbitsVertices, max2bits, mid2bits);
+            decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVertices, neighbNodes[firstVertexToCode], pattern, interPredictor, colocatedVertex, qualityRef, qualityComp, nbitsVertices, max2bits, mid2bits, firstVertexToCode);
 
           xForedgeOfVertex.pop();
           edgePattern.pop();
@@ -709,7 +819,26 @@ struct RasterScanTrisoupEdges {
         int upperxForRendering = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - 2*blockWidth;
         while (firstNodeToRender < leaves.size() && leaves[firstNodeToRender].pos[0] < upperxForRendering) {
           auto leaf = leaves[firstNodeToRender];
-          int nPointsInBlock = generateTrianglesInNodeRasterScan(leaf, renderedBlock, TriSoupVertices, idxSegment, sliceBB, isCentroidDriftActivated, haloTriangle, thickness, segmentUniqueIndex);
+
+          // centroid predictor
+          int8_t colocatedCentroid = 0;
+          bool nodeRefExist = false;
+          auto nodePos = leaf.pos;
+          auto keyCurrent = (int64_t(nodePos[0] + keyshift[0]) << 40) + (int64_t(nodePos[1] + keyshift[1]) << 20) + int64_t(nodePos[2] + keyshift[2]);
+          currentFrameNodeKeys.push_back(keyCurrent);
+          CentroValue.push_back(0);
+
+          if (isInter) {
+            while (colocatedNodeIdx < ctxtMemOctree.refFrameNodeKeys.size() - 1 && ctxtMemOctree.refFrameNodeKeys[colocatedNodeIdx] < keyCurrent)
+              colocatedNodeIdx++;
+
+            nodeRefExist = ctxtMemOctree.refFrameNodeKeys[colocatedNodeIdx] == keyCurrent;
+            if (nodeRefExist)
+              colocatedCentroid = ctxtMemOctree.refFrameCentroValue[colocatedNodeIdx];
+          }
+
+          int nPointsInBlock = generateTrianglesInNodeRasterScan(leaf, renderedBlock, TriSoupVertices, idxSegment, sliceBB, isCentroidDriftActivated, haloTriangle, thickness, segmentUniqueIndex, qualityRef, qualityComp, nodeRefExist, colocatedCentroid, CentroValue);
+
           flush2PointCloud(nRecPoints, renderedBlock.begin(), nPointsInBlock, recPointCloud);
           firstNodeToRender++;
         }
@@ -717,6 +846,14 @@ struct RasterScanTrisoupEdges {
 
       lastWedgex = currWedgePos[0];
     } // end while loop on wedges
+
+    // store edges for colocated next frame
+    ctxtMemOctree.refFrameEdgeKeys = currentFrameEdgeKeys;
+    ctxtMemOctree.refFrameEdgeValue = TriSoupVertices;
+
+    // store centroids for colocated next frame
+    ctxtMemOctree.refFrameNodeKeys = currentFrameNodeKeys;
+    ctxtMemOctree.refFrameCentroValue = CentroValue;
 
     // copy reconstructed point cloud to point cloud
     recPointCloud.resize(nRecPoints);
@@ -891,7 +1028,8 @@ determineCentroidNormalAndBounds(
   Vec3<int32_t> blockCentroid,
   int dominantAxis,
   std::vector<Vertex>& leafVertices,
-  int nodewDominant)
+  int nodewDominant,
+  int blockWidth)
 {
   int halfDropped2 = bitDropped2 == 0 ? 0 : 1 << bitDropped2 - 1;
 
@@ -918,22 +1056,31 @@ determineCentroidNormalAndBounds(
 
   // drift bounds
   ctxMinMax = std::min(8, (maxPos - minPos) >> (kTrisoupFpBits + bitDropped));
-  int bound = (nodewDominant - 1) << kTrisoupFpBits;
+  int boundL = -kTrisoupFpHalf;
+  int boundH = ((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1;
   int m = 1;
+  int half = 1 << 5 + bitDropped2;
+  int DZ = 2 * half * 341 >> 10; ; // 2 * half / 3
   for (; m < nodewDominant; m++) {
-    Vec3<int32_t> temp = blockCentroid + m * normalV;
-    if (temp[0]<0 || temp[1]<0 || temp[2]<0 || temp[0]>bound || temp[1]>bound || temp[2]> bound)
+    int driftDm = m << bitDropped2 + 6;
+    driftDm += DZ - half;
+
+    Vec3<int32_t> temp = blockCentroid + (driftDm * normalV >> 6);
+    if (temp[0]<boundL || temp[1]<boundL || temp[2]<boundL || temp[0]>boundH || temp[1]>boundH || temp[2]> boundH)
       break;
   }
-  highBound = (m - 1) + halfDropped2 >> bitDropped2;
+  highBound = m - 1;
 
   m = 1;
   for (; m < nodewDominant; m++) {
-    Vec3<int32_t> temp = blockCentroid - m * normalV;
-    if (temp[0]<0 || temp[1]<0 || temp[2]<0 || temp[0]>bound || temp[1]>bound || temp[2]> bound)
+    int driftDm = m << bitDropped2 + 6;
+    driftDm += DZ - half;
+
+    Vec3<int32_t> temp = blockCentroid + (-driftDm * normalV >> 6);
+    if (temp[0]<boundL || temp[1]<boundL || temp[2]<boundL || temp[0]>boundH || temp[1]>boundH || temp[2]> boundH)
       break;
   }
-  lowBound = (m - 1) + halfDropped2 >> bitDropped2;
+  lowBound = m - 1;
   lowBoundSurface = std::max(0, ((blockCentroid[dominantAxis] - minPos) + kTrisoupFpHalf >> kTrisoupFpBits) + halfDropped2 >> bitDropped2);
   highBoundSurface = std::max(0, ((maxPos - blockCentroid[dominantAxis]) + kTrisoupFpHalf >> kTrisoupFpBits) + halfDropped2 >> bitDropped2);
 
@@ -941,8 +1088,9 @@ determineCentroidNormalAndBounds(
 }
 
 // --------------------------------------------------------------------------
-int
+void
 determineCentroidPredictor(
+  CentroidInfo& centroidInfo,
   int bitDropped2,
   Vec3<int32_t> normalV,
   Vec3<int32_t> blockCentroid,
@@ -951,13 +1099,19 @@ determineCentroidPredictor(
   int start,
   int end,
   int lowBound,
-  int  highBound)
+  int  highBound,
+  int badQualityComp,
+  int badQualityRef,
+  int driftRef,
+  bool possibleSKIPRef)
 {
   int driftQPred = -100;
+  int driftQComp = -100;
   // determine quantized drift for predictor
   if (end > start) {
     int driftPred = 0;
     driftQPred = 0;
+    driftQComp = 0;
     int counter = 0;
     int maxD = bitDropped2;
 
@@ -984,13 +1138,36 @@ determineCentroidPredictor(
 
     if (abs(driftPred) >= DZ) {
       driftQPred = (abs(driftPred) - DZ + 2 * half) >> 6 + bitDropped2 - 1;
-      if (driftPred < 0)
+      driftQComp = (abs(driftPred) - DZ + 2 * half) >> 6 + bitDropped2;
+      if (driftPred < 0) {
         driftQPred = -driftQPred;
+        driftQComp = -driftQComp;
+      }
     }
     driftQPred = std::min(std::max(driftQPred, -2 * lowBound), 2 * highBound);  // drift in [-lowBound; highBound] but quantization is twice better
-
+    driftQComp = std::min(std::max(driftQComp, -lowBound), highBound);  // drift in [-lowBound; highBound]
   }
-  return driftQPred;
+
+  bool possibleSKIPComp = driftQComp != -100 && badQualityComp <= 0;
+  int driftComp = possibleSKIPComp ? driftQComp : 0;
+
+  bool possibleSKIP = possibleSKIPRef || possibleSKIPComp;
+  int driftSKIP = 0;
+  int qualitySKIP = badQualityRef;
+  if (possibleSKIP) {
+    if (possibleSKIPRef)
+      driftSKIP = driftRef;
+
+    if (possibleSKIPComp && (!possibleSKIPRef || badQualityComp < badQualityRef)) {
+      driftSKIP = driftComp;
+      qualitySKIP = badQualityComp;
+    }
+  }
+
+  centroidInfo.driftQPred = driftQPred;
+  centroidInfo.possibleSKIP = possibleSKIP;
+  centroidInfo.driftSKIP = driftSKIP;
+  centroidInfo.qualitySKIP = qualitySKIP;
 }
 
 // --------------------------------------------------------------------------
@@ -1053,14 +1230,36 @@ encodeCentroidResidual(
   int driftQ,
   pcc::EntropyEncoder* arithmeticEncoder,
   GeometryOctreeContexts & ctxtMemOctree,
-  int driftQPred,
+  CentroidInfo centroidInfo,
   int ctxMinMax,
   int lowBoundSurface,
   int highBoundSurface,
   int lowBound,
   int highBound)
 {
-  arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][driftQPred == -100 ? 0 : 1 + std::min(3, std::abs(driftQPred))]);
+  int driftQPred = centroidInfo.driftQPred;
+  bool possibleSKIP = centroidInfo.possibleSKIP;
+  int driftSKIP = centroidInfo.driftSKIP;
+
+  if (possibleSKIP) {
+    arithmeticEncoder->encode(driftQ == driftSKIP, ctxtMemOctree.ctxDriftSKIP[centroidInfo.qualitySKIP][driftSKIP == 0]);
+    if (driftQ == driftSKIP)
+      return;
+  }
+
+  bool isNotZero = false;
+  isNotZero = possibleSKIP && driftSKIP == 0;
+  if (!isNotZero) {
+    if (driftQPred == -100) //intra
+       arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][0]);
+    else { //inter
+      if (possibleSKIP)
+        arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0Skip[std::min(3, std::abs(driftSKIP))]);
+      else
+        arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]);
+    }
+  }
+
 
   // if not 0, drift in [-lowBound; highBound]
   if (driftQ) {
@@ -1068,7 +1267,10 @@ encodeCentroidResidual(
     if (highBound && lowBound) {  // otherwise sign is known
       int lowS = std::min(7, lowBoundSurface);
       int highS = std::min(7, highBoundSurface);
-      arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
+      if (possibleSKIP)
+        arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSignSkip[driftSKIP == 0 ? 0 : 1 + (driftSKIP > 0) + 2 * (std::abs(driftSKIP) > 1)]);
+      else
+        arithmeticEncoder->encode(driftQ > 0, ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
     }
 
     // code remaining bits 1 to 7 at most
@@ -1097,24 +1299,50 @@ int
 decodeCentroidResidual(
   pcc::EntropyDecoder* arithmeticDecoder,
   GeometryOctreeContexts& ctxtMemOctree,
-  int driftQPred,
+  CentroidInfo centroidInfo,
   int ctxMinMax,
   int lowBoundSurface,
   int highBoundSurface,
   int lowBound,
   int highBound)
 {
-  if (arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][driftQPred == -100 ? 0 : 1 + std::min(3, std::abs(driftQPred))]))
-    return 0;
+  int driftQPred = centroidInfo.driftQPred;
+  bool possibleSKIP = centroidInfo.possibleSKIP;
+  int driftSKIP = centroidInfo.driftSKIP;
 
+  bool isSKIP = false;
+  if (possibleSKIP) {
+    isSKIP = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSKIP[centroidInfo.qualitySKIP][driftSKIP == 0]);
+    if (isSKIP)
+      return driftSKIP;
+  }
+
+  bool isNotZero = false;
+  isNotZero = possibleSKIP && driftSKIP == 0;
   int driftQ = 1;
+  if (!isNotZero) {
+    if (driftQPred == -100) //intra
+      driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][0]) ? 0 : 1;
+    else {//inter
+      if (possibleSKIP)
+        driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0Skip[std::min(3, std::abs(driftSKIP))]) ? 0 : 1;
+      else
+        driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]) ? 0 : 1;
+    }
+    if (driftQ == 0)
+      return 0;
+  }
+
   // if not 0, drift in [-lowBound; highBound]
   // code sign
   int sign = 1;
   if (highBound && lowBound) {// otherwise sign is knwow
     int lowS = std::min(7, lowBoundSurface);
     int highS = std::min(7, highBoundSurface);
-    sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
+    if (possibleSKIP)
+      sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSignSkip[driftSKIP == 0 ? 0 : 1 + (driftSKIP > 0) + 2 * (std::abs(driftSKIP) > 1)]);
+    else
+      sign = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSign[lowBound == highBound ? 0 : 1 + (lowBound < highBound)][lowS][highS][(driftQPred && driftQPred != -100) ? 1 + (driftQPred > 0) : 0]);
   }
   else if (!highBound) // highbound is 0 , so sign is negative; otherwise sign is already set to positive
     sign = 0;
@@ -1152,14 +1380,33 @@ constructCtxInfo(
   std::vector<int8_t>& TriSoupVertices,
   int nbitsVertices,
   int max2bits,
-  int mid2bits) {
+  int mid2bits,
+  std::vector<int8_t>& qualityRef,
+  std::vector<int8_t>& qualityComp) {
 
+  // node info
   ctxInfo.ctxE = (!!(neigh & 1)) + (!!(neigh & 2)) + (!!(neigh & 4)) + (!!(neigh & 8)) - 1; // at least one node is occupied
   ctxInfo.ctx0 = (!!(neigh & 16)) + (!!(neigh & 32)) + (!!(neigh & 64)) + (!!(neigh & 128));
   ctxInfo.ctx1 = (!!(neigh & 256)) + (!!(neigh & 512)) + (!!(neigh & 1024)) + (!!(neigh & 2048));
   int direction = neigh >> 13; // 0=x, 1=y, 2=z
   ctxInfo.direction = direction;
 
+  // colocated info
+  for (int v = 0; v < 18; v++) {
+    if (patternIdx[v] != -1) {
+      int idxEdge = patternIdx[v];
+      ctxInfo.nBadPredRef += qualityRef[idxEdge] == 0; // presence badly predicted
+      ctxInfo.nBadPredRef1 += qualityRef[idxEdge] == 0 || qualityRef[idxEdge] == 2; // first bit pos badly predicted
+      ctxInfo.nBadPredRef2 += qualityRef[idxEdge] == 0 || qualityRef[idxEdge] == 2 || qualityRef[idxEdge] == 3; // second bit pos badly predicted
+
+      ctxInfo.nBadPredComp += qualityComp[idxEdge] == 0; // presence badly predicted
+      ctxInfo.nBadPredComp1 += qualityComp[idxEdge] == 0 || qualityComp[idxEdge] == 2; // first bit pos badly predicted
+      ctxInfo.nBadPredComp2 += qualityComp[idxEdge] == 0 || qualityComp[idxEdge] == 2 || qualityComp[idxEdge] == 3; // second bit pos badly predicted
+    }
+  }
+
+
+  //neighbours info
   for (int v = 0; v < 9; v++) {
     int v18 = mapping18to9[direction][v];
 
@@ -1226,7 +1473,8 @@ constructCtxPresence(
   int& ctxInter,
   codeVertexCtxInfo& ctxInfo,
   bool isInter,
-  int8_t TriSoupVerticesPred) {
+  int8_t TriSoupVerticesPred,
+  int8_t colocatedVertex) {
 
   ctxMap1 = std::min(ctxInfo.nclosestPattern, 2) * 15 * 2 + (ctxInfo.neighbEdge - 1) * 2 + ((ctxInfo.ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits
   ctxMap2 = ctxInfo.neighbEnd << 11;
@@ -1236,7 +1484,24 @@ constructCtxPresence(
   ctxMap2 |= (ctxInfo.patternClose & (0b00000001)) << 4;  // before
   ctxMap2 |= ctxInfo.orderedPclosePar;
 
-  ctxInter = isInter ? 1 + (TriSoupVerticesPred >= 0) : 0;
+  //ctxInter = isInter ? 1 + (TriSoupVerticesPred >= 0) : 0;
+  bool isInterGood = isInter && (ctxInfo.nBadPredRef <= 0 || ctxInfo.nBadPredComp <= 3);
+  ctxInter = 0;
+  if (isInterGood) {
+    ctxInter = 1 + (TriSoupVerticesPred >= 0);
+
+    bool goodRef = ctxInfo.nBadPredRef <= 0;
+    if (goodRef) {
+      ctxMap2 |= (colocatedVertex >= 0 ? 1 : 0) << 15;
+    }
+    else
+       ctxMap2 <<= 1;
+    ctxMap2 |= goodRef << 16;
+  }
+  else {
+    ctxMap2 <<= 2;
+  }
+
 }
 
 // -------------------------------------------------------------------------- -
@@ -1248,7 +1513,8 @@ constructCtxPos1(
   codeVertexCtxInfo& ctxInfo,
   bool isInter,
   int8_t TriSoupVerticesPred,
-  int b) {
+  int b,
+  int8_t colocatedVertex) {
 
   int ctxFullNbounds = (4 * (ctxInfo.ctx0 <= 1 ? 0 : (ctxInfo.ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctxInfo.ctx1) - 1)) * 2 + (ctxInfo.ctxE == 3);
   ctxMap1 = ctxFullNbounds * 2 + (ctxInfo.nclosestStart > 0);
@@ -1256,10 +1522,22 @@ constructCtxPos1(
   ctxMap2 |= (ctxInfo.patternClosest & 1) << 7;
   ctxMap2 |= ctxInfo.direction << 5;
   ctxMap2 |= ctxInfo.patternClose & (0b00011111);
+  ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
+
+  bool isGoodRef = isInter && colocatedVertex >= 0;
+  bool isInterGood = isInter && ((isGoodRef && ctxInfo.nBadPredRef1 <= 4) || ctxInfo.nBadPredComp1 <= 4);
 
   ctxInter = 0;
-  if (isInter) {
+  if (isInterGood) {
     ctxInter = TriSoupVerticesPred >= 0 ? 1 + ((TriSoupVerticesPred >> b - 1) & 3) : 0;
+
+    int goodPresence = colocatedVertex >= 0 && ctxInfo.nBadPredRef1 <= 0;
+    ctxMap2 |= goodPresence << 16;
+    if (goodPresence)
+      ctxMap2 |= ((colocatedVertex >> b) & 1) << 15;
+  }
+  else {
+    ctxMap2 <<= 2;
   }
 }
 
@@ -1273,7 +1551,8 @@ constructCtxPos2(
   bool isInter,
   int8_t TriSoupVerticesPred,
   int b,
-  int v){
+  int v,
+  int8_t colocatedVertex){
 
   int ctxFullNbounds = (4 * (ctxInfo.ctx0 <= 1 ? 0 : (ctxInfo.ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctxInfo.ctx1) - 1)) * 2 + (ctxInfo.ctxE == 3);
   ctxMap1 = ctxFullNbounds * 2 + (ctxInfo.nclosestStart > 0);
@@ -1284,9 +1563,20 @@ constructCtxPos2(
   ctxMap2 |= (ctxInfo.patternClose & (0b00011111)) >> 1;
   ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
 
+  bool isGoodRef = isInter && colocatedVertex >= 0 && ((colocatedVertex >> b + 1) == v);
+  bool isInterGood = isInter && ((isGoodRef && ctxInfo.nBadPredRef1 <= 4) || ctxInfo.nBadPredComp2 <= 4);
   ctxInter = 0;
   if (isInter) {
     ctxInter = TriSoupVerticesPred >= 0 ? 1 + ((TriSoupVerticesPred >> b) <= (v << 1)) : 0;
+
+    int goodPresence = colocatedVertex >= 0 ? 1 : 0;
+    goodPresence = goodPresence && ((colocatedVertex >> b + 1) == v) && ctxInfo.nBadPredRef2 <= 1;
+    ctxMap2 |= goodPresence << 16;
+    if (goodPresence)
+      ctxMap2 |= ((colocatedVertex >> b) & 1) << 15;
+  }
+  else {
+    ctxMap2 <<= 2;
   }
 }
 
