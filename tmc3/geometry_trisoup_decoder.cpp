@@ -682,7 +682,8 @@ struct RasterScanTrisoupEdges {
       } // end loop on three deirections
 
       // move to next wedge
-      goNextWedge(isNeigbourSane);
+      if (nextIsAvailable())
+        goNextWedge(isNeigbourSane);
 
       // code vertices adn rfendering of preceding slices in case the loop has moved up one slice or if finished
       if (changeSlice()) {
