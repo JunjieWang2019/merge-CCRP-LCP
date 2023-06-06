@@ -370,6 +370,16 @@ PCCTMC3Encoder3::compress(
     _sliceId = partition.sliceId;
     _tileId = partition.tileId;
     _sliceOrigin = sliceCloud.computeBoundingBox().min;
+    if (!params->partition.fixedSliceOrigin.empty()) {
+      int idx = std::min(
+        _sliceId, int(params->partition.fixedSliceOrigin.size()) - 1);
+      _sliceOrigin[0] = std::min<uint32_t>(
+        _sliceOrigin[0], params->partition.fixedSliceOrigin[idx][0]);
+      _sliceOrigin[1] = std::min<uint32_t>(
+        _sliceOrigin[1], params->partition.fixedSliceOrigin[idx][1]);
+      _sliceOrigin[2] = std::min<uint32_t>(
+        _sliceOrigin[2], params->partition.fixedSliceOrigin[idx][2]);
+    }
 
     if (params->partition.safeTrisoupPartionning) {
       int partitionBoundary = 1 << partitionBoundaryLog2;

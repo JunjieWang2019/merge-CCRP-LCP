@@ -12,6 +12,9 @@ categories:
      - sliceMaxPointsTrisoup: 5000000
      - sliceMaxPoints: 4000000
      - sliceMinPoints: 2000000
+     # fixing slice origin to 0, 0, 0
+     - fixedSliceOrigin: '(0,0,0)'
+
      ##
      # geometry parameters (trisoup)
 

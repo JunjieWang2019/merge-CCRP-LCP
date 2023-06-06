@@ -108,6 +108,8 @@ struct EncoderParams {
   // Parameters that control partitioning
   PartitionParams partition;
 
+  std::vector<point_t> fixedSliceOrigin;
+
   // attribute recolouring parameters
   RecolourParams recolour;
 

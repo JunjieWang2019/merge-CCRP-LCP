@@ -697,6 +697,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.partition.tileSize, 0,
     "Partition input into cubic tiles of given size")
 
+  ("fixedSliceOrigin",
+    params.encoder.partition.fixedSliceOrigin, {},
+    "Explicitely provided slice origin")
+
   ("cabac_bypass_stream_enabled_flag",
     params.encoder.sps.cabac_bypass_stream_enabled_flag, false,
     "Controls coding method for ep(bypass) bins")

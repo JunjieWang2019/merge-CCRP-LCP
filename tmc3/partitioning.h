@@ -85,6 +85,9 @@ struct PartitionParams {
   // Baseline tile width. (0 => disabled)
   int tileSize;
 
+  // explicitely provided slice origin
+  std::vector<point_t> fixedSliceOrigin;
+
   // use safe partitionning for Trisoup, aligning nodes to a global grid
   bool safeTrisoupPartionning;
 };

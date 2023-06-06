@@ -291,6 +291,22 @@ merge small slices together.
 Tile dimension to use when performing initial partitioning.  A value of zero
 disables tile partitioning.
 
+### `--fixedSliceOrigin="s,t,v"|"(s,t,v)"-LIST`
+Explicitely provide slice origin.
+
+A single `"s,t,v"` triplet applies to all the slices.
+
+When a list of triplets is used, the n-th entry in the list controls the
+origin of the n-th slice.  The last entry is mapped to all remaining
+slices.
+
+If for a given slice, `s`, `t` or `v` is higher than the lowest coordinate of
+any point within the slice it is ignored.
+
+Note: `s`, `t` or `v` are interpreted as unsigned value. So, to not alter
+normal behaviour (i.e. determination from bounding box) on a given coordinate,
+a value of `-1` may be used as it will be interpreted as `INT_MAX`.
+
 ### `--safeTrisoupPartionning=0|1`
 When uniform partitioning along longest edge or uniform square partitioning is
 used additionnal constraints are added on section boundaries to ensure not
