@@ -224,18 +224,36 @@ namespace df
       : OptionBase(name, desc), opt_storage(storage), opt_default_val(default_val)
       {}
 
-      void parse(const std::string& arg, ErrorReporter&) {
+      void parse(const std::string& arg, ErrorReporter& er) {
         /* ensure that parsing overwrites any previous value */
         detail::clear(opt_storage);
         auto it = detail::make_output_iterator(opt_storage);
 
         /* effectively map parse . split m/, /, @arg */
-        std::string::size_type pos = 0;
+        std::string::size_type pos = 0, end;
+        std::string sub_arg;
+        int count = 0;
         do {
           /* skip over preceeding spaces */
           pos = arg.find_first_not_of(" \t", pos);
-          auto end = arg.find_first_of(", \t", pos);
-          std::string sub_arg(arg, pos, end - pos);
+          if (pos != std::string::npos && arg[pos] == '(') {
+            /* extract between parenthesis*/
+            end = arg.find_first_of("()", pos + 1);
+            int cnt = 1;
+            while (cnt > 0 && end != std::string::npos + 1) {
+              cnt += (arg[end] == '(') ? 1 : -1;
+              if (cnt)
+                end = arg.find_first_of("()", end + 1);
+            }
+            if (cnt)
+              throw ParseFailure(opt_string, arg);
+            sub_arg = std::string(arg, pos + 1, end - pos - 1);
+            end = arg.find_first_of(", \t", end);
+          }
+          else {
+            end = arg.find_first_of(", \t", pos);
+            sub_arg = std::string(arg, pos, end - pos);
+          }
 
           if (detail::is_fixed_size) {
             // todo(df): handle size check
@@ -243,14 +261,24 @@ namespace df
 
           try {
             T1 value;
-            parse_into(value, sub_arg);
+            std::string name = opt_string + "[" + std::to_string(count) + "]";
+            Option<T1> sub(
+              name, value,
+              opt_default_val.size() > count ? opt_default_val[count] : T1(),
+              opt_desc);
+            sub.setDefault();
+            sub.parse(sub_arg, er);
             *it++ = value;
+          }
+          catch (ParseFailure) {
+            throw;
           }
           catch (...) {
             throw ParseFailure(opt_string, sub_arg);
           }
 
           pos = end + 1;
+          count++;
         } while (pos != std::string::npos + 1);
       }
 

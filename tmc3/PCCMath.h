@@ -70,7 +70,7 @@ public:
     assert(i < 3);
     return data[i];
   }
-  size_t getElementCount() const { return 3; }
+  size_t size() const { return 3; }
 
   T& x() { return data[0]; }
   T& y() { return data[1]; }
