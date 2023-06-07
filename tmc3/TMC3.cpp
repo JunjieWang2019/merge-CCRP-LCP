@@ -811,6 +811,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.trisoup.alignToNodeGrid, true,
     "Align slices to a grid of trisoup nodes (encoder only)")
 
+  ("trisoupSkipModeEnabled",
+    params.encoder.gps.trisoup_skip_mode_enabled_flag, true,
+    "Enables skip mode for trisoup")
+
   ("trisoupThickness",
     params.encoder.gbh.trisoup_thickness, 36,
     "Thickness of Trisoup triangles")
@@ -1195,6 +1199,30 @@ sanitizeEncoderOpts(
 
   params.encoder.sps.inter_frame_prediction_enabled_flag
    = params.encoder.gps.interPredictionEnabledFlag;
+
+  // ensure inter-frame trisoup parameters are correct
+  params.encoder.sps.inter_frame_trisoup_enabled_flag =
+    params.encoder.gps.interPredictionEnabledFlag
+      && params.encoder.gps.trisoup_enabled_flag;
+
+  params.encoder.gps.trisoup_skip_mode_enabled_flag =
+    params.encoder.gps.trisoup_skip_mode_enabled_flag
+    && params.encoder.sps.inter_frame_trisoup_enabled_flag;
+
+  params.encoder.trisoup.alignToNodeGrid =
+    params.encoder.trisoup.alignToNodeGrid
+      || params.encoder.gps.trisoup_skip_mode_enabled_flag;
+
+  params.encoder.sps.inter_frame_trisoup_align_slices_flag =
+    params.encoder.sps.inter_frame_trisoup_enabled_flag
+      && params.encoder.trisoup.alignToNodeGrid;
+
+  params.encoder.sps.inter_frame_trisoup_align_slices_step_log2_minus2 =
+    params.encoder.sps.inter_frame_trisoup_align_slices_flag ?
+      *std::max_element(
+        params.encoder.trisoupNodeSizesLog2.begin(),
+        params.encoder.trisoupNodeSizesLog2.end()) - 2
+      : 0;
 
   // Separate bypass bin coding only when cabac_bypass_stream is disabled
   if (params.encoder.sps.cabac_bypass_stream_enabled_flag)

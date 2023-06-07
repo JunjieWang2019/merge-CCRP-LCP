@@ -421,7 +421,17 @@ struct SequenceParameterSet {
   // Indicates that inter-frame prediction may be used in the sequence
   bool inter_frame_prediction_enabled_flag;
 
-  // locam motion compensation 
+  // Indicate that inter-frame trisoup may be used in the sequence
+  bool inter_frame_trisoup_enabled_flag;
+
+  // Indicate that inter-frame trisoup aligment to trisoup grid is used
+  // for slices in the sequence
+  bool inter_frame_trisoup_align_slices_flag;
+
+  // alignment trisoup grid step size
+  int inter_frame_trisoup_align_slices_step_log2_minus2;
+
+  // local motion compensation
   int local_mc;
 };
 
@@ -509,6 +519,9 @@ struct GeometryParameterSet {
   // sampling value of trisoup decoding process
   // a value of zero set the automatic sampling value setting to avoid over point of slice MAX points(sliceMaxPoints)
   int trisoup_sampling_value;
+
+  // Enable skip mode for inter
+  bool trisoup_skip_mode_enabled_flag;
 
   // controls the ability to perform in-loop geometry scaling
   bool geom_scaling_enabled_flag;

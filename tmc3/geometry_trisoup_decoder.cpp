@@ -137,6 +137,7 @@ struct RasterScanTrisoupEdges {
   const int bitDropped;
   const int distanceSearchEncoder;
   const bool isInter;
+  const bool interSkipEnabled;
   const PCCPointSet3& refPointCloud;
   const PCCPointSet3& compensatedPointCloud;
 
@@ -157,6 +158,7 @@ struct RasterScanTrisoupEdges {
   , bitDropped(bitDropped)
   , distanceSearchEncoder(distanceSearchEncoder)
   , isInter(isInter)
+  , interSkipEnabled(isInter && gps.trisoup_skip_mode_enabled_flag)
   , refPointCloud(refPointCloud)
   , compensatedPointCloud(compensatedPointCloud)
   , gps(gps)
@@ -201,7 +203,7 @@ struct RasterScanTrisoupEdges {
       ctxtMemOctree.ctxTriSoup[0][ctxInter].obufSingleBound);
 
     // quality ref edge
-    if (isInter && (vertex >= 0) == (colocatedVertex >= 0 ? 1 : 0)) {
+    if(interSkipEnabled && (vertex >= 0) == (colocatedVertex >= 0 ? 1 : 0)) {
       qualityRef[i] = 1 + (vertex >= 0);
       if (qualityRef[i] >= 2) {
         qualityRef[i] += (vertex >> nbitsVertices - 1) == (colocatedVertex >> nbitsVertices - 1);
@@ -299,7 +301,7 @@ struct RasterScanTrisoupEdges {
       TriSoupVertices.push_back(-1);
 
     // quality ref edge
-    if (isInter && c == (colocatedVertex >= 0 ? 1 : 0)) {
+    if (interSkipEnabled && c == (colocatedVertex >= 0 ? 1 : 0)) {
       qualityRef[i] = 1 + (c != 0);
     }
     // quality comp edge
@@ -347,7 +349,7 @@ struct RasterScanTrisoupEdges {
       TriSoupVertices.push_back(v);
 
       // quality ref edge
-      if (isInter && qualityRef[i] >= 2) {
+      if (interSkipEnabled && qualityRef[i] >= 2) {
         qualityRef[i] += (v >> nbitsVertices - 1) == (colocatedVertex >> nbitsVertices - 1);
         qualityRef[i] += (v >> nbitsVertices - 2) == (colocatedVertex >> nbitsVertices - 2);
       }
@@ -791,7 +793,7 @@ struct RasterScanTrisoupEdges {
 
           // colocated edge predictor
           int8_t colocatedVertex = -1;
-          if (isInter) {
+          if (interSkipEnabled) {
             auto keyCurrent = currentFrameEdgeKeys[firstVertexToCode];
             while (colocatedEdgeIdx < ctxtMemOctree.refFrameEdgeKeys.size() - 1 && ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] < keyCurrent)
               colocatedEdgeIdx++;
@@ -828,7 +830,7 @@ struct RasterScanTrisoupEdges {
           currentFrameNodeKeys.push_back(keyCurrent);
           CentroValue.push_back(0);
 
-          if (isInter) {
+          if (interSkipEnabled) {
             while (colocatedNodeIdx < ctxtMemOctree.refFrameNodeKeys.size() - 1 && ctxtMemOctree.refFrameNodeKeys[colocatedNodeIdx] < keyCurrent)
               colocatedNodeIdx++;
 

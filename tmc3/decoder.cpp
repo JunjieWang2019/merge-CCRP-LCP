@@ -421,6 +421,26 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
       ctxtMem.reset();
   }
 
+  // sanity checks
+  if (!_sps->inter_frame_trisoup_align_slices_flag
+      && _gps->trisoup_skip_mode_enabled_flag)
+    throw std::runtime_error("slice must be aligned to use skip mode");
+
+  if (_sps->inter_frame_trisoup_align_slices_flag
+      && _gps->trisoup_enabled_flag
+      && _gbh.trisoup_node_size_log2_minus2
+          > _sps->inter_frame_trisoup_align_slices_step_log2_minus2)
+    throw std::runtime_error("slice does not satisfy grid alignment");
+
+  if (_sps->inter_frame_trisoup_align_slices_flag
+      && _gps->trisoup_enabled_flag
+      && ((_gbh.geomBoxOrigin
+          >> _sps->inter_frame_trisoup_align_slices_step_log2_minus2 + 2)
+        << _sps->inter_frame_trisoup_align_slices_step_log2_minus2 + 2)
+        != _gbh.geomBoxOrigin)
+    throw std::runtime_error("slice origin must be aligned to grid"
+      " when grid alignment is used");
+
   // set default attribute values (in case an attribute data unit is lost)
   // NB: it is a requirement that geom_num_points_minus1 is correct
   _currentPointCloud.resize(_gbh.footer.geom_num_points_minus1 + 1);

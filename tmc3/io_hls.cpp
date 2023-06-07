@@ -463,6 +463,15 @@ write(const SequenceParameterSet& sps)
   bs.write(sps.inter_frame_prediction_enabled_flag);
   bs.write(sps.bypass_bin_coding_without_prob_update);
 
+  if (sps.inter_frame_prediction_enabled_flag)
+    bs.write(sps.inter_frame_trisoup_enabled_flag);
+
+  if (sps.inter_frame_trisoup_enabled_flag)
+    bs.write(sps.inter_frame_trisoup_align_slices_flag);
+
+  if(sps.inter_frame_trisoup_align_slices_flag)
+    bs.writeUe(sps.inter_frame_trisoup_align_slices_step_log2_minus2);
+
   bs.byteAlign();
 
   return buf;
@@ -566,10 +575,22 @@ parseSps(const PayloadBuffer& buf)
 
   sps.inter_frame_prediction_enabled_flag = false;
   sps.bypass_bin_coding_without_prob_update = false;
+  sps.inter_frame_trisoup_enabled_flag = false;
+  sps.inter_frame_trisoup_align_slices_flag = false;
+  sps.inter_frame_trisoup_align_slices_step_log2_minus2 = 0;
   bool sps_extension_flag = bs.read();
   if (sps_extension_flag) {
     bs.read(&sps.inter_frame_prediction_enabled_flag);
     bs.read(&sps.bypass_bin_coding_without_prob_update);
+
+    if (sps.inter_frame_prediction_enabled_flag)
+      bs.read(&sps.inter_frame_trisoup_enabled_flag);
+
+    if (sps.inter_frame_trisoup_enabled_flag)
+      bs.read(&sps.inter_frame_trisoup_align_slices_flag);
+
+    if(sps.inter_frame_trisoup_align_slices_flag)
+      bs.readUe(&sps.inter_frame_trisoup_align_slices_step_log2_minus2);
   }
   bs.byteAlign();
 
@@ -679,6 +700,10 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
       }
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
+
+      if (gps.trisoup_enabled_flag) {
+        bs.write(gps.trisoup_skip_mode_enabled_flag);
+      }
     }
   }
   bs.byteAlign();
@@ -754,6 +779,7 @@ parseGps(const PayloadBuffer& buf)
   gps.globalMotionEnabled = false;
   gps.localMotionEnabled = false;
   gps.gof_geom_entropy_continuation_enabled_flag = false;
+  gps.trisoup_skip_mode_enabled_flag = false;
   bool gps_extension_flag = bs.read();
   if (gps_extension_flag) {
     if(true)
@@ -785,6 +811,10 @@ parseGps(const PayloadBuffer& buf)
       }
 
       bs.read(&gps.gof_geom_entropy_continuation_enabled_flag);
+
+      if (gps.trisoup_enabled_flag) {
+        bs.read(&gps.trisoup_skip_mode_enabled_flag);
+      }
     }
   }
   bs.byteAlign();

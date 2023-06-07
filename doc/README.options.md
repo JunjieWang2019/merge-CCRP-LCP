@@ -532,6 +532,9 @@ Controls the activation of improved determination of trisoup vertex position.
 (Encoder only)
 Force aligning slices to a grid of trisoup node size.
 
+### `--trisoupSkipModeEnabled=0|1`
+Controls the activation of skip mode for trisoup.
+
 ### `--trisoupThickness=INT-VALUE`
 Controls the thickness for point reconstruction with rasterization.
 
