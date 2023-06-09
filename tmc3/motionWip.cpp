@@ -893,7 +893,9 @@ encode_splitPU_MV_MC(
     const int lpuZ = pos[2] >> log2MotionBlkSize;
     const int lpuIdx = (lpuX * numLPUPerLine + lpuY) * numLPUPerLine + lpuZ;
 
-    std::vector<LPUwindow> pointPredictorMC;
+    std::vector<int> ptIndexesMC;
+    ptIndexesMC.reserve(lpuActiveWindow[lpuIdx].size());
+
     // create the compensated points
     int xlow = pos[0];
     int xhigh = pos[0] + (1 << nodeSizeLog2[0]);
@@ -901,26 +903,27 @@ encode_splitPU_MV_MC(
     int yhigh = pos[1] + (1 << nodeSizeLog2[1]);
     int zlow = pos[2];
     int zhigh = pos[2] + (1 << nodeSizeLog2[2]);
-    for (const auto& w : lpuActiveWindow[lpuIdx]) {
+
+    for (int i=0; i<lpuActiveWindow[lpuIdx].size(); ++i) {
       // apply best motion
-      const Vec3<int> wV = w.pos - MVd;
+      Vec3<int> wV = lpuActiveWindow[lpuIdx][i].pos - MVd;
       if (
         wV[0] >= xlow && wV[0] < xhigh && wV[1] >= ylow && wV[1] < yhigh
         && wV[2] >= zlow && wV[2] < zhigh)
-        pointPredictorMC.push_back({wV, w.color});
+        ptIndexesMC.push_back(i);
     }
 
     //and make node0 point to them
     node0->predStart = compensatedPointCloud->getPointCount();
     compensatedPointCloud->resize(
-      compensatedPointCloud->getPointCount() + pointPredictorMC.size());
+      compensatedPointCloud->getPointCount() + ptIndexesMC.size());
     compensatedPointCloud->addColors();
     size_t counter = node0->predStart;
-    for (const auto& p : pointPredictorMC) {
+    for (int idx : ptIndexesMC) {
       auto& predPoint = (*compensatedPointCloud)[counter];
       auto& color = compensatedPointCloud->getColor(counter);
-      predPoint = p.pos;
-      color = p.color;
+      predPoint = lpuActiveWindow[lpuIdx][idx].pos - MVd;
+      color = lpuActiveWindow[lpuIdx][idx].color;
       counter++;
     }
     node0->predEnd = compensatedPointCloud->getPointCount();
@@ -971,7 +974,9 @@ decode_splitPU_MV_MC(
     const int lpuZ = pos[2] >> log2MotionBlkSize;
     const int lpuIdx = (lpuX * numLPUPerLine + lpuY) * numLPUPerLine + lpuZ;
 
-    std::vector<LPUwindow> pointPredictorMC;
+    std::vector<int> ptIndexesMC;
+    ptIndexesMC.reserve(lpuActiveWindow[lpuIdx].size());
+
     // create the compensated points
     const int xlow = pos[0];
     const int xhigh = pos[0] + (1 << nodeSizeLog2[0]);
@@ -980,26 +985,26 @@ decode_splitPU_MV_MC(
     const int zlow = pos[2];
     const int zhigh = pos[2] + (1 << nodeSizeLog2[2]);
 
-    for (const auto& w : lpuActiveWindow[lpuIdx]) {
+    for (int i=0; i<lpuActiveWindow[lpuIdx].size(); ++i) {
       // apply best motion
-      Vec3<int> wV = w.pos - MVd;
+      Vec3<int> wV = lpuActiveWindow[lpuIdx][i].pos - MVd;
       if (
         wV[0] >= xlow && wV[0] < xhigh && wV[1] >= ylow && wV[1] < yhigh
         && wV[2] >= zlow && wV[2] < zhigh)
-        pointPredictorMC.push_back({wV, w.color});
+        ptIndexesMC.push_back(i);
     }
 
     //and make node0 point to them
     node0->predStart = compensatedPointCloud->getPointCount();
     compensatedPointCloud->resize(
-      compensatedPointCloud->getPointCount() + pointPredictorMC.size());
+      compensatedPointCloud->getPointCount() + ptIndexesMC.size());
     compensatedPointCloud->addColors();
     size_t counter = node0->predStart;
-    for (const auto& p : pointPredictorMC) {
+    for (int idx : ptIndexesMC) {
       auto& predPoint = (*compensatedPointCloud)[counter];
       auto& color = compensatedPointCloud->getColor(counter);
-      predPoint = p.pos;
-      color = p.color;
+      predPoint = lpuActiveWindow[lpuIdx][idx].pos - MVd;
+      color = lpuActiveWindow[lpuIdx][idx].color;
       counter++;
     }
     node0->predEnd = compensatedPointCloud->getPointCount();
