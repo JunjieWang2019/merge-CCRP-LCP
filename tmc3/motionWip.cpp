@@ -887,18 +887,11 @@ encode_splitPU_MV_MC(
     Vec3<int> MVd = MV;
 
     // find search window
-    std::vector<LPUwindow> Window;
     const Vec3<int32_t> pos = node0->pos << nodeSizeLog2;
     const int lpuX = pos[0] >> log2MotionBlkSize;
     const int lpuY = pos[1] >> log2MotionBlkSize;
     const int lpuZ = pos[2] >> log2MotionBlkSize;
     const int lpuIdx = (lpuX * numLPUPerLine + lpuY) * numLPUPerLine + lpuZ;
-
-    //  use only one ref
-    Window.reserve(lpuActiveWindow[lpuIdx].size());
-    for (size_t i = 0; i < lpuActiveWindow[lpuIdx].size(); ++i) {
-      Window.push_back(lpuActiveWindow[lpuIdx][i]);
-    }
 
     std::vector<LPUwindow> pointPredictorMC;
     // create the compensated points
@@ -908,7 +901,7 @@ encode_splitPU_MV_MC(
     int yhigh = pos[1] + (1 << nodeSizeLog2[1]);
     int zlow = pos[2];
     int zhigh = pos[2] + (1 << nodeSizeLog2[2]);
-    for (auto& w : Window) {
+    for (const auto& w : lpuActiveWindow[lpuIdx]) {
       // apply best motion
       const Vec3<int> wV = w.pos - MVd;
       if (
@@ -971,19 +964,12 @@ decode_splitPU_MV_MC(
     motionVectors.push_back({node0->pos * node_size, node_size, MV});
 
     // find search window
-    std::vector<LPUwindow> Window;
     Vec3<int32_t> pos = node0->pos << nodeSizeLog2;
 
     const int lpuX = pos[0] >> log2MotionBlkSize;
     const int lpuY = pos[1] >> log2MotionBlkSize;
     const int lpuZ = pos[2] >> log2MotionBlkSize;
     const int lpuIdx = (lpuX * numLPUPerLine + lpuY) * numLPUPerLine + lpuZ;
-
-    // use only one ref
-    Window.reserve(lpuActiveWindow[lpuIdx].size());
-    for (size_t i = 0; i < lpuActiveWindow[lpuIdx].size(); ++i) {
-      Window.push_back(lpuActiveWindow[lpuIdx][i]);
-    }
 
     std::vector<LPUwindow> pointPredictorMC;
     // create the compensated points
@@ -994,7 +980,7 @@ decode_splitPU_MV_MC(
     const int zlow = pos[2];
     const int zhigh = pos[2] + (1 << nodeSizeLog2[2]);
 
-    for (const auto& w : Window) {
+    for (const auto& w : lpuActiveWindow[lpuIdx]) {
       // apply best motion
       Vec3<int> wV = w.pos - MVd;
       if (
