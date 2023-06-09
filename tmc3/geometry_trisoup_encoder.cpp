@@ -109,6 +109,8 @@ encodeGeometryTrisoup(
   gbh.num_unique_segments_minus1 = nSegments - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
 
+
+
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {

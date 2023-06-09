@@ -54,6 +54,8 @@ namespace pcc {
 template<typename T>
 class Vec3 {
 public:
+  typedef T value_type;
+
   T* begin() { return &data[0]; }
   const T* begin() const { return &data[0]; }
 

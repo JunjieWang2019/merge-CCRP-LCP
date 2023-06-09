@@ -908,6 +908,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
       ctxtMem.reset();
   }
 
+  PCCPointSet3 compensatedPointCloud;  // set of points after motion compensation
   if (!_gps->trisoup_enabled_flag) {
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,

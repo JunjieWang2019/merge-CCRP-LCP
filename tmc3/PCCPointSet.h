@@ -69,25 +69,36 @@ public:
   // proxy object for use with iterator, allowing handling of PCCPointSet3's
   // structure-of-arrays as a single array.
 
-  class iterator;
-  class Proxy {
-    friend class iterator;
+  template <class Proxy> class iterator_;
+
+  template <typename PCCPointSet3_>
+  class Proxy_ {
+    typedef PCCPointSet3_ PCCPointSet3;
+    template <typename Proxy>
+    friend class iterator_;
 
     PCCPointSet3* parent_;
     size_t idx_;
+    typedef Proxy_ Proxy;
 
   public:
     //-----------------------------------------------------------------------
 
-    Proxy() : parent_(nullptr), idx_() {}
+    Proxy_() : parent_(nullptr), idx_() {}
 
-    Proxy(PCCPointSet3* parent, size_t idx) : parent_(parent), idx_(idx) {}
+    Proxy_(PCCPointSet3* parent, size_t idx) : parent_(parent), idx_(idx) {}
 
     //-----------------------------------------------------------------------
 
     PointType operator*() const { return (*parent_)[idx_]; }
 
     PointType& operator*() { return (*parent_)[idx_]; }
+
+    operator const PointType&() const { return (*parent_)[idx_]; }
+
+    PointType::value_type operator[](size_t i) const { return (*parent_)[idx_][i]; }
+
+    size_t getIndex() const { return idx_; }
 
     //-----------------------------------------------------------------------
     // Swap the position of the current proxied point (including attributes)
@@ -102,10 +113,14 @@ public:
     //-----------------------------------------------------------------------
   };
 
+  typedef Proxy_<PCCPointSet3> Proxy;
+  typedef Proxy_<const PCCPointSet3> CProxy;
+
   //=========================================================================
   // iterator for use with stl algorithms
 
-  class iterator {
+  template <class Proxy>
+  class iterator_ {
   private:
     Proxy p_;
 
@@ -115,17 +130,19 @@ public:
     typedef std::ptrdiff_t difference_type;
     typedef const Proxy* pointer;
     typedef const Proxy& reference;
+    typedef iterator_ iterator;
+    typedef typename Proxy::PCCPointSet3 PCCPointSet3;
 
     //-----------------------------------------------------------------------
 
-    iterator() = default;
-    iterator(const iterator&) = default;
+    iterator_() = default;
+    iterator_(const iterator&) = default;
 
     //-----------------------------------------------------------------------
 
-    explicit iterator(PCCPointSet3* parent) : p_{parent, 0} {}
+    explicit iterator_(PCCPointSet3* parent) : p_{parent, 0} {}
 
-    explicit iterator(PCCPointSet3* parent, size_t idx) : p_{parent, idx} {}
+    explicit iterator_(PCCPointSet3* parent, size_t idx) : p_{parent, idx} {}
 
     //-----------------------------------------------------------------------
     // :: Iterator
@@ -235,6 +252,10 @@ public:
     //-----------------------------------------------------------------------
   };
 
+  typedef iterator_<Proxy> iterator;
+  typedef iterator_<CProxy> const_iterator;
+
+
   //=========================================================================
 
   PCCPointSet3()
@@ -247,6 +268,12 @@ public:
   PCCPointSet3(const PCCPointSet3&) = default;
   PCCPointSet3& operator=(const PCCPointSet3& rhs) = default;
   ~PCCPointSet3() = default;
+
+  iterator begin() { return iterator(this, 0); }
+  iterator end() { return iterator(this, size()); }
+
+  const_iterator begin() const { return const_iterator(this, 0); }
+  const_iterator end() const { return const_iterator(this, size()); }
 
   void swap(PCCPointSet3& other)
   {
@@ -473,9 +500,9 @@ public:
     return positions.size();
   }
 
-  void append(const PCCPointSet3& src)
+  void append(const PCCPointSet3& src, bool keepAttributes=true)
   {
-    if (!getPointCount())
+    if (!getPointCount() && keepAttributes)
       addRemoveAttributes(src);
 
     int dstEnd = positions.size();
@@ -496,10 +523,35 @@ public:
         src.reflectances.begin(), src.reflectances.end(),
         std::next(reflectances.begin(), dstEnd));
 
-    if (hasLaserAngles())
+    if (hasLaserAngles() && src.hasLaserAngles())
       std::copy(
         src.laserAngles.begin(), src.laserAngles.end(),
         std::next(laserAngles.begin(), dstEnd));
+  }
+
+  void appendPartition(const PCCPointSet3& src, const std::vector<int32_t>& indices, bool keepAttributes=true)
+  {
+    if (!getPointCount() && keepAttributes)
+      addRemoveAttributes(src);
+
+    int dstEnd = positions.size();
+    int srcSize = indices.size();
+    resize(dstEnd + srcSize);
+
+    for (int i = 0; i < srcSize; i++) {
+      int inputIdx = indices[i];
+      int outputIdx = dstEnd + i;
+      positions[outputIdx] = src.positions[inputIdx];
+
+      if (hasColors() && src.hasColors())
+        setColor(outputIdx, src.getColor(inputIdx));
+
+      if (hasReflectances() && src.hasReflectances())
+        setReflectance(outputIdx, src.getReflectance(inputIdx));
+
+      if (hasLaserAngles() && src.hasLaserAngles())
+        setLaserAngle(outputIdx, src.getLaserAngle(inputIdx));
+    }
   }
 
   void appendPartition(const PCCPointSet3& src, uint32_t begin, uint32_t end, bool keepAttributes=true)

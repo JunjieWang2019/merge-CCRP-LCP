@@ -808,7 +808,7 @@ encodeGeometryOctree(
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  std::vector<std::vector<LPUwindow>> firstLpuActiveWindow;
+  std::vector<PCCPointSet3> firstLpuActiveWindow;
   if (isInter && gps.localMotionEnabled) {
     bufferPoints.reset(new int8_t[3 * 128 * 10000]);
 

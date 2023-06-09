@@ -659,7 +659,7 @@ decodeGeometryOctree(
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  std::vector<std::vector<LPUwindow>> firstLpuActiveWindow;
+  std::vector<PCCPointSet3> firstLpuActiveWindow;
   if (isInter && gps.localMotionEnabled) {
     const int extended_window = gps.motion.motion_window_size / 2;
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
