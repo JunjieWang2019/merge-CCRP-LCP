@@ -90,7 +90,7 @@ decodeGeometryTrisoup(
   // Determine neighbours
   int nSegments = 0;
   codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, false, bitDropped, 1 /*distanceSearchEncoder*/,
-    isInter, refFrame->cloud, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, nSegments);
+    isInter, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, nSegments);
 
   if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
@@ -139,7 +139,6 @@ struct RasterScanTrisoupEdges {
   const int distanceSearchEncoder;
   const bool isInter;
   const bool interSkipEnabled;
-  const PCCPointSet3& refPointCloud;
   const PCCPointSet3& compensatedPointCloud;
 
   // for coding
@@ -150,7 +149,7 @@ struct RasterScanTrisoupEdges {
   GeometryOctreeContexts& ctxtMemOctree;
 
   RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, PCCPointSet3& pointCloud, bool isEncoder,
-    int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& refPointCloud, const PCCPointSet3& compensatedPointCloud,
+    int bitDropped, int distanceSearchEncoder, bool isInter, const PCCPointSet3& compensatedPointCloud,
     const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree)
   : leaves(leaves)
   , blockWidth(blockWidth)
@@ -160,7 +159,6 @@ struct RasterScanTrisoupEdges {
   , distanceSearchEncoder(distanceSearchEncoder)
   , isInter(isInter)
   , interSkipEnabled(isInter && gps.trisoup_skip_mode_enabled_flag)
-  , refPointCloud(refPointCloud)
   , compensatedPointCloud(compensatedPointCloud)
   , gps(gps)
   , gbh(gbh)
@@ -469,7 +467,7 @@ struct RasterScanTrisoupEdges {
       Vec3<int32_t> normalV = determineCentroidNormalAndBounds(lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax, bitDropped, bitDropped2, triCount, blockCentroid, dominantAxis, leafVertices, nodew[dominantAxis], blockWidth);
 
       CentroidInfo centroidInfo;
-      determineCentroidPredictor(centroidInfo, bitDropped2, normalV, blockCentroid, nodepos, leaf.isCompensated ? compensatedPointCloud : refPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef);
+      determineCentroidPredictor(centroidInfo, bitDropped2, normalV, blockCentroid, nodepos, compensatedPointCloud, leaf.predStart, leaf.predEnd, lowBound, highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef);
 
       int driftQ = 0;
       if (isEncoder) { // encode centroid residual
@@ -711,7 +709,7 @@ struct RasterScanTrisoupEdges {
 
             // determine TriSoup Vertex inter prediction
             if (isInter) {
-              const PCCPointSet3& PC = leaves[neighbNodeIndex].isCompensated ? compensatedPointCloud : refPointCloud;
+              const PCCPointSet3& PC = compensatedPointCloud;
               for (int j = leaves[neighbNodeIndex].predStart; j < leaves[neighbNodeIndex].predEnd; j++) {
                 Vec3<int> voxel = PC[j];
                 if (voxel[dir1] == pos1 && voxel[dir2] == pos2) {
@@ -907,7 +905,6 @@ void codeAndRenderTriSoupRasterScan(
   int bitDropped,
   int distanceSearchEncoder,
   bool isInter,
-  const PCCPointSet3& refPointCloud,
   const PCCPointSet3& compensatedPointCloud,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
@@ -917,7 +914,7 @@ void codeAndRenderTriSoupRasterScan(
   int &nSegments) {
 
   const int32_t blockWidth = defaultBlockWidth; // Width of block. In future, may override with leaf blockWidth
-  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, refPointCloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree);
+  RasterScanTrisoupEdges rste(leaves, blockWidth, pointCloud, isEncoder, bitDropped, distanceSearchEncoder, isInter, compensatedPointCloud, gps, gbh, arithmeticEncoder, arithmeticDecoder, ctxtMemOctree);
   rste.buildSegments(nSegments);
 }
 

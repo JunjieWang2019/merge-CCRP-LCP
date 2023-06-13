@@ -411,6 +411,9 @@ public:
   }
 
   size_t getPointCount() const { return positions.size(); }
+
+  size_t size() const { return positions.size(); }
+
   void resize(const size_t size)
   {
     positions.resize(size);
@@ -497,6 +500,31 @@ public:
       std::copy(
         src.laserAngles.begin(), src.laserAngles.end(),
         std::next(laserAngles.begin(), dstEnd));
+  }
+
+  void appendPartition(const PCCPointSet3& src, uint32_t begin, uint32_t end, bool keepAttributes=true)
+  {
+    if (!getPointCount() && keepAttributes)
+      addRemoveAttributes(src);
+
+    int dstEnd = positions.size();
+    int srcSize = end - begin;
+    resize(dstEnd + srcSize);
+
+    for (int i = 0; i < srcSize; i++) {
+      int inputIdx = begin + i;
+      int outputIdx = dstEnd + i;
+      positions[outputIdx] = src.positions[inputIdx];
+
+      if (hasColors() && src.hasColors())
+        setColor(outputIdx, src.getColor(inputIdx));
+
+      if (hasReflectances() && src.hasReflectances())
+        setReflectance(outputIdx, src.getReflectance(inputIdx));
+
+      if (hasLaserAngles() && src.hasLaserAngles())
+        setLaserAngle(outputIdx, src.getLaserAngle(inputIdx));
+    }
   }
 
   void swapPoints(const size_t index1, const size_t index2)

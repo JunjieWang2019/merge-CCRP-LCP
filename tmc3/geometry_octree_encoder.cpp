@@ -1148,6 +1148,7 @@ encodeGeometryOctree(
           }
           else {
             node0.PU_tree = nullptr;
+            noMotionForNode(predPointCloud, &compensatedPointCloud, &node0);
           }
         }
 

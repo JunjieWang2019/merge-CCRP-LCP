@@ -859,6 +859,9 @@ decodeGeometryOctree(
             // no local motion if not enough points
             const bool isLocalEnabled = firstLpuActiveWindow[lpuIdx].size() > 50;
             node0.hasMotion = isLocalEnabled;
+            if (!node0.hasMotion) {
+              noMotionForNode(predPointCloud, &compensatedPointCloud, &node0);
+            }
           }
 
           // decode LPU/PU/MV

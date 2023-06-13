@@ -238,7 +238,6 @@ void codeAndRenderTriSoupRasterScan(
   int bitDropped,
   int distanceSearchEncoder,
   bool isInter,
-  const PCCPointSet3& refPointCloud,
   const PCCPointSet3& compensatedPointCloud,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,

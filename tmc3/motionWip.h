@@ -91,6 +91,10 @@ bool motionSearchForNode(
   const std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int numLPUPerLine);
 
+void noMotionForNode(
+  const PCCPointSet3& predPointCloud,
+  PCCPointSet3* compensatedPointCloud,
+  PCCOctree3Node* node0);
 
 void encode_splitPU_MV_MC(
   PCCOctree3Node* node0,

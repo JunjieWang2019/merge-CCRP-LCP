@@ -104,7 +104,7 @@ encodeGeometryTrisoup(
   EntropyDecoder foo;
   int nSegments = 0;
   codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder,
-    isInter, refFrame.cloud, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, nSegments);
+    isInter, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, nSegments);
 
   gbh.num_unique_segments_minus1 = nSegments - 1;
   gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;

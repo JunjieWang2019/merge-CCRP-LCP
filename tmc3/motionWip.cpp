@@ -858,6 +858,20 @@ motionSearchForNode(
 }
 
 void
+noMotionForNode(
+  const PCCPointSet3& predPointCloud,
+  PCCPointSet3* compensatedPointCloud,
+  PCCOctree3Node* node0)
+{
+  auto predStart = node0->predStart;
+  node0->predStart = compensatedPointCloud->size();
+  compensatedPointCloud->appendPartition(
+    predPointCloud, predStart, node0->predEnd);
+  node0->predEnd = compensatedPointCloud->size();
+  node0->isCompensated = true;
+}
+
+void
 encode_splitPU_MV_MC(
   PCCOctree3Node* node0,
   PUtree* local_PU_tree,
