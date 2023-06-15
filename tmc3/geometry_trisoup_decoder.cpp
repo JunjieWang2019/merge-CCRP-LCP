@@ -682,8 +682,7 @@ struct RasterScanTrisoupEdges {
       } // end loop on three deirections
 
       // move to next wedge
-      if (nextIsAvailable())
-        goNextWedge(isNeigbourSane);
+      goNextWedge(isNeigbourSane);
 
       // code vertices adn rfendering of preceding slices in case the loop has moved up one slice or if finished
       if (changeSlice()) {
@@ -742,6 +741,9 @@ private:
     // move ++ sane neigbours
     for (int i=0; i<7; i++)
         edgesNeighNodes[i] += isNeigbourSane[i];
+
+    if (edgesNeighNodes[0] >= leaves.size())
+      return;
 
     currWedgePos = leaves[edgesNeighNodes[0]].pos - offsets[0];
     for (int i=1; i<7; ++i) {
