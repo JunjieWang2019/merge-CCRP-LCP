@@ -856,6 +856,7 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
         bs.writeUe(aps.rahtPredParams.upper_mode_level);
       }
     }
+    bs.write(aps.rahtPredParams.integer_haar_enable_flag);
   }
 
   if (aps.attr_encoding == AttributeEncoding::kRaw)
@@ -922,6 +923,7 @@ parseAps(const PayloadBuffer& buf)
         bs.readUe(&aps.rahtPredParams.upper_mode_level);
       }
     }
+    bs.read(&aps.rahtPredParams.integer_haar_enable_flag);
   }
 
   if (aps.attr_encoding == AttributeEncoding::kRaw)

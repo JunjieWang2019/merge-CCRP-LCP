@@ -53,8 +53,17 @@ void
 computeParentDc(
   const int64_t weights[],
   std::vector<int64_t>::const_iterator dc,
-  std::vector<FixedPoint>& parentDc)
+  std::vector<FixedPoint>& parentDc,
+  bool integer_haar_enable_flag
+  )
 {
+  if (integer_haar_enable_flag) {
+    for (int k = 0; k < parentDc.size(); k++) {
+      parentDc[k].val = dc[k];
+    }
+    return;
+  }
+
   uint64_t w = weights[0];
   for (int i = 1; i < 8; i++)
     w += weights[i];
@@ -79,6 +88,7 @@ translateLayer(
   int64_t* morton_rf_transformed,
   int64_t* morton_mc,
   int* attr_mc,
+  bool integer_haar_enable_flag,
   size_t layerSize)
 {
   size_t shift = layerDepth * 3;
@@ -126,8 +136,11 @@ translateLayer(
     }
 
     if (weight > 1) {
-      for (size_t k = 0; k < attrCount; k++)
+      for (size_t k = 0; k < attrCount; k++) {
         layer[k] /= weight;
+        if (integer_haar_enable_flag)
+          layer[k] = (layer[k] >> FixedPoint::kFracBits) << FixedPoint::kFracBits;
+      }
     } else if (!weight) {
       for (size_t k = 0; k < attrCount; k++)
         layer[k] = -1;
@@ -264,6 +277,7 @@ namespace attr {
       return 2;
   }
 
+  template<class Kernel>
   Mode choseMode(
     ModeEncoder& rdo,
     const VecAttr& transformBuf,
@@ -318,7 +332,7 @@ namespace attr {
     std::vector<double> error;
     error.resize(modes.size(), 0.0);
 
-    invTransformBlock222(reconsBuf.size(), reconsBuf.begin(), weights);
+    invTransformBlock222<Kernel>(reconsBuf.size(), reconsBuf.begin(), weights);
 
     w = weights;
     int64_t sum_weight = 0;
@@ -368,131 +382,31 @@ namespace attr {
     }
     return Mode::Null;
   }
+
+//============================================================================
+// instanciate for Haar and Raht kernels
+
+template Mode choseMode<HaarKernel>(
+    ModeEncoder& rdo,
+    const VecAttr& transformBuf,
+    const std::vector<Mode>& modes,
+    const int64_t weights[],
+    const int numAttrs,
+    const QpSet& qpset,
+    const int qpLayer,
+    const Qps* nodeQp);
+
+template Mode choseMode<RahtKernel>(
+    ModeEncoder& rdo,
+    const VecAttr& transformBuf,
+    const std::vector<Mode>& modes,
+    const int64_t weights[],
+    const int numAttrs,
+    const QpSet& qpset,
+    const int qpLayer,
+    const Qps* nodeQp);
+
+//============================================================================
+
 }  // namespace attr
-
-//============================================================================
-// Encapsulation of a RAHT transform stage.
-
-RahtKernel::RahtKernel(int weightLeft, int weightRight)
-{
-  uint64_t w = weightLeft + weightRight;
-  uint64_t isqrtW = irsqrt(w);
-  _a.val = (isqrt(uint64_t(weightLeft) << (2 * _a.kFracBits)) * isqrtW) >> 40;
-  _b.val = (isqrt(uint64_t(weightRight) << (2 * _b.kFracBits)) * isqrtW) >> 40;
-}
-
-void
-RahtKernel::fwdTransform(
-  FixedPoint& lf, FixedPoint& hf)
-{
-  // lf = right * b + left * a
-  // hf = right * a - left * b
-  auto tmp = lf.val * _b.val;
-  lf.val *= _a.val;
-  lf.val += hf.val * _b.val;
-  hf.val *= _a.val;
-  hf.val -= tmp;
-
-  lf.fixAfterMultiplication();
-  hf.fixAfterMultiplication();
-}
-
-void
-RahtKernel::invTransform(
-  FixedPoint& left, FixedPoint& right)
-{
-  // left = lf * a - hf * b
-  // right = lf * b + hf * a
-  auto tmp = right.val * _b.val;
-  right.val *= _a.val;
-  right.val += left.val * _b.val;
-  left.val *= _a.val;
-  left.val -= tmp;
-
-  right.fixAfterMultiplication();
-  left.fixAfterMultiplication();
-}
-
-//============================================================================
-// In-place transform a set of sparse 2x2x2 blocks each using the same weights
-
-void
-fwdTransformBlock222(
-  const int numBufs, VecAttr::iterator buf,
-  const int64_t weights[])
-{
-  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
-  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
-  for (int i = 0, iw = 0; i < 12; i++, iw += 2) {
-    int i0 = a[i];
-    int i1 = b[i];
-    int64_t w0 = weights[iw + 32];
-    int64_t w1 = weights[iw + 33];
-
-    if (!w0 && !w1)
-      continue;
-
-    // only one occupied, propagate to next level
-    if (!w0 || !w1) {
-      if (!w0) {
-        for (int k = 0; k < numBufs; k++)
-          std::swap(buf[k][i0], buf[k][i1]);
-      }
-      continue;
-    }
-
-    // actual transform
-    for (int k = 0; k < numBufs; k++) {
-      auto& lf = buf[k][i0];
-      auto& hf = buf[k][i1];
-
-      auto tmp = lf.val * w1;
-      lf.val = lf.val * w0 + hf.val * w1;
-      hf.val = hf.val * w0 - tmp;
-
-      lf.fixAfterMultiplication();
-      hf.fixAfterMultiplication();
-    }
-  }
-}
-
-void
-invTransformBlock222(
-  const int numBufs, VecAttr::iterator buf,
-  const int64_t weights[])
-{
-  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
-  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
-  for (int i = 11, iw = 22; i >= 0; i--, iw -= 2) {
-    int i0 = a[i];
-    int i1 = b[i];
-    int64_t w0 = weights[iw + 32];
-    int64_t w1 = weights[iw + 33];
-
-    if (!a && !b)
-      continue;
-
-    // only one occupied, propagate to next level
-    if (!w0 || !w1) {
-      if (!w0) {
-        for (int k = 0; k < numBufs; k++)
-          std::swap(buf[k][i0], buf[k][i1]);
-      }
-      continue;
-    }
-
-    // actual transform
-    for (int k = 0; k < numBufs; k++) {
-      auto& left = buf[k][i0];
-      auto& right = buf[k][i1];
-
-      auto tmp = right.val * w1;
-      right.val = right.val * w0 + left.val * w1;
-      left.val = left.val * w0 - tmp;
-
-      right.fixAfterMultiplication();
-      left.fixAfterMultiplication();
-    }
-  }
-}
 }  // namespace pcc

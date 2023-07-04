@@ -61,7 +61,8 @@ reduceUnique(
   std::vector<UrahtNode>* weightsIn,
   std::vector<UrahtNode>* weightsOut,
   std::vector<int>* attrsIn,
-  std::vector<int>* attrsOut)
+  std::vector<int>* attrsOut,
+  bool integer_haar_enable_flag)
 {
   // process a single level of the tree
   int64_t posPrev = -1;
@@ -85,8 +86,15 @@ reduceUnique(
     (weightsInWrIt - 1)->weight += node.weight;
     weightsOut->push_back(node);
     for (int k = 0; k < numAttrs; k++) {
-      *(attrsInWrIt - numAttrs + k) += *attrsInRdIt;
-      attrsOut->push_back(*attrsInRdIt++);
+      if (integer_haar_enable_flag) {
+        attrsOut->push_back(
+          *attrsInRdIt++ - *(attrsInWrIt - numAttrs + k));
+        *(attrsInWrIt - numAttrs + k) +=
+          attrsOut->back() >> 1;
+      } else {
+        *(attrsInWrIt - numAttrs + k) += *attrsInRdIt;
+        attrsOut->push_back(*attrsInRdIt++);
+      }
     }
   }
 
@@ -105,7 +113,8 @@ reduceLevel(
   std::vector<UrahtNode>* weightsIn,
   std::vector<UrahtNode>* weightsOut,
   std::vector<int>* attrsIn,
-  std::vector<int>* attrsOut)
+  std::vector<int>* attrsOut,
+  bool integer_haar_enable_flag)
 {
   // process a single level of the tree
   int64_t posPrev = -1;
@@ -129,8 +138,13 @@ reduceLevel(
       weightsOut->push_back(node);
 
       for (int k = 0; k < numAttrs; k++) {
-        *(attrsInWrIt - numAttrs + k) += *attrsInRdIt;
-        attrsOut->push_back(*attrsInRdIt++);
+        if (integer_haar_enable_flag) {
+          attrsOut->push_back(*attrsInRdIt++ - *(attrsInWrIt - numAttrs + k));
+          *(attrsInWrIt - numAttrs + k) += attrsOut->back() >> 1;
+        } else {
+          *(attrsInWrIt - numAttrs + k) += *attrsInRdIt;
+          attrsOut->push_back(*attrsInRdIt++);
+        }
       }
     }
   }
@@ -150,7 +164,8 @@ expandLevel(
   std::vector<UrahtNode>* weightsIn,   // expand by numNodes before expand
   std::vector<UrahtNode>* weightsOut,  // shrink after expand
   std::vector<int>* attrsIn,
-  std::vector<int>* attrsOut)
+  std::vector<int>* attrsOut,
+  bool integer_haar_enable_flag)
 {
   if (numNodes == 0)
     return;
@@ -187,7 +202,12 @@ expandLevel(
     (weightsInWrIt++)->weight -= nodeDelta.weight;
     for (int k = 0; k < numAttrs; k++) {
       *attrsInWrIt = *attrsInRdIt++;
-      *attrsInWrIt++ -= *curAttrIt++;
+      if (integer_haar_enable_flag) {
+        *attrsInWrIt -= *curAttrIt >> 1;
+        *curAttrIt++ += *attrsInWrIt++;
+      } else {
+        *attrsInWrIt++ -= *curAttrIt++;
+      }
     }
   }
 }
@@ -456,6 +476,11 @@ intraDcPred(
       div.val = kDivisors[weightSum[i]];
       for (int k = 0; k < numAttrs; k++)
         predBuf[k][i] *= div;
+      if (rahtPredParams.integer_haar_enable_flag) {
+        for (int k = 0; k < numAttrs; k++)
+          predBuf[k][i].val = (predBuf[k][i].val >> predBuf[k][i].kFracBits)
+            << predBuf[k][i].kFracBits;
+      }
     }
   }
 }
@@ -630,11 +655,11 @@ uraht_process(
     if (level == 0) {
       // process any duplicate points
       numNodes = reduceUnique(
-        numNodes, numAttrs, &weightsLf, &weightsHf, &attrsLf, &attrsHf);
+        numNodes, numAttrs, &weightsLf, &weightsHf, &attrsLf, &attrsHf, rahtPredParams.integer_haar_enable_flag);
     } else {
       // normal level reduction
       numNodes = reduceLevel(
-        level, numNodes, numAttrs, &weightsLf, &weightsHf, &attrsLf, &attrsHf);
+        level, numNodes, numAttrs, &weightsLf, &weightsHf, &attrsLf, &attrsHf, rahtPredParams.integer_haar_enable_flag);
     }
   }
 
@@ -704,7 +729,7 @@ uraht_process(
     weightsLf.resize(weightsLf.size() + numNodes);
     attrsLf.resize(attrsLf.size() + numNodes * numAttrs);
     expandLevel(
-      level, numNodes, numAttrs, &weightsLf, &weightsHf, &attrsLf, &attrsHf);
+      level, numNodes, numAttrs, &weightsLf, &weightsHf, &attrsLf, &attrsHf, rahtPredParams.integer_haar_enable_flag);
     weightsHf.resize(levelHfPos[level]);
     attrsHf.resize(levelHfPos[level] * numAttrs);
 
@@ -733,7 +758,8 @@ uraht_process(
     if (coder.isInterEnabled()) {
       translateLayer(
         interTree, level / 3, numAttrs, numPoints, numPoints_mc, positions,
-        mortonTranslated.data(), positions_mc, attributes_mc);
+        mortonTranslated.data(), positions_mc, attributes_mc,
+        rahtPredParams.integer_haar_enable_flag);
     }
 
     // initial scan position of the coefficient buffer
@@ -862,7 +888,7 @@ uraht_process(
           if (*inter < 0) {
             inter += numAttrs;
             if (notCalculatedParentDc) {
-              computeParentDc(weights, attrRecParentUsIt, parentDc);
+              computeParentDc(weights, attrRecParentUsIt, parentDc, rahtPredParams.integer_haar_enable_flag);
               notCalculatedParentDc = false;
             }
             for (int k = 0; k < numAttrs; k++)
@@ -928,35 +954,40 @@ uraht_process(
       }
 
       if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-        // normalise coefficients
-        for (int childIdx = 0; childIdx < 8; childIdx++) {
-          if (weights[childIdx] <= 1)
-            continue;
+        if (rahtPredParams.integer_haar_enable_flag) {
+          fwdTransformBlock222<HaarKernel>(
+            transformBuf.size(), transformBuf.begin(), weights);
+        } else {
+          // normalise coefficients
+          for (int childIdx = 0; childIdx < 8; childIdx++) {
+            if (weights[childIdx] <= 1)
+              continue;
 
-          // Summed attribute values
-          FixedPoint rsqrtWeight;
-          uint64_t w = weights[childIdx];
-          int shift = w > 1024 ? ilog2(w - 1) >> 1 : 0;
-          rsqrtWeight.val = irsqrt(w) >> (40 - shift - FixedPoint::kFracBits);
-          for (int k = 0; k < numAttrs; k++) {
-            transformBuf[k][childIdx].val >>= shift;
-            transformBuf[k][childIdx] *= rsqrtWeight;
+            // Summed attribute values
+            FixedPoint rsqrtWeight;
+            uint64_t w = weights[childIdx];
+            int shift = w > 1024 ? ilog2(w - 1) >> 1 : 0;
+            rsqrtWeight.val = irsqrt(w) >> (40 - shift - FixedPoint::kFracBits);
+            for (int k = 0; k < numAttrs; k++) {
+              transformBuf[k][childIdx].val >>= shift;
+              transformBuf[k][childIdx] *= rsqrtWeight;
+            }
+
+            // Predicted attribute values
+            FixedPoint sqrtWeight;
+            sqrtWeight.val =
+              isqrt(uint64_t(weights[childIdx]) << (2 * FixedPoint::kFracBits));
+            attrPred = transformBuf.begin() + numAttrs;
+            while (attrPred < transformBuf.end()) {
+              for (int k = 0; k < numAttrs; k++)
+                attrPred[k][childIdx] *= sqrtWeight;
+              attrPred += numAttrs;
+            }
           }
 
-          // Predicted attribute values
-          FixedPoint sqrtWeight;
-          sqrtWeight.val =
-            isqrt(uint64_t(weights[childIdx]) << (2 * FixedPoint::kFracBits));
-          attrPred = transformBuf.begin() + numAttrs;
-          while (attrPred < transformBuf.end()) {
-            for (int k = 0; k < numAttrs; k++)
-              attrPred[k][childIdx] *= sqrtWeight;
-            attrPred += numAttrs;
-          }
+          fwdTransformBlock222<RahtKernel>(
+            transformBuf.size(), transformBuf.begin(), weights);
         }
-
-        fwdTransformBlock222(
-          transformBuf.size(), transformBuf.begin(), weights);
       }
 
       Mode predMode =
@@ -1004,19 +1035,23 @@ uraht_process(
         }
 
         if (!attr::isNull(predMode)) {
-          // normalise predicted attribute values
-          for (int childIdx = 0; childIdx < 8; childIdx++) {
-            if (weights[childIdx] <= 1)
-              continue;
+          if (rahtPredParams.integer_haar_enable_flag) {
+            fwdTransformBlock222<HaarKernel>(numAttrs, attrPred, weights);
+          } else {
+            // normalise predicted attribute values
+            for (int childIdx = 0; childIdx < 8; childIdx++) {
+              if (weights[childIdx] <= 1)
+                continue;
 
-            FixedPoint sqrtWeight;
-            sqrtWeight.val = isqrt(
-              uint64_t(weights[childIdx]) << (2 * FixedPoint::kFracBits));
-            for (int k = 0; k < numAttrs; k++)
-              attrPred[k][childIdx] *= sqrtWeight;
+              FixedPoint sqrtWeight;
+              sqrtWeight.val = isqrt(
+                uint64_t(weights[childIdx]) << (2 * FixedPoint::kFracBits));
+              for (int k = 0; k < numAttrs; k++)
+                attrPred[k][childIdx] *= sqrtWeight;
+            }
+
+            fwdTransformBlock222<RahtKernel>(numAttrs, attrPred, weights);
           }
-
-          fwdTransformBlock222(numAttrs, attrPred, weights);
         }
       }
 
@@ -1041,7 +1076,8 @@ uraht_process(
         const int LUTlog[16] = {0,   256, 406, 512, 594, 662, 719,  768,
                                 812, 850, 886, 918, 947, 975, 1000, 1024};
         bool flagRDOQ = false;
-        if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
+        if (typeid(ModeCoder) == typeid(attr::ModeEncoder)
+            && !rahtPredParams.integer_haar_enable_flag) {
           int64_t Dist2 = 0;
           int Ratecoeff = 0;
           int64_t lambda0;
@@ -1124,7 +1160,11 @@ uraht_process(
         }
       }
 
-      invTransformBlock222(numAttrs, attrPred, weights);
+      if (rahtPredParams.integer_haar_enable_flag) {
+        invTransformBlock222<HaarKernel>(numAttrs, attrPred, weights);
+      } else {
+        invTransformBlock222<RahtKernel>(numAttrs, attrPred, weights);
+      }
 
       weightsParentIt->mc = Mode::Inter;
 
@@ -1136,6 +1176,7 @@ uraht_process(
           attrRecUs[j * numAttrs + k] = attrPred[k][nodeIdx].val;
 
         // scale values for next level
+        if (!rahtPredParams.integer_haar_enable_flag) {
         if (weights[nodeIdx] > 1) {
           FixedPoint rsqrtWeight;
           uint64_t w = weights[nodeIdx];
@@ -1145,6 +1186,7 @@ uraht_process(
             attrPred[k][nodeIdx].val >>= shift;
             attrPred[k][nodeIdx] *= rsqrtWeight;
           }
+        }
         }
 
         for (int k = 0; k < numAttrs; k++) {
@@ -1187,12 +1229,15 @@ uraht_process(
       if (typeid(ModeCoder) == typeid(attr::ModeEncoder))
         attrSum[k] = attrsLf[i * numAttrs + k];
       attrRecDc[k].val = *attrRecParentIt++;
+      if (!rahtPredParams.integer_haar_enable_flag) {
       attrRecDc[k] *= sqrtWeight;
+      }
     }
 
     FixedPoint rsqrtWeight;
     for (int w = weight - 1; w > 0; w--) {
       RahtKernel kernel(w, 1);
+      HaarKernel haarkernel(w, 1);
       int shift = w > 1024 ? ilog2(uint32_t(w - 1)) >> 1 : 0;
       if (typeid(ModeCoder) == typeid(attr::ModeEncoder))
         rsqrtWeight.val = irsqrt(w) >> (40 - shift - FixedPoint::kFracBits);
@@ -1206,14 +1251,24 @@ uraht_process(
           // invert the initial reduction (sum)
           // NB: read from (w-1) since left side came from attrsLf.
           transformBuf[1] = attrsHfIt[(w - 1) * numAttrs + k];
-          attrSum[k] -= transformBuf[1];
-          transformBuf[0] = attrSum[k];
+          if (rahtPredParams.integer_haar_enable_flag) {
+            attrSum[k].val -= transformBuf[1].val >> 1;
+            transformBuf[1].val += attrSum[k].val;
+            transformBuf[0] = attrSum[k];
+          } else {
+            attrSum[k] -= transformBuf[1];
+            transformBuf[0] = attrSum[k];
 
-          // NB: weight of transformBuf[1] is by construction 1.
-          transformBuf[0].val >>= shift;
-          transformBuf[0] *= rsqrtWeight;
+            // NB: weight of transformBuf[1] is by construction 1.
+            transformBuf[0].val >>= shift;
+            transformBuf[0] *= rsqrtWeight;
+          }
 
-          kernel.fwdTransform(transformBuf[0], transformBuf[1]);
+          if (rahtPredParams.integer_haar_enable_flag) {
+            haarkernel.fwdTransform(transformBuf[0], transformBuf[1]);
+          } else {
+            kernel.fwdTransform(transformBuf[0], transformBuf[1]);
+          }
 
           auto coeff = transformBuf[1].round();
           assert(coeff <= INT_MAX && coeff >= INT_MIN);
@@ -1232,7 +1287,11 @@ uraht_process(
         // inherit the DC value
         transformBuf[0] = attrRecDc[k];
 
-        kernel.invTransform(transformBuf[0], transformBuf[1]);
+        if (rahtPredParams.integer_haar_enable_flag) {
+          haarkernel.invTransform(transformBuf[0], transformBuf[1]);
+        } else {
+          kernel.invTransform(transformBuf[0], transformBuf[1]);
+        }
 
         attrRecDc[k] = transformBuf[0];
         attrRec[out + w * numAttrs + k] = transformBuf[1].val;
@@ -1330,9 +1389,16 @@ regionAdaptiveHierarchicalTransform(
           return inferredPredMode;
 
         encoder.getEntropy(predCtxMode, predCtxLevel);
-        auto predMode = attr::choseMode(
-          encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
-          nodeQp);
+        Mode predMode;
+        if(rahtPredParams.integer_haar_enable_flag) {
+          predMode = attr::choseMode<HaarKernel>(
+            encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
+            nodeQp);
+        } else {
+          predMode = attr::choseMode<RahtKernel>(
+            encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
+            nodeQp);
+        }
         encoder.encode(predCtxMode, predCtxLevel, predMode);
         return predMode;
       }

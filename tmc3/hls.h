@@ -442,6 +442,7 @@ struct RahtPredictionParams {
   int mode_level;
   int upper_mode_level;
 
+  bool integer_haar_enable_flag;
   bool prediction_enabled_flag;
   int prediction_threshold0;
   int prediction_threshold1;

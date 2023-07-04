@@ -1,0 +1,83 @@
+# Test conditions for N17995 CTC CW using TMC13 octree
+# octree lossless-geom  --  lossless-attrs raht
+---
+categories:
+  lossless-geom-lossless-attrs:
+    encflags:
+     - mode: 0
+
+     -
+       - !conditional '${src-unit-metres}'
+       - srcUnit: metre
+       - srcUnitLength: '${src-unit-metres}'
+       - outputUnitLength: '${src-unit-metres}'
+
+     ##
+     # geometry parameters (octree)
+     #  - preserve lossless geometry property
+     - trisoupNodeSizeLog2: 0
+     - mergeDuplicatedPoints: 0
+     - neighbourAvailBoundaryLog2: 8
+     - intra_pred_max_node_size_log2: 6
+     - positionQuantizationScale: 1
+
+     # disable qtbt, to be comparable with inter
+     - qtbtEnabled: 0
+     # disable idcm, to be comparable with inter
+     - inferredDirectCodingMode: 0
+
+     ####
+     # attribute coding (common options -- relies on option ordering)
+     #  - uses raht transform
+     #  - scale 16bit reflectance data to 8bit
+     - convertPlyColourspace: 1
+     - transformType: 0
+     - integerHaar: 1
+
+     ##
+     # attribute coding -- reflectance
+     -
+       - !conditional '${has_refl}'
+       - qp: 4
+       - bitdepth: 8
+       -
+         - !conditional '${reflectance8b16b_scale_factor}'
+         - attrOffset: 0
+         - attrScale: ${reflectance8b16b_scale_factor}
+       - attribute: reflectance
+
+     ##
+     # attribute coding -- colour
+     -
+       - !conditional '${has_colour}'
+       - qp: 4
+       - qpChromaOffset: -1
+       - bitdepth: 8
+       - colourMatrix: 8
+       - attrOffset: 0
+       - attrScale: 1
+       - attribute: color
+
+    decflags:
+     - mode: 1
+     -
+       - !conditional '${src-unit-metres}'
+       - outputUnitLength: '${src-unit-metres}'
+
+     - convertPlyColourspace: 1
+
+    pcerrorflags:
+     - dropdups: 2
+     - neighborsProc: 1
+     # NB: use hausdorff to better verify lossless coding
+     - hausdorff
+
+    sequences:
+      # cat2
+      8ivfbv2_longdress_vox10:
+      8ivfbv2_loot_vox10:
+      8ivfbv2_redandblack_vox10:
+      8ivfbv2_soldier_vox10:
+      basketball_player_vox11:
+      dancer_player_vox11:
+      queen:

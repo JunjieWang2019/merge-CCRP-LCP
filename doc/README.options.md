@@ -628,6 +628,10 @@ Coding method to use for the current attribute:
   | 0     | Region Adaptive Hierarchical Transform (RAHT)              |
   | 3     | Uncompressed (PCM)                                         |
 
+### `--integerHaar=0|1`
+Enables interger HAAR transform instead of RAHT.
+`--integerHaar=1` shall be combined with `--qp=4` for lossless transform.
+
 ### `--rahtPredictionEnabled=0|1`
 Controls the use of transform domain prediction of RAHT coefficients
 from spatially upsampling the DC values of neighbouring parent nodes

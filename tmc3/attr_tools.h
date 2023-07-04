@@ -59,7 +59,8 @@ struct MotionVector {
 void computeParentDc(
   const int64_t weights[],
   std::vector<int64_t>::const_iterator dc,
-  std::vector<FixedPoint>& parentDc);
+  std::vector<FixedPoint>& parentDc,
+  bool integer_haar_enable_flag);
 
 void translateLayer(
   std::vector<int64_t>& layerAttr,
@@ -71,6 +72,7 @@ void translateLayer(
   int64_t* morton_rf_transformed,
   int64_t* morton_mc,
   int* attr_mc,
+  bool integer_haar_enable_flag,
   size_t layerSize = 0);
 
 //============================================================================
@@ -195,6 +197,7 @@ namespace attr {
     const int64_t weights[8],
     std::vector<int64_t>::const_iterator dc);
 
+  template<class Kernel>
   Mode choseMode(
     ModeEncoder& rdo,
     const VecAttr& transformBuf,
@@ -207,11 +210,59 @@ namespace attr {
 
 }  // namespace AttrPrediction
 
+//============================================================================
+// Encapsulation of a RAHT transform stage.
+
 class RahtKernel {
 public:
-  RahtKernel(int weightLeft, int weightRight);
-  void fwdTransform(FixedPoint& lf, FixedPoint& hf);
-  void invTransform(FixedPoint& left, FixedPoint& right);
+  RahtKernel(int weightLeft, int weightRight, bool scaledWeights=false)
+  {
+    if (scaledWeights) {
+      _a.val = weightLeft;
+      _b.val = weightRight;
+    } else {
+      uint64_t w = weightLeft + weightRight;
+      uint64_t isqrtW = irsqrt(w);
+      _a.val =
+        (isqrt(uint64_t(weightLeft) << (2 * _a.kFracBits)) * isqrtW) >> 40;
+      _b.val =
+        (isqrt(uint64_t(weightRight) << (2 * _b.kFracBits)) * isqrtW) >> 40;
+    }
+  }
+
+  void fwdTransform(FixedPoint& lf, FixedPoint& hf)
+  {
+    // lf = right * b + left * a
+    // hf = right * a - left * b
+    auto tmp = lf.val * _b.val;
+    lf.val = lf.val * _a.val + hf.val * _b.val;
+    hf.val = hf.val * _a.val - tmp;
+    //auto tmp = lf.val * _b.val;
+    //lf.val *= _a.val;
+    //lf.val += hf.val * _b.val;
+    //hf.val *= _a.val;
+    //hf.val -= tmp;
+
+    lf.fixAfterMultiplication();
+    hf.fixAfterMultiplication();
+  }
+
+  void invTransform(FixedPoint& left, FixedPoint& right)
+  {
+    // left = lf * a - hf * b
+    // right = lf * b + hf * a
+    auto tmp = right.val * _b.val;
+    right.val = right.val * _a.val + left.val * _b.val;
+    left.val = left.val *_a.val - tmp;
+    //auto tmp = right.val * _b.val;
+    //right.val *= _a.val;
+    //right.val += left.val * _b.val;
+    //left.val *= _a.val;
+    //left.val -= tmp;
+
+    right.fixAfterMultiplication();
+    left.fixAfterMultiplication();
+  }
 
   int64_t getW0() { return _a.val; }
   int64_t getW1() { return _b.val; }
@@ -221,11 +272,96 @@ private:
 };
 
 //============================================================================
+// Encapsulation of an Integer Haar transform stage.
+
+class HaarKernel {
+public:
+  HaarKernel(int weightLeft, int weightRight, bool scaledWeights=false) { }
+
+  void fwdTransform(FixedPoint& lf, FixedPoint& hf)
+  {
+    hf.val -= lf.val;
+    lf.val += ((hf.val >> (1 + hf.kFracBits)) << hf.kFracBits);
+  }
+
+  void invTransform(FixedPoint& left, FixedPoint& right)
+  {
+    left.val -= (((right.val >> (1 + right.kFracBits)) << right.kFracBits));
+    right.val += left.val;
+  }
+
+  int64_t getW0() { return 1; }
+  int64_t getW1() { return 1; }
+
+};
+
+//============================================================================
 // In-place transform a set of sparse 2x2x2 blocks each using the same weights
 
-void fwdTransformBlock222(
-  const int numBufs, VecAttr::iterator buf, const int64_t weights[]);
+template<class Kernel>
+void
+fwdTransformBlock222(
+  const int numBufs, VecAttr::iterator buf, const int64_t weights[])
+{
+  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
+  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
+  for (int i = 0, iw = 0; i < 12; i++, iw += 2) {
+    int i0 = a[i];
+    int i1 = b[i];
+    int64_t w0 = weights[iw + 32];
+    int64_t w1 = weights[iw + 33];
 
-void invTransformBlock222(
-  const int numBufs, VecAttr::iterator buf, const int64_t weights[]);
+    if (!w0 && !w1)
+      continue;
+
+    // only one occupied, propagate to next level
+    if (!w0 || !w1) {
+      if (!w0) {
+        for (int k = 0; k < numBufs; k++)
+          std::swap(buf[k][i0], buf[k][i1]);
+      }
+      continue;
+    }
+
+    // actual transform
+    Kernel kernel(w0, w1, true);
+    for (int k = 0; k < numBufs; k++) {
+      kernel.fwdTransform(buf[k][i0], buf[k][i1]);
+    }
+  }
+}
+
+template<class Kernel>
+void
+invTransformBlock222(
+  const int numBufs, VecAttr::iterator buf, const int64_t weights[])
+{
+  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
+  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
+  for (int i = 11, iw = 22; i >= 0; i--, iw -= 2) {
+    int i0 = a[i];
+    int i1 = b[i];
+    int64_t w0 = weights[iw + 32];
+    int64_t w1 = weights[iw + 33];
+
+    if (!w0 && !w1)
+      continue;
+
+    // only one occupied, propagate to next level
+    if (!w0 || !w1) {
+      if (!w0) {
+        for (int k = 0; k < numBufs; k++)
+          std::swap(buf[k][i0], buf[k][i1]);
+      }
+      continue;
+    }
+
+    // actual transform
+    Kernel kernel(w0, w1, true);
+    for (int k = 0; k < numBufs; k++) {
+      kernel.invTransform(buf[k][i0], buf[k][i1]);
+    }
+  }
+}
+
 } /* namespace pcc */

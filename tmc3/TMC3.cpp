@@ -937,6 +937,12 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "  0: Region Adaptive Hierarchical Transform (RAHT)\n"
     "  3: Uncompressed (PCM)")
 
+  ("integerHaar",
+    params_attr.aps.rahtPredParams.integer_haar_enable_flag, false,
+    "Controls Integer Haar Transform method:\n"
+    " 0: off\n"
+    " 1: Turn on Integer Haar Transform")
+
   ("rahtPredictionEnabled",
     params_attr.aps.rahtPredParams.prediction_enabled_flag, true,
     "Controls the use of transform-domain prediction")
