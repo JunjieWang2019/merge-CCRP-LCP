@@ -721,6 +721,12 @@ uraht_process(
         predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
     }
     int distanceToRoot = rootLevel - level / 3;
+    bool upperInferMode = false;
+    if (coder.isInterEnabled()) {
+      if ((distanceToRoot < rahtPredParams.upper_mode_level)
+        && (distanceToRoot < rootLevel - rahtPredParams.mode_level + 1))
+        upperInferMode = true;
+    }
 
     // Motion compensation
     if (coder.isInterEnabled()) {
@@ -957,7 +963,7 @@ uraht_process(
         ? getMode(
             coder, nodeCnt, predCtxLevel, enableIntraPrediction,
             enableInterPrediction, weightsParentIt->mode, neighborsMode, numAttrs,
-            weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp)
+            weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp, upperInferMode)
         : nodeCnt > 1 && enableIntraPrediction ? Mode::Intra : Mode::Null;
 
       for (auto weightsChild = weightsParentIt->firstChild;
@@ -1301,8 +1307,16 @@ regionAdaptiveHierarchicalTransform(
       Mode neighborsMode, int numAttrs, int64_t weights[],
       std::vector<int64_t>::const_iterator attrRecParent,
       VecAttr& transformBuf, std::vector<Mode>& modes, const int qpLayer,
-      const Qps* nodeQp) {
+      const Qps* nodeQp, bool upperInferMode) {
       if (nodeCnt > 1) {
+        if (upperInferMode) {
+          if (enableInterPrediction)
+            return Mode::Inter;
+          else if (enableIntraPrediction)
+            return Mode::Intra;
+          else
+            return Mode::Null;
+        }
         int predCtxMode;
         auto inferredPredMode = attr::getInferredMode(
           predCtxMode, enableIntraPrediction,
@@ -1367,8 +1381,16 @@ regionAdaptiveHierarchicalInverseTransform(
       Mode neighborsMode, int numAttrs, int64_t weights[],
       std::vector<int64_t>::const_iterator attrRecParent,
       VecAttr& transformBuf, std::vector<Mode>& modes, const int qpLayer,
-      const Qps* nodeQp) {
+      const Qps* nodeQp, bool upperInferMode) {
       if (nodeCnt > 1) {
+        if (upperInferMode) {
+          if (enableInterPrediction)
+            return Mode::Inter;
+          else if (enableIntraPrediction)
+            return Mode::Intra;
+          else
+            return Mode::Null;
+        }
         int predCtxMode;
         auto inferredPredMode = attr::getInferredMode(
           predCtxMode, enableIntraPrediction,

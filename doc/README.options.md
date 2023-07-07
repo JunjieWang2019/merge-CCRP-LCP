@@ -661,7 +661,10 @@ Controls the use of transform domain prediction of RAHT coefficients
 from motion compensated reference frame.
 
 ### `--rahtModeLevel=INT-VALUE`
-Controls the RAHT level from which the prediction mode is signaled.
+Controls the RAHT level from which the prediction mode is used.
+
+### `--rahtUpperModeLevel=INT-VALUE`
+Controls the RAHT upper level from which the prediction mode is signaled.
 
 ### `--qp=INT-VALUE`
 Attribute's luma quantization parameter.

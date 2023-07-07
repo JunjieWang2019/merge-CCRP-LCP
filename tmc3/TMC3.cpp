@@ -968,7 +968,11 @@ ParseParameters(int argc, char* argv[], Parameters& params)
 
   ("rahtModeLevel",
     params_attr.aps.rahtPredParams.mode_level, 2,
-    "Level to start signaling the prediction mode")
+    "Level to start using the prediction mode")
+
+  ("rahtUpperModeLevel",
+    params_attr.aps.rahtPredParams.upper_mode_level, 4,
+    "Upper level to start signaling the prediction mode")
 
   ("qp",
     // NB: this is adjusted with minus 4 after the arguments are parsed
