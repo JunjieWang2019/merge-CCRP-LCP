@@ -40,6 +40,49 @@
 namespace pcc {
 
 //============================================================================
+// Attribute methods
+
+std::vector<int>
+sortedPointCloud(
+  const int attribCount,
+  const PCCPointSet3& pointCloud,
+  std::vector<int64_t>& mortonCode,
+  std::vector<int>& attributes)
+{
+  const auto voxelCount = pointCloud.getPointCount();
+  std::vector<MortonCodeWithIndex> packedVoxel;
+  packedVoxel.reserve(voxelCount);
+  for (int n = 0; n < voxelCount; n++) {
+    packedVoxel.push_back({mortonAddr(pointCloud[n]), pointCloud[n], n});
+  }
+  sort(packedVoxel.begin(), packedVoxel.end());
+
+  std::vector<int> indexOrd;
+  mortonCode.reserve(voxelCount);
+  indexOrd.reserve(voxelCount);
+  for (auto& voxel : packedVoxel) {
+    mortonCode.push_back(voxel.mortonCode);
+    indexOrd.push_back(voxel.index);
+  }
+  packedVoxel.clear();
+
+  if (attribCount==3 && pointCloud.hasColors()) {
+    attributes.reserve(voxelCount * 3);
+    for (auto index : indexOrd) {
+      const auto& color = pointCloud.getColor(index);
+      attributes.push_back(color[0]);
+      attributes.push_back(color[1]);
+      attributes.push_back(color[2]);
+    }
+  } else if (attribCount == 1 && pointCloud.hasReflectances()) {
+    attributes.reserve(voxelCount);
+    for (auto index : indexOrd) {
+      attributes.push_back(pointCloud.getReflectance(index));
+    }
+  }
+
+  return indexOrd;
+}
 
 //============================================================================
 

@@ -461,35 +461,29 @@ AttributeEncoder::encode(
 
 //----------------------------------------------------------------------------
 
-void
-AttributeEncoder::encodeReflectancesTransformRaht(
+template<const int attribCount>
+inline void
+encodeRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
   const QpSet& qpSet,
   PCCPointSet3& pointCloud,
   PCCResidualsEncoder& encoder)
 {
-  const int voxelCount = int(pointCloud.getPointCount());
-  std::vector<MortonCodeWithIndex> packedVoxel(voxelCount);
-  for (int n = 0; n < voxelCount; n++) {
-    packedVoxel[n].mortonCode = mortonAddr(pointCloud[n]);
-    packedVoxel[n].index = n;
-  }
-  sort(packedVoxel.begin(), packedVoxel.end());
+  const int voxelCount = pointCloud.getPointCount();
 
   // Allocate arrays.
-  const int attribCount = 1;
-  std::vector<int64_t> mortonCode(voxelCount);
-  std::vector<int> attributes(attribCount * voxelCount);
+  std::vector<int64_t> mortonCode;
+  std::vector<int> attributes;
+  std::vector<Qps> pointQpOffsets;
   std::vector<int> coefficients(attribCount * voxelCount);
-  std::vector<Qps> pointQpOffsets(voxelCount);
 
   // Populate input arrays.
-  for (int n = 0; n < voxelCount; n++) {
-    mortonCode[n] = packedVoxel[n].mortonCode;
-    const auto reflectance = pointCloud.getReflectance(packedVoxel[n].index);
-    attributes[attribCount * n] = reflectance;
-    pointQpOffsets[n] = qpSet.regionQpOffset(pointCloud[packedVoxel[n].index]);
+  auto indexOrd =
+    sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
+  pointQpOffsets.reserve(voxelCount);
+  for (auto index : indexOrd) {
+    pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
   }
 
   // Transform.
@@ -499,30 +493,62 @@ AttributeEncoder::encodeReflectancesTransformRaht(
 
   // Entropy encode.
   int zeroRun = 0;
-  for (int n = 0; n < voxelCount; ++n) {
-    auto value = coefficients[n];
-    if (!value)
-      ++zeroRun;
-    else {
-      encoder.encodeRunLength(zeroRun);
-      encoder.encode(value);
-      zeroRun = 0;
+  if (attribCount == 3) {
+    int values[attribCount];
+    for (int n = 0; n < voxelCount; ++n) {
+      for (int d = 0; d < attribCount; ++d) {
+        values[d] = coefficients[voxelCount * d + n];
+      }
+      if (!values[0] && !values[1] && !values[2])
+        ++zeroRun;
+      else {
+        encoder.encodeRunLength(zeroRun);
+        encoder.encode(values[0], values[1], values[2]);
+        zeroRun = 0;
+      }
+    }
+  } else if (attribCount == 1) {
+    for (int n = 0; n < voxelCount; ++n) {
+      auto value = coefficients[n];
+      if (!value)
+        ++zeroRun;
+      else {
+        encoder.encodeRunLength(zeroRun);
+        encoder.encode(value);
+        zeroRun = 0;
+      }
     }
   }
   if (zeroRun)
     encoder.encodeRunLength(zeroRun);
 
-  const int64_t maxReflectance = (1 << desc.bitdepth) - 1;
-  const int64_t minReflectance = 0;
-  for (int n = 0; n < voxelCount; n++) {
-    int64_t val = attributes[attribCount * n];
-    const attr_t reflectance =
-      attr_t(PCCClip(val, minReflectance, maxReflectance));
-    pointCloud.setReflectance(packedVoxel[n].index, reflectance);
+  int clipMax = (1 << desc.bitdepth) - 1;
+  auto attribute = attributes.begin();
+  if (attribCount == 3) {
+    for (auto index : indexOrd) {
+      auto& color = pointCloud.getColor(index);
+      color[0] = attr_t(PCCClip(*attribute++, 0, clipMax));
+      color[1] = attr_t(PCCClip(*attribute++, 0, clipMax));
+      color[2] = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
+  } else if (attribCount == 1) {
+    for (auto index : indexOrd) {
+      auto& refl = pointCloud.getReflectance(index);
+      refl = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
   }
 }
 
-//----------------------------------------------------------------------------
+void
+AttributeEncoder::encodeReflectancesTransformRaht(
+  const AttributeDescription& desc,
+  const AttributeParameterSet& aps,
+  const QpSet& qpSet,
+  PCCPointSet3& pointCloud,
+  PCCResidualsEncoder& encoder)
+{
+  encodeRaht<1>(desc, aps, qpSet, pointCloud, encoder);
+}
 
 void
 AttributeEncoder::encodeColorsTransformRaht(
@@ -532,65 +558,7 @@ AttributeEncoder::encodeColorsTransformRaht(
   PCCPointSet3& pointCloud,
   PCCResidualsEncoder& encoder)
 {
-  const int voxelCount = int(pointCloud.getPointCount());
-  std::vector<MortonCodeWithIndex> packedVoxel(voxelCount);
-  for (int n = 0; n < voxelCount; n++) {
-    packedVoxel[n].mortonCode = mortonAddr(pointCloud[n]);
-    packedVoxel[n].index = n;
-  }
-  sort(packedVoxel.begin(), packedVoxel.end());
-
-  // Allocate arrays.
-  const int attribCount = 3;
-  std::vector<int64_t> mortonCode(voxelCount);
-  std::vector<int> attributes(attribCount * voxelCount);
-  std::vector<int> coefficients(attribCount * voxelCount);
-  std::vector<Qps> pointQpOffsets(voxelCount);
-
-  // Populate input arrays.
-  for (int n = 0; n < voxelCount; n++) {
-    mortonCode[n] = packedVoxel[n].mortonCode;
-    const auto color = pointCloud.getColor(packedVoxel[n].index);
-    attributes[attribCount * n] = color[0];
-    attributes[attribCount * n + 1] = color[1];
-    attributes[attribCount * n + 2] = color[2];
-    pointQpOffsets[n] = qpSet.regionQpOffset(pointCloud[packedVoxel[n].index]);
-  }
-
-  // Transform.
-  regionAdaptiveHierarchicalTransform(
-    aps.rahtPredParams, qpSet, pointQpOffsets.data(), mortonCode.data(),
-    attributes.data(), attribCount, voxelCount, coefficients.data());
-
-  // Entropy encode.
-  int values[attribCount];
-  int zeroRun = 0;
-  for (int n = 0; n < voxelCount; ++n) {
-    for (int d = 0; d < attribCount; ++d) {
-      values[d] = coefficients[voxelCount * d + n];
-    }
-    if (!values[0] && !values[1] && !values[2])
-      ++zeroRun;
-    else {
-      encoder.encodeRunLength(zeroRun);
-      encoder.encode(values[0], values[1], values[2]);
-      zeroRun = 0;
-    }
-  }
-  if (zeroRun)
-    encoder.encodeRunLength(zeroRun);
-
-  int clipMax = (1 << desc.bitdepth) - 1;
-  for (int n = 0; n < voxelCount; n++) {
-    const int r = attributes[attribCount * n];
-    const int g = attributes[attribCount * n + 1];
-    const int b = attributes[attribCount * n + 2];
-    Vec3<attr_t> color;
-    color[0] = attr_t(PCCClip(r, 0, clipMax));
-    color[1] = attr_t(PCCClip(g, 0, clipMax));
-    color[2] = attr_t(PCCClip(b, 0, clipMax));
-    pointCloud.setColor(packedVoxel[n].index, color);
-  }
+  encodeRaht<3>(desc, aps, qpSet, pointCloud, encoder);
 }
 
 //============================================================================

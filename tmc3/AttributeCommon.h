@@ -46,6 +46,14 @@ namespace pcc {
 
 //============================================================================
 
+std::vector<int> sortedPointCloud(
+  const int attribCount,
+  const PCCPointSet3& pointCloud,
+  std::vector<int64_t>& mortonCode,
+  std::vector<int>& attributes);
+
+//----------------------------------------------------------------------------
+
 class AttributeContexts {
 public:
   void reset();

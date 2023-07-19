@@ -248,6 +248,84 @@ AttributeDecoder::decode(
 
 //----------------------------------------------------------------------------
 
+template<const int attribCount>
+inline void
+decodeRaht(
+  const AttributeDescription& desc,
+  const AttributeParameterSet& aps,
+  const QpSet& qpSet,
+  PCCResidualsDecoder& decoder,
+  PCCPointSet3& pointCloud)
+{
+  const int voxelCount = pointCloud.getPointCount();
+
+  // Morton codes
+  std::vector<int64_t> mortonCode;
+  std::vector<int> attributes;
+  auto indexOrd =
+    sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
+  attributes.resize(voxelCount * attribCount);
+
+  // Entropy decode
+  std::vector<int> coefficients(attribCount * voxelCount, 0);
+  std::vector<Qps> pointQpOffsets;
+  pointQpOffsets.reserve(voxelCount);
+
+  int n = 0;
+  for (auto index : indexOrd) {
+    pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
+  }
+
+  // Decode coefficients
+  if (attribCount == 3) {
+    int32_t values[3];
+
+    for (int n = 0; n < voxelCount; n++) {
+      int zeroRun = decoder.decodeRunLength();
+      if (zeroRun) {
+        n += zeroRun;
+        if (n >= voxelCount)
+          break;
+      }
+
+      decoder.decode(values);
+      for (int d = 0; d < 3; d++)
+        coefficients[n + voxelCount * d] = values[d];
+    }
+  } else if (attribCount == 1) {
+    for (int n = 0; n < voxelCount; n++) {
+      int zeroRun = decoder.decodeRunLength();
+      if (zeroRun) {
+        n += zeroRun;
+        if (n >= voxelCount)
+          break;
+      }
+      coefficients[n] = decoder.decode();
+    }
+  }
+
+  regionAdaptiveHierarchicalInverseTransform(
+    aps.rahtPredParams, qpSet,
+    pointQpOffsets.data(), mortonCode.data(), attributes.data(), attribCount,
+    voxelCount, coefficients.data());
+
+  int clipMax = (1 << desc.bitdepth) - 1;
+  auto attribute = attributes.begin();
+  if (attribCount == 3) {
+    for (auto index : indexOrd) {
+      auto& color = pointCloud.getColor(index);
+      color[0] = attr_t(PCCClip(*attribute++, 0, clipMax));
+      color[1] = attr_t(PCCClip(*attribute++, 0, clipMax));
+      color[2] = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
+  } else if (attribCount == 1) {
+    for (auto index : indexOrd) {
+      auto& refl = pointCloud.getReflectance(index);
+      refl = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
+  }
+}
+
 void
 AttributeDecoder::decodeReflectancesRaht(
   const AttributeDescription& desc,
@@ -256,55 +334,8 @@ AttributeDecoder::decodeReflectancesRaht(
   PCCResidualsDecoder& decoder,
   PCCPointSet3& pointCloud)
 {
-  const int voxelCount = int(pointCloud.getPointCount());
-  std::vector<MortonCodeWithIndex> packedVoxel(voxelCount);
-  for (int n = 0; n < voxelCount; n++) {
-    packedVoxel[n].mortonCode = mortonAddr(pointCloud[n]);
-    packedVoxel[n].index = n;
-  }
-  sort(packedVoxel.begin(), packedVoxel.end());
-
-  // Morton codes
-  std::vector<int64_t> mortonCode(voxelCount);
-  for (int n = 0; n < voxelCount; n++) {
-    mortonCode[n] = packedVoxel[n].mortonCode;
-  }
-
-  // Entropy decode
-  const int attribCount = 1;
-  std::vector<int> coefficients(attribCount * voxelCount);
-  std::vector<Qps> pointQpOffsets(voxelCount);
-  int zeroRunRem = 0;
-  for (int n = 0; n < voxelCount; ++n) {
-    if (--zeroRunRem < 0)
-      zeroRunRem = decoder.decodeRunLength();
-
-    uint32_t value = 0;
-    if (!zeroRunRem)
-      value = decoder.decode();
-
-    coefficients[n] = value;
-    pointQpOffsets[n] = qpSet.regionQpOffset(pointCloud[packedVoxel[n].index]);
-  }
-
-  std::vector<int> attributes(attribCount * voxelCount);
-
-  regionAdaptiveHierarchicalInverseTransform(
-    aps.rahtPredParams, qpSet,
-    pointQpOffsets.data(), mortonCode.data(), attributes.data(), attribCount,
-    voxelCount, coefficients.data());
-
-  const int64_t maxReflectance = (1 << desc.bitdepth) - 1;
-  const int64_t minReflectance = 0;
-  for (int n = 0; n < voxelCount; n++) {
-    int64_t val = attributes[attribCount * n];
-    const attr_t reflectance =
-      attr_t(PCCClip(val, minReflectance, maxReflectance));
-    pointCloud.setReflectance(packedVoxel[n].index, reflectance);
-  }
+  decodeRaht<1>(desc, aps, qpSet, decoder, pointCloud);
 }
-
-//----------------------------------------------------------------------------
 
 void
 AttributeDecoder::decodeColorsRaht(
@@ -314,58 +345,7 @@ AttributeDecoder::decodeColorsRaht(
   PCCResidualsDecoder& decoder,
   PCCPointSet3& pointCloud)
 {
-  const int voxelCount = int(pointCloud.getPointCount());
-  std::vector<MortonCodeWithIndex> packedVoxel(voxelCount);
-  for (int n = 0; n < voxelCount; n++) {
-    packedVoxel[n].mortonCode = mortonAddr(pointCloud[n]);
-    packedVoxel[n].index = n;
-  }
-  sort(packedVoxel.begin(), packedVoxel.end());
-
-  // Morton codes
-  std::vector<int64_t> mortonCode(voxelCount);
-  for (int n = 0; n < voxelCount; n++) {
-    mortonCode[n] = packedVoxel[n].mortonCode;
-  }
-
-  // Entropy decode
-  const int attribCount = 3;
-  std::vector<int> coefficients(attribCount * voxelCount);
-  std::vector<Qps> pointQpOffsets(voxelCount);
-
-  int zeroRunRem = 0;
-  for (int n = 0; n < voxelCount; ++n) {
-    if (--zeroRunRem < 0)
-      zeroRunRem = decoder.decodeRunLength();
-
-    int32_t values[3] = {};
-    if (!zeroRunRem)
-      decoder.decode(values);
-
-    for (int d = 0; d < attribCount; ++d) {
-      coefficients[voxelCount * d + n] = values[d];
-    }
-    pointQpOffsets[n] = qpSet.regionQpOffset(pointCloud[packedVoxel[n].index]);
-  }
-
-  std::vector<int> attributes(attribCount * voxelCount);
-
-  regionAdaptiveHierarchicalInverseTransform(
-    aps.rahtPredParams, qpSet,
-    pointQpOffsets.data(), mortonCode.data(), attributes.data(), attribCount,
-    voxelCount, coefficients.data());
-
-  int clipMax = (1 << desc.bitdepth) - 1;
-  for (int n = 0; n < voxelCount; n++) {
-    const int r = attributes[attribCount * n];
-    const int g = attributes[attribCount * n + 1];
-    const int b = attributes[attribCount * n + 2];
-    Vec3<attr_t> color;
-    color[0] = attr_t(PCCClip(r, 0, clipMax));
-    color[1] = attr_t(PCCClip(g, 0, clipMax));
-    color[2] = attr_t(PCCClip(b, 0, clipMax));
-    pointCloud.setColor(packedVoxel[n].index, color);
-  }
+  decodeRaht<3>(desc, aps, qpSet, decoder, pointCloud);
 }
 
 //============================================================================
