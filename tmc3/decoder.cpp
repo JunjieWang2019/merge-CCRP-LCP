@@ -270,7 +270,9 @@ PCCTMC3Decoder3::decompress(
 
     return decodeGeometryBrick(*buf);
 
-  case PayloadType::kAttributeBrick: decodeAttributeBrick(*buf); return 0;
+  case PayloadType::kAttributeBrick:
+    decodeAttributeBrick(*buf);
+    return 0;
 
   case PayloadType::kConstantAttribute:
     decodeConstantAttribute(*buf);
@@ -506,9 +508,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
-        *_ctxtMemOctreeGeom, aec
-        ,_refFrame
-	  );
+        *_ctxtMemOctreeGeom, aec, _refFrame);
     }
   } else {
     decodeGeometryTrisoup(
@@ -579,9 +579,8 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 
   clock_user.start();
 
-  if (true)
-    for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
-      _currentPointCloud[i] += _sliceOrigin;
+  for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
+    _currentPointCloud[i] += _sliceOrigin;
 
   auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
   _attrDecoder->decode(
@@ -590,9 +589,8 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     ctxtMemAttr, _currentPointCloud
     , attrInterPredParams);
 
-  if (true)
-    for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
-      _currentPointCloud[i] -= _sliceOrigin;
+  for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
+    _currentPointCloud[i] -= _sliceOrigin;
 
   attrInterPredParams.referencePointCloud.clear();
 
