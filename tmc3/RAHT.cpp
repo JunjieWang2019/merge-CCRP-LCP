@@ -697,7 +697,8 @@ uraht_process(
   weightsLf.resize(1);
   attrsLf.resize(numAttrs);
   int trainZeros = 0;
-  int rootLevel = (levelHfPos.size() - 1) / 3;
+  // NB: rootLevel = ceil((levelHfPos.size() - 1)/3.0)
+  int rootLevel = (levelHfPos.size() + 1) / 3;
   for (int level = levelHfPos.size() - 1, isFirst = 1; level > 0; /*nop*/) {
     int numNodes = weightsHf.size() - levelHfPos[level];
     weightsLf.resize(weightsLf.size() + numNodes);
