@@ -42,6 +42,7 @@
 #include "PayloadBuffer.h"
 #include "PCCTMC3Common.h"
 #include "quantization.h"
+#include "attr_tools.h"
 
 namespace pcc {
 

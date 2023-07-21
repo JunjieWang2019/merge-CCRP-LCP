@@ -58,6 +58,7 @@ file(GLOB PROJECT_IN_FILES
 )
 
 file(GLOB PROJECT_INC_FILES
+  "attr_tools.h"
   "Attribute.h"
   "AttributeCommon.h"
   "AttributeDecoder.h"
@@ -109,6 +110,7 @@ file(GLOB PROJECT_INC_FILES
 )
 
 file(GLOB PROJECT_CPP_FILES
+  "attr_tools.cpp"
   "AttributeCommon.cpp"
   "AttributeDecoder.cpp"
   "AttributeEncoder.cpp"

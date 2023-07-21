@@ -39,8 +39,10 @@
 #include "FixedPoint.h"
 #include "quantization.h"
 #include "hls.h"
-
+#include "attr_tools.h"
+#include "ply.h"
 #include <vector>
+#include "pointset_processing.h"
 
 namespace pcc {
 
@@ -55,7 +57,7 @@ void regionAdaptiveHierarchicalTransform(
   int* coefficients);
 
 void regionAdaptiveHierarchicalInverseTransform(
-  const RahtPredictionParams &rahtPredParams,
+  const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
   const Qps* pointQpOffset,
   int64_t* mortonCode,

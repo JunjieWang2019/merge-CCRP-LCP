@@ -64,6 +64,7 @@ public:
   using Base::setBypassBinCodingWithoutProbUpdate;
   using Base::start;
   using Base::stop;
+  using Base::getProbabilityLUT;
 
   //--------------------------------------------------------------------------
   // :: encoding / common binarisation methods

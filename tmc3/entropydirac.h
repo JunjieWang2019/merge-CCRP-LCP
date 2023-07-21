@@ -143,6 +143,13 @@ namespace dirac {
     }
 
     //------------------------------------------------------------------------
+    void getProbabilityLUT(uint16_t* out) const
+    {
+      for (int i = 0; i < 512; i++)
+        out[i] = impl.lut[i];
+    }
+
+    //------------------------------------------------------------------------
 
     void setBuffer(size_t size, uint8_t* buffer)
     {

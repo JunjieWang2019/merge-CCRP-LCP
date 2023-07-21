@@ -42,6 +42,7 @@
 #include "PCCPointSet.h"
 #include "PCCTMC3Common.h"
 #include "entropy.h"
+#include "attr_tools.h"
 
 namespace pcc {
 

@@ -398,8 +398,8 @@ AttributeEncoder::encode(
   AttributeBrickHeader& abh,
   AttributeContexts& ctxtMem,
   PCCPointSet3& pointCloud,
-  PayloadBuffer* payload
-  , const AttributeInterPredParams &attrInterPredParams)
+  PayloadBuffer* payload,
+  const AttributeInterPredParams& attrInterPredParams)
 {
   if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
     AttrRawEncoder::encode(sps, desc, attr_aps, abh, pointCloud, payload);

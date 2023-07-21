@@ -69,6 +69,8 @@ public:
   void operator-=(const FixedPoint& that);
   void operator*=(const FixedPoint& that);
   void operator/=(const FixedPoint& that);
+
+  void fixAfterMultiplication();
 };
 
 //============================================================================
@@ -114,7 +116,12 @@ inline void
 FixedPoint::operator*=(const FixedPoint& that)
 {
   this->val *= that.val;
+  fixAfterMultiplication();
+}
 
+inline void
+FixedPoint::fixAfterMultiplication()
+{
   if (this->val < 0)
     this->val = -((kOneHalf - this->val) >> kFracBits);
   else

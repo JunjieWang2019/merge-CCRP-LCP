@@ -46,6 +46,7 @@
 #include "framectr.h"
 #include "geometry.h"
 #include "hls.h"
+#include "attr_tools.h"
 
 namespace pcc {
 

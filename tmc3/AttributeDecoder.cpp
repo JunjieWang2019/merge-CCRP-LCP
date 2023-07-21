@@ -199,9 +199,8 @@ AttributeDecoder::decode(
   const char* payload,
   size_t payloadLen,
   AttributeContexts& ctxtMem,
-  PCCPointSet3& pointCloud  ,
-   const AttributeInterPredParams& attrInterPredParams
-  )
+  PCCPointSet3& pointCloud,
+  const AttributeInterPredParams& attrInterPredParams)
 {
   if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
     AttrRawDecoder::decode(

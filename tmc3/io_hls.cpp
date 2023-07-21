@@ -846,10 +846,10 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   bs.write(aps.aps_slice_qp_deltas_present_flag);
 
   if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
-    bs.write(aps.rahtPredParams.raht_prediction_enabled_flag);
-    if (aps.rahtPredParams.raht_prediction_enabled_flag) {
-      bs.writeUe(aps.rahtPredParams.raht_prediction_threshold0);
-      bs.writeUe(aps.rahtPredParams.raht_prediction_threshold1);
+    bs.write(aps.rahtPredParams.prediction_enabled_flag);
+    if (aps.rahtPredParams.prediction_enabled_flag) {
+      bs.writeUe(aps.rahtPredParams.prediction_threshold0);
+      bs.writeUe(aps.rahtPredParams.prediction_threshold1);
     }
   }
 
@@ -873,12 +873,12 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
 
     if (
       aps.attr_encoding == AttributeEncoding::kRAHTransform
-      && aps.rahtPredParams.raht_prediction_enabled_flag) {
-      bs.write(aps.rahtPredParams.raht_prediction_skip1_flag);
-      bs.write(aps.rahtPredParams.raht_subnode_prediction_enabled_flag);
-      if (aps.rahtPredParams.raht_subnode_prediction_enabled_flag) 
+      && aps.rahtPredParams.prediction_enabled_flag) {
+      bs.write(aps.rahtPredParams.prediction_skip1_flag);
+      bs.write(aps.rahtPredParams.subnode_prediction_enabled_flag);
+      if (aps.rahtPredParams.subnode_prediction_enabled_flag) 
         for (int i = 0; i < 5; i++) 
-          bs.writeUe(aps.rahtPredParams.raht_prediction_weights[i]);
+          bs.writeUe(aps.rahtPredParams.prediction_weights[i]);
     }
   }
 
@@ -905,10 +905,10 @@ parseAps(const PayloadBuffer& buf)
   bs.read(&aps.aps_slice_qp_deltas_present_flag);
 
   if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
-    bs.read(&aps.rahtPredParams.raht_prediction_enabled_flag);
-    if (aps.rahtPredParams.raht_prediction_enabled_flag) {
-      bs.readUe(&aps.rahtPredParams.raht_prediction_threshold0);
-      bs.readUe(&aps.rahtPredParams.raht_prediction_threshold1);
+    bs.read(&aps.rahtPredParams.prediction_enabled_flag);
+    if (aps.rahtPredParams.prediction_enabled_flag) {
+      bs.readUe(&aps.rahtPredParams.prediction_threshold0);
+      bs.readUe(&aps.rahtPredParams.prediction_threshold1);
     }
   }
 
@@ -921,8 +921,8 @@ parseAps(const PayloadBuffer& buf)
   }
 
   bool aps_extension_flag = bs.read();
-  aps.rahtPredParams.raht_prediction_skip1_flag = false;
-  aps.rahtPredParams.raht_subnode_prediction_enabled_flag = false;
+  aps.rahtPredParams.prediction_skip1_flag = false;
+  aps.rahtPredParams.subnode_prediction_enabled_flag = false;
   if (aps_extension_flag) {
     bs.read(&aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
@@ -931,14 +931,13 @@ parseAps(const PayloadBuffer& buf)
 
     if (
       aps.attr_encoding == AttributeEncoding::kRAHTransform
-      && aps.rahtPredParams.raht_prediction_enabled_flag) {
-      bs.read(&aps.rahtPredParams.raht_prediction_skip1_flag);
-      bs.read(&aps.rahtPredParams.raht_subnode_prediction_enabled_flag);
-      if (aps.rahtPredParams.raht_subnode_prediction_enabled_flag) {
-        aps.rahtPredParams.raht_prediction_weights.resize(5);
+      && aps.rahtPredParams.prediction_enabled_flag) {
+      bs.read(&aps.rahtPredParams.prediction_skip1_flag);
+      bs.read(&aps.rahtPredParams.subnode_prediction_enabled_flag);
+      if (aps.rahtPredParams.subnode_prediction_enabled_flag) {
+        aps.rahtPredParams.prediction_weights.resize(5);
         for (int i = 0; i < 5; i++)
-          bs.readUe(&aps.rahtPredParams.raht_prediction_weights[i]);
-        aps.rahtPredParams.setPredictionWeights();
+          bs.readUe(&aps.rahtPredParams.prediction_weights[i]);
       }
     }
   }

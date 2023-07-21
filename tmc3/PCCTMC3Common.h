@@ -48,6 +48,8 @@
 #include <memory>
 #include <vector>
 
+#include "attr_tools.h"
+
 namespace pcc {
 
 //============================================================================

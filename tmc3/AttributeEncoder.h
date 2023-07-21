@@ -44,6 +44,7 @@
 #include "PCCTMC3Common.h"
 #include "hls.h"
 #include "quantization.h"
+#include "attr_tools.h"
 
 namespace pcc {
 
@@ -64,8 +65,8 @@ public:
     AttributeBrickHeader& abh,
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
-    PayloadBuffer* payload
-    , const AttributeInterPredParams &attrInterPredParams
+    PayloadBuffer* payload,
+    const AttributeInterPredParams& attrInterPredParams
     ) override;
 
 protected:

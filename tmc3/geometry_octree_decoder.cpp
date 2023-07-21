@@ -1152,7 +1152,7 @@ decodeGeometryOctree(
       node.pos <<= nodeSizeLog2 - QuantizerGeom::qpShift(node.qp);
       node.pos = invQuantPosition(node.qp, posQuantBitMasks, node.pos);
     }
-    *nodesRemaining = std::move(fifo);    
+    *nodesRemaining = std::move(fifo);
     return;
   }
 }

@@ -45,6 +45,7 @@
 #include "program_options_lite.h"
 #include "io_tlv.h"
 #include "version.h"
+#include "attr_tools.h"
 
 using namespace std;
 using namespace pcc;
@@ -937,28 +938,28 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "  3: Uncompressed (PCM)")
 
   ("rahtPredictionEnabled",
-    params_attr.aps.rahtPredParams.raht_prediction_enabled_flag, true,
+    params_attr.aps.rahtPredParams.prediction_enabled_flag, true,
     "Controls the use of transform-domain prediction")
 
   ("rahtPredictionThreshold0",
-    params_attr.aps.rahtPredParams.raht_prediction_threshold0, 2,
+    params_attr.aps.rahtPredParams.prediction_threshold0, 2,
     "Grandparent threshold for early transform-domain prediction termination")
 
   ("rahtPredictionThreshold1",
-    params_attr.aps.rahtPredParams.raht_prediction_threshold1, 6,
+    params_attr.aps.rahtPredParams.prediction_threshold1, 6,
     "Parent threshold for early transform-domain prediction termination")
 
   ("rahtPredictionSkip1",
-	  params_attr.aps.rahtPredParams.raht_prediction_skip1_flag, true,
+	  params_attr.aps.rahtPredParams.prediction_skip1_flag, true,
 	  "Controls the use of skipping transform-domain prediction in "
     "one subnode condition")
 
   ("rahtSubnodePredictionEnabled",
-    params_attr.aps.rahtPredParams.raht_subnode_prediction_enabled_flag, true,
+    params_attr.aps.rahtPredParams.subnode_prediction_enabled_flag, true,
     "Controls the use of transform-domain subnode prediction")
 
   ("rahtPredictionWeights",
-    params_attr.aps.rahtPredParams.raht_prediction_weights, {9,3,1,5,2},
+    params_attr.aps.rahtPredParams.prediction_weights, {9,3,1,5,2},
     "Prediction weights for neighbours")
 
   ("qp",
@@ -1293,12 +1294,12 @@ sanitizeEncoderOpts(
 
     if (attr_aps.attr_encoding == AttributeEncoding::kRAHTransform) {
       auto& predParams = attr_aps.rahtPredParams;
-      if (!predParams.raht_prediction_enabled_flag) {
-        predParams.raht_prediction_skip1_flag = false;
-        predParams.raht_subnode_prediction_enabled_flag = false;
+      if (!predParams.prediction_enabled_flag) {
+        predParams.prediction_skip1_flag = false;
+        predParams.subnode_prediction_enabled_flag = false;
       } else {
-        if (predParams.raht_subnode_prediction_enabled_flag) {
-          auto& weights = predParams.raht_prediction_weights;
+        if (predParams.subnode_prediction_enabled_flag) {
+          auto& weights = predParams.prediction_weights;
           if (weights.size() < 5) {
             err.warn() << "Five raht prediciton weights to be specified, "
                        << "appending with zeros\n";
@@ -1308,7 +1309,6 @@ sanitizeEncoderOpts(
                        << "ignoring others.\n";
             weights.erase(weights.begin() + 5, weights.end());
           }
-          predParams.setPredictionWeights();
         }
       }
     }

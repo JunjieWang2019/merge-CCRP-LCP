@@ -44,6 +44,7 @@
 #include "hls.h"
 #include "partitioning.h"
 #include "TMC3.h"
+#include "attr_tools.h"
 namespace pcc {
 
 //============================================================================

@@ -45,20 +45,11 @@
 
 #include "PCCTMC3Common.h"
 #include "PCCMisc.h"
+#include "attr_tools.h"
+
+using pcc::attr::Mode;
 
 namespace pcc {
-
-//============================================================================
-
-struct UrahtNode {
-  int64_t pos;
-  int weight;
-  Qps qp;
-
-  uint8_t occupancy;
-  std::vector<UrahtNode>::iterator firstChild;
-  std::vector<UrahtNode>::iterator lastChild;
-};
 
 //============================================================================
 // remove any non-unique leaves from a level in the uraht tree
@@ -174,6 +165,7 @@ expandLevel(
   for (int i = 0; i < numNodes;) {
     bool isPair = (weightsOutRdIt->pos ^ weightsInRdIt->pos) >> level == 0;
     if (!isPair) {
+      weightsInWrIt->mode = Mode::Null;
       *weightsInWrIt++ = *weightsInRdIt++;
       for (int k = 0; k < numAttrs; k++)
         *attrsInWrIt++ = *attrsInRdIt++;
@@ -191,6 +183,7 @@ expandLevel(
 
     // move In node to correct position, subtracting delta
     *weightsInWrIt = *weightsInRdIt++;
+    weightsInWrIt->mode = Mode::Null;
     (weightsInWrIt++)->weight -= nodeDelta.weight;
     for (int k = 0; k < numAttrs; k++) {
       *attrsInWrIt = *attrsInRdIt++;
@@ -232,6 +225,38 @@ findNeighbour(It first, It last, It from, T value, T2 distance, Cmp compare)
 // Find the neighbours of the node indicated by @t between @first and @last.
 // The position weight of each found neighbour is stored in two arrays.
 
+
+#define MASK_Self 255
+#define MASK_PX 240
+#define MASK_NX 15
+#define MASK_PY 204
+#define MASK_NY 51
+#define MASK_PZ 170
+#define MASK_NZ 85
+#define MASK_PXPY 192
+#define MASK_PXNY 48
+#define MASK_NXPY 12
+#define MASK_NXNY 3
+#define MASK_PYPZ 136
+#define MASK_PYNZ 68
+#define MASK_NYPZ 34
+#define MASK_NYNZ 17
+#define MASK_PZPX 160
+#define MASK_PZNX 10
+#define MASK_NZPX 80
+#define MASK_NZNX 5
+#define MASK_Other 0
+#define MASKS \
+  { \
+    MASK_Self, \
+    MASK_PX,   MASK_PY,   MASK_PZ, \
+    MASK_NX,   MASK_NY,   MASK_NZ, \
+    MASK_PXPY, MASK_PZPX, MASK_PYPZ, \
+    MASK_NXNY, MASK_NZNX, MASK_NYNZ, \
+    MASK_PZNX, MASK_NYPZ, MASK_NXPY, \
+    MASK_PYNZ, MASK_PXNY, MASK_NZPX \
+  };
+
 template<typename It>
 void
 findNeighbours(
@@ -242,13 +267,10 @@ findNeighbours(
   It lastChild,
   int level,
   uint8_t occupancy,
-  int parentNeighIdx[19],
-  int childNeighIdx[12][8],
-  const bool rahtSubnodePredictionEnabled)
+  std::array<ParentIndex, 19>& parentNeighIdx,
+  bool subnodePredictionEnabled)
 {
-  static const uint8_t neighMasks[19] = {255, 240, 204, 170, 192, 160, 136,
-                                         3,   5,   15,  17,  51,  85,  10,
-                                         34,  12,  68,  48,  80};
+  static const uint8_t neighMasks[19] = MASKS;
 
   // current position (discard extra precision)
   int64_t cur_pos = it->pos >> level;
@@ -257,16 +279,22 @@ findNeighbours(
   int64_t base_pos = morton3dAdd(cur_pos, -1ll);
 
   // these neighbour offsets are relative to base_pos
-  static const uint8_t neighOffset[19] = {0, 35, 21, 14, 49, 42, 28, 1,  2, 3,
-                                          4, 5,  6,  10, 12, 17, 20, 33, 34};
+  static const uint8_t neighOffset[19] = {
+    0, 35, 21, 14, 3, 5, 6, 49, 42, 28, 1, 2, 4, 10, 12, 17, 20, 33, 34};
+
+  static const NeighborType type[19] = {
+    Self, Face, Face, Face, Face, Face, Face, Edge, Edge, Edge,
+    Edge, Edge, Edge, Edge, Edge, Edge, Edge, Edge, Edge};
+
+  for (auto& neighbor : parentNeighIdx)
+    neighbor.reset();
 
   // special case for the direct parent (no need to search);
-  parentNeighIdx[0] = std::distance(first, it);
+  parentNeighIdx[0].set(std::distance(first, it), NeighborType::Self);
 
   for (int i = 1; i < 19; i++) {
     // Only look for neighbours that have an effect
     if (!(occupancy & neighMasks[i])) {
-      parentNeighIdx[i] = -1;
       continue;
     }
 
@@ -283,61 +311,116 @@ findNeighbours(
       });
 
     if (found == last) {
-      parentNeighIdx[i] = -1;
       continue;
     }
 
     if ((found->pos >> level) != neigh_pos) {
-      parentNeighIdx[i] = -1;
       continue;
     }
 
-    parentNeighIdx[i] = std::distance(first, found);
+    parentNeighIdx[i].set(std::distance(first, found), type[i]);
   }
 
-  if (rahtSubnodePredictionEnabled) {
-    //initialize the childNeighIdx
-    for (int *p = (int*)childNeighIdx, i = 0; i < 96; p++, i++)
-      *p = -1;
-
-    static const uint8_t occuMasks[12] = {3,  5,  15, 17, 51, 85,
-                                          10, 34, 12, 68, 48, 80};
-    static const uint8_t occuShift[12] = {6, 5, 4, 3, 2, 1, 3, 1, 2, 1, 2, 3};
+  if (subnodePredictionEnabled) {
+    static const int idxFace[6][4][4] = {
+      {{0, 4, 6, 5}, {1, 5, 4, 7}, {2, 6, 4, 7}, {3, 7, 5, 6}},
+      {{0, 2, 3, 6}, {1, 3, 2, 7}, {4, 6, 2, 7}, {5, 7, 3, 6}},
+      {{0, 1, 3, 5}, {2, 3, 1, 7}, {4, 5, 1, 7}, {6, 7, 3, 5}},
+      {{4, 0, 1, 2}, {5, 1, 0, 3}, {6, 2, 0, 3}, {7, 3, 1, 2}},
+      {{2, 0, 1, 4}, {3, 1, 0, 5}, {6, 4, 0, 5}, {7, 5, 1, 4}},
+      {{1, 0, 2, 4}, {3, 2, 0, 6}, {5, 4, 0, 6}, {7, 6, 2, 4}}};
+    static const int idxEdge[12][2][2] = {
+      {{0, 6}, {1, 7}}, {{0, 5}, {2, 7}}, {{0, 3}, {4, 7}}, {{6, 0}, {7, 1}},
+      {{5, 0}, {7, 2}}, {{3, 0}, {7, 4}}, {{4, 1}, {6, 3}}, {{2, 1}, {6, 5}},
+      {{4, 2}, {5, 3}}, {{1, 2}, {5, 6}}, {{2, 4}, {3, 5}}, {{1, 4}, {3, 6}}};
 
     int curLevel = level - 3;
-    for (int i = 0; i < 9; i++) {
-      if (parentNeighIdx[7 + i] == -1)
+
+    for (int i = 1; i < 7; i++) {
+      auto& neigh = parentNeighIdx[i];
+      if (neigh.isvoid())
         continue;
 
-      auto neiIt = first + parentNeighIdx[7 + i];
-      uint8_t mask =
-        (neiIt->occupancy >> occuShift[i]) & occupancy & occuMasks[i];
-      if (!mask)
+      auto neiIt = first + neigh;
+
+      if (!neiIt->decoded)
         continue;
 
-      for (auto it = neiIt->firstChild; it != neiIt->lastChild; it++) {
-        int nodeIdx = ((it->pos >> curLevel) & 0x7) - occuShift[i];
-        if ((nodeIdx >= 0) && ((mask >> nodeIdx) & 1)) {
-          childNeighIdx[i][nodeIdx] = std::distance(firstChild, it);
+      int j = 0;
+      auto IDX = idxFace[i - 1];
+      auto idx = IDX[0];
+      auto it = neiIt->firstChild;
+      while (it != neiIt->lastChild) {
+        int nodeIdx = (it->pos >> curLevel) & 0x7;
+
+        if (nodeIdx > idx[0]) {
+          j++;
+          if (j < 4)
+            idx = IDX[j];
+          else
+            break;
+          continue;
         }
+        if (nodeIdx < idx[0]) {
+          it++;
+          continue;
+        }
+
+        auto distance = std::distance(firstChild, it);
+        neigh.set(idx[1], distance, NeighborType::Face);
+        if (neigh.isvoid(idx[2]))
+          neigh.set(idx[2], distance, NeighborType::Edge);
+        if (neigh.isvoid(idx[3]))
+          neigh.set(idx[3], distance, NeighborType::Edge);
+
+        it++;
+        j++;
+        if (j < 4)
+          idx = IDX[j];
+        else
+          break;
       }
     }
 
-    for (int i = 9; i < 12; i++) {
-      if (parentNeighIdx[7 + i] == -1)
+    for (int i = 7; i < 19; i++) {
+      auto& neigh = parentNeighIdx[i];
+      if (neigh.isvoid())
         continue;
 
-      auto neiIt = first + parentNeighIdx[7 + i];
-      uint8_t mask =
-        (neiIt->occupancy << occuShift[i]) & occupancy & occuMasks[i];
-      if (!mask)
+      auto neiIt = first + neigh;
+
+      if (!neiIt->decoded)
         continue;
 
-      for (auto it = neiIt->firstChild; it != neiIt->lastChild; it++) {
-        int nodeIdx = ((it->pos >> curLevel) & 0x7) + occuShift[i];
-        if ((nodeIdx < 8) && ((mask >> nodeIdx) & 1)) {
-          childNeighIdx[i][nodeIdx] = std::distance(firstChild, it);
+      int j = 0;
+      auto IDX = idxEdge[i - 7];
+      auto idx = IDX[0];
+      auto it = neiIt->firstChild;
+      while (it != neiIt->lastChild) {
+        int nodeIdx = (it->pos >> curLevel) & 0x7;
+
+        if (nodeIdx > idx[0]) {
+          j++;
+          if (j < 2)
+            idx = IDX[j];
+          else
+            break;
+          continue;
         }
+        if (nodeIdx < idx[0]) {
+          it++;
+          continue;
+        }
+
+        auto distance = std::distance(firstChild, it);
+        neigh.set(idx[1], distance, NeighborType::Edge);
+
+        it++;
+        j++;
+        if (j < 2)
+          idx = IDX[j];
+        else
+          break;
       }
     }
   }
@@ -350,45 +433,30 @@ template<typename It>
 void
 intraDcPred(
   int numAttrs,
-  const int parentNeighIdx[19],
-  const int childNeighIdx[12][8],
+  const std::array<ParentIndex, 19>& parentNeighIdx,
   int occupancy,
   It first,
   It firstChild,
-  FixedPoint predBuf[][8],
-  const RahtPredictionParams &rahtPredParams)
+  VecAttr::iterator predBuf,
+  std::vector<UrahtNode>::iterator firstNode,
+  const RahtPredictionParams& rahtPredParams)
 {
-  static const uint8_t predMasks[19] = {255, 240, 204, 170, 192, 160, 136,
-                                        3,   5,   15,  17,  51,  85,  10,
-                                        34,  12,  68,  48,  80};
+  static const uint8_t predMasks[19] = MASKS;
 
-  const auto& predWeightParent = rahtPredParams.predWeightParent;
-  const auto& predWeightChild = rahtPredParams.predWeightChild;
-
-  static const int kDivisors[64] = {
-    32768, 16384, 10923, 8192, 6554, 5461, 4681, 4096, 3641, 3277, 2979,
-    2731,  2521,  2341,  2185, 2048, 1928, 1820, 1725, 1638, 1560, 1489,
-    1425,  1365,  1311,  1260, 1214, 1170, 1130, 1092, 1057, 1024, 993,
-    964,   936,   910,   886,  862,  840,  819,  799,  780,  762,  745,
-    728,   712,   697,   683,  669,  655,  643,  630,  618,  607,  596,
-    585,   575,   565,   555,  546,  537,  529,  520,  512};
-
-  int weightSum[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-
-  std::fill_n(&predBuf[0][0], 8 * numAttrs, FixedPoint(0));
+  int weightSum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
   int64_t neighValue[3];
   int64_t childNeighValue[3];
   int64_t limitLow = 0;
   int64_t limitHigh = 0;
 
-  const auto parentOnlyCheckMaxIdx =
-    rahtPredParams.raht_subnode_prediction_enabled_flag ? 7 : 19;
-  for (int i = 0; i < parentOnlyCheckMaxIdx; i++) {
-    if (parentNeighIdx[i] == -1)
+  for (int i = 0; i < 19; i++) {
+    auto& neigbor = parentNeighIdx[i];
+    int predWeightParent = neigbor.getweight(rahtPredParams.prediction_weights);
+    if (!predWeightParent)
       continue;
 
-    auto neighValueIt = std::next(first, numAttrs * parentNeighIdx[i]);
+    auto neighValueIt = std::next(first, numAttrs * neigbor);
     for (int k = 0; k < numAttrs; k++)
       neighValue[k] = *neighValueIt++;
 
@@ -403,192 +471,49 @@ intraDcPred(
       limitHigh = ratioThreshold2 * neighValue[0];
     }
 
+    auto node = std::next(firstNode, neigbor);
+
     // apply weighted neighbour value to masked positions
     for (int k = 0; k < numAttrs; k++)
-      neighValue[k] *= predWeightParent[i];
+      neighValue[k] *= predWeightParent;
 
     int mask = predMasks[i] & occupancy;
     for (int j = 0; mask; j++, mask >>= 1) {
       if (mask & 1) {
-        weightSum[j] += predWeightParent[i];
-        for (int k = 0; k < numAttrs; k++)
-          predBuf[k][j].val += neighValue[k];
-      }
-    }
-  }
-  if (rahtPredParams.raht_subnode_prediction_enabled_flag) {
-    for (int i = 0; i < 12; i++) {
-      if (parentNeighIdx[7 + i] == -1)
-        continue;
+        int predWeightChild = 0;
+        if (rahtPredParams.subnode_prediction_enabled_flag || node->decoded)
+          predWeightChild =
+            neigbor.getweight(j, rahtPredParams.prediction_weights);
+        if (predWeightChild) {
+          weightSum[j] += predWeightChild;
+          auto childNeighValueIt =
+            std::next(firstChild, numAttrs * parentNeighIdx[i][j]);
+          for (int k = 0; k < numAttrs; k++)
+            childNeighValue[k] = (*childNeighValueIt++) * predWeightChild;
 
-      auto neighValueIt = std::next(first, numAttrs * parentNeighIdx[7 + i]);
-      for (int k = 0; k < numAttrs; k++)
-        neighValue[k] = *neighValueIt++;
-
-      // skip neighbours that are outside of threshold limits
-      if (10 * neighValue[0] <= limitLow || 10 * neighValue[0] >= limitHigh)
-        continue;
-
-      // apply weighted neighbour value to masked positions
-      for (int k = 0; k < numAttrs; k++)
-        neighValue[k] *= predWeightParent[7 + i];
-
-      int mask = predMasks[7 + i] & occupancy;
-      for (int j = 0; mask; j++, mask >>= 1) {
-        if (mask & 1) {
-          if (childNeighIdx[i][j] != -1) {
-            weightSum[j] += predWeightChild[i];
-            auto childNeighValueIt =
-              std::next(firstChild, numAttrs * childNeighIdx[i][j]);
-            for (int k = 0; k < numAttrs; k++)
-              childNeighValue[k] = (*childNeighValueIt++)
-                * predWeightChild[i];
-
-            for (int k = 0; k < numAttrs; k++)
-              predBuf[k][j].val += childNeighValue[k];
-          } else {
-            weightSum[j] += predWeightParent[7 + i];
-            for (int k = 0; k < numAttrs; k++)
-              predBuf[k][j].val += neighValue[k];
-          }
+          for (int k = 0; k < numAttrs; k++)
+            predBuf[k][j].val += childNeighValue[k];
+        } else {
+          weightSum[j] += predWeightParent;
+          for (int k = 0; k < numAttrs; k++)
+            predBuf[k][j].val += neighValue[k];
         }
       }
     }
   }
 
   // normalise
-  FixedPoint div;
-  for (int i = 0; i < 8; i++, occupancy >>= 1) {
-    if (occupancy & 1) {
-      div.val = kDivisors[weightSum[i]];
-      for (int k = 0; k < numAttrs; k++)
-        predBuf[k][i] *= div;
-    }
-  }
-}
-
-//============================================================================
-// Encapsulation of a RAHT transform stage.
-
-class RahtKernel {
-public:
-  RahtKernel(int weightLeft, int weightRight)
-  {
-    uint64_t w = weightLeft + weightRight;
-    uint64_t isqrtW = irsqrt(w);
-    _a.val =
-      (isqrt(uint64_t(weightLeft) << (2 * _a.kFracBits)) * isqrtW) >> 40;
-    _b.val =
-      (isqrt(uint64_t(weightRight) << (2 * _b.kFracBits)) * isqrtW) >> 40;
-  }
-
-  void fwdTransform(
-    FixedPoint left, FixedPoint right, FixedPoint* lf, FixedPoint* hf)
-  {
-    FixedPoint a = _a, b = _b;
-    // lf = left * a + right * b
-    // hf = right * a - left * b
-
-    *lf = right;
-    *lf *= b;
-    *hf = right;
-    *hf *= a;
-
-    a *= left;
-    b *= left;
-
-    *lf += a;
-    *hf -= b;
-  }
-
-  void invTransform(
-    FixedPoint lf, FixedPoint hf, FixedPoint* left, FixedPoint* right)
-  {
-    FixedPoint a = _a, b = _b;
-
-    *left = lf;
-    *left *= a;
-    *right = lf;
-    *right *= b;
-
-    b *= hf;
-    a *= hf;
-
-    *left -= b;
-    *right += a;
-  }
-
-private:
-  FixedPoint _a, _b;
-};
-
-//============================================================================
-// In-place transform a set of sparse 2x2x2 blocks each using the same weights
-
-template<class Kernel>
-void
-fwdTransformBlock222(
-  int numBufs, FixedPoint buf[][8], int weights[8 + 8 + 8 + 8])
-{
-  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
-  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
-  for (int i = 0, iw = 0; i < 12; i++, iw += 2) {
-    int i0 = a[i];
-    int i1 = b[i];
-
-    if (weights[iw] + weights[iw + 1] == 0)
-      continue;
-
-    // only one occupied, propagate to next level
-    if (!weights[iw] || !weights[iw + 1]) {
-      if (!weights[iw]) {
-        for (int k = 0; k < numBufs; k++)
-          std::swap(buf[k][i0], buf[k][i1]);
+  for (int i = 0; i < 8; i++) {
+    int64_t div = weightSum[i];
+    if (div > 1) {
+      int64_t divHalf = div >> 1;
+      for (int k = 0; k < numAttrs; k++) {
+        auto& val = predBuf[k][i].val;
+        if (val < 0)
+          val = -((divHalf - val) / div);
+        else
+          val = +((divHalf + val) / div);
       }
-      continue;
-    }
-
-    // actual transform
-    Kernel kernel(weights[iw], weights[iw + 1]);
-    for (int k = 0; k < numBufs; k++) {
-      auto& bufk = buf[k];
-      kernel.fwdTransform(bufk[i0], bufk[i1], &bufk[i0], &bufk[i1]);
-    }
-  }
-}
-
-//============================================================================
-// In-place inverse transform a set of sparse 2x2x2 blocks each using the
-// same weights
-
-template<class Kernel>
-void
-invTransformBlock222(
-  int numBufs, FixedPoint buf[][8], int weights[8 + 8 + 8 + 8])
-{
-  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
-  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
-  for (int i = 11, iw = 22; i >= 0; i--, iw -= 2) {
-    int i0 = a[i];
-    int i1 = b[i];
-
-    if (weights[iw] + weights[iw + 1] == 0)
-      continue;
-
-    // only one occupied, propagate to next level
-    if (!weights[iw] || !weights[iw + 1]) {
-      if (!weights[iw]) {
-        for (int k = 0; k < numBufs; k++)
-          std::swap(buf[k][i0], buf[k][i1]);
-      }
-      continue;
-    }
-
-    // actual transform
-    Kernel kernel(weights[iw], weights[iw + 1]);
-    for (int k = 0; k < numBufs; k++) {
-      auto& bufk = buf[k];
-      kernel.invTransform(bufk[i0], bufk[i1], &bufk[i0], &bufk[i1]);
     }
   }
 }
@@ -596,11 +521,12 @@ invTransformBlock222(
 //============================================================================
 // expand a set of eight weights into three levels
 
+template<class Kernel>
 void
-mkWeightTree(int weights[8 + 8 + 8 + 8])
+mkWeightTree(int64_t weights[8 + 8 + 8 + 8 + 24])
 {
-  int* in = &weights[0];
-  int* out = &weights[8];
+  auto in = &weights[0];
+  auto out = &weights[8];
 
   for (int i = 0; i < 4; i++) {
     out[0] = out[4] = in[0] + in[1];
@@ -624,6 +550,20 @@ mkWeightTree(int weights[8 + 8 + 8 + 8])
       out[4] = 0;  // single node, no high frequencies
     in += 2;
     out++;
+  }
+
+  for (int i = 0; i < 24; i += 2) {
+    if (!weights[i]) {
+      if (weights[i + 1])
+        weights[i + 33] = 0x1ll << FixedPoint::kFracBits;
+    } else if (!weights[i + 1]) {
+      weights[i + 32] = 0x1ll << FixedPoint::kFracBits;
+    }
+    else {
+      Kernel w(weights[i], weights[i + 1]);
+      weights[i + 32] = w.getW0();
+      weights[i + 33] = w.getW1();
+    }
   }
 }
 
@@ -632,7 +572,7 @@ mkWeightTree(int weights[8 + 8 + 8 + 8])
 
 template<class T>
 void
-scanBlock(int weights[8 + 8 + 8 + 8], T mapFn)
+scanBlock(int64_t weights[], T mapFn)
 {
   static const int8_t kRahtScanOrder[] = {0, 4, 2, 1, 6, 5, 3, 7};
 
@@ -741,6 +681,8 @@ uraht_process(
   }
 
   assert(weightsLf[0].weight == numPoints);
+  weightsLf[0].mode = Mode::Null;
+  weightsLf[0].offset = 0;
 
   // reconstruction buffers
   std::vector<int64_t> attrRec, attrRecParent;
@@ -752,11 +694,29 @@ uraht_process(
   attrRecParentUs.resize(numPoints * numAttrs);
 
   std::vector<UrahtNode> weightsParent;
-  weightsParent.reserve(numPoints);
+  weightsParent.resize(1, weightsLf[0]);
 
   std::vector<int> numParentNeigh, numGrandParentNeigh;
   numParentNeigh.resize(numPoints);
   numGrandParentNeigh.resize(numPoints);
+
+  // indexes of the neighbouring parents
+  static std::array<ParentIndex, 19> parentNeighIdx;
+
+  // Prediction buffers
+  VecAttr transformBuf;
+  VecAttr attrRecIntra;
+  VecAttr::iterator attrPred;
+  VecAttr::iterator attrReal;
+  VecAttr::iterator attrPredIntra;
+  std::vector<FixedPoint> parentDc(numAttrs);
+
+  transformBuf.resize(2 * numAttrs);
+
+  attrReal = transformBuf.begin();
+  attrPred = std::next(attrReal, numAttrs);
+
+  attrPredIntra = attrPred;
 
   // quant layer selection
   auto qpLayer = 0;
@@ -785,25 +745,28 @@ uraht_process(
     //  -> first level = all coeffs
     //  -> otherwise = ac coeffs only
     bool inheritDc = !isFirst;
-    bool enablePredictionInLvl =
-      inheritDc && rahtPredParams.raht_prediction_enabled_flag;
-    isFirst = 0;
+    bool enableIntraPredictionInLvl =
+      inheritDc && rahtPredParams.prediction_enabled_flag;
 
-    if (enablePredictionInLvl) {
+    if (enableIntraPredictionInLvl) {
       for (auto& ele : weightsParent)
         ele.occupancy = 0;
 
       const int parentCount = weightsParent.size();
       auto it = weightsLf.begin();
       for (auto i = 0; i < parentCount; i++) {
+        weightsParent[i].decoded = 0;
         weightsParent[i].firstChild = it++;
 
         while (it != weightsLf.end()
                && !((it->pos ^ weightsParent[i].pos) >> (level + 3)))
           it++;
         weightsParent[i].lastChild = it;
+        if (isFirst)
+          weightsParent[i].mode = Mode::Null;
       }
     }
+    isFirst = 0;
 
     // select quantiser according to transform layer
     qpLayer = std::min(qpLayer + 1, int(qpset.layers.size()) - 1);
@@ -813,45 +776,48 @@ uraht_process(
     std::swap(attrRec, attrRecParent);
     std::swap(attrRecUs, attrRecParentUs);
     std::swap(numParentNeigh, numGrandParentNeigh);
-    auto attrRecParentUsIt = attrRecParentUs.cbegin();
-    auto attrRecParentIt = attrRecParent.cbegin();
-    auto weightsParentIt = weightsParent.begin();
     auto numGrandParentNeighIt = numGrandParentNeigh.cbegin();
 
-    for (int i = 0, iLast, iEnd = weightsLf.size(); i < iEnd; i = iLast) {
-      // todo(df): hoist and dynamically allocate
-      FixedPoint transformBuf[6][8] = {};
-      FixedPoint(*transformPredBuf)[8] = &transformBuf[numAttrs];
-      int weights[8 + 8 + 8 + 8] = {};
+    int i = 0;
+    for (auto weightsParentIt = weightsParent.begin();
+         weightsParentIt < weightsParent.end(); weightsParentIt++) {
+
+      for (auto& buf : transformBuf) {
+        std::fill(buf.begin(), buf.end(), FixedPoint(0));
+      }
+
+      int64_t weights[8 + 8 + 8 + 8 + 24] = {};
       Qps nodeQp[8] = {};
       uint8_t occupancy = 0;
 
       // generate weights, occupancy mask, and fwd transform buffers
       // for all siblings of the current node.
       int nodeCnt = 0;
-      for (iLast = i; iLast < iEnd; iLast++) {
-        int nextNode = iLast > i
-          && !isSibling(weightsLf[iLast].pos, weightsLf[i].pos, level + 3);
+      while (!isSibling(weightsLf[i].pos, weightsParentIt->pos, level + 3))
+        i++;
+      for (int j = i; j < weightsLf.size(); j++) {
+        int nextNode =
+          j > i && !isSibling(weightsLf[j].pos, weightsLf[i].pos, level + 3);
         if (nextNode)
           break;
 
-        int nodeIdx = (weightsLf[iLast].pos >> level) & 0x7;
-        weights[nodeIdx] = weightsLf[iLast].weight;
-        nodeQp[nodeIdx][0] = weightsLf[iLast].qp[0] >> regionQpShift;
-        nodeQp[nodeIdx][1] = weightsLf[iLast].qp[1] >> regionQpShift;
+        int nodeIdx = (weightsLf[j].pos >> level) & 0x7;
+        weights[nodeIdx] = weightsLf[j].weight;
+        nodeQp[nodeIdx][0] = weightsLf[j].qp[0] >> regionQpShift;
+        nodeQp[nodeIdx][1] = weightsLf[j].qp[1] >> regionQpShift;
 
         occupancy |= 1 << nodeIdx;
 
-        if (rahtPredParams.raht_prediction_skip1_flag)
+        if (rahtPredParams.prediction_skip1_flag)
           nodeCnt++;
 
         if (isEncoder) {
           for (int k = 0; k < numAttrs; k++)
-            transformBuf[k][nodeIdx] = attrsLf[iLast * numAttrs + k];
+            attrReal[k][nodeIdx] = attrsLf[j * numAttrs + k];
         }
       }
 
-      mkWeightTree(weights);
+      mkWeightTree<RahtKernel>(weights);
 
       if (!inheritDc) {
         for (int j = i, nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
@@ -861,43 +827,45 @@ uraht_process(
         }
       }
 
+      auto attrRecParentUsIt = std::next(
+        attrRecParentUs.cbegin(),
+        std::distance(weightsParent.begin(), weightsParentIt) * numAttrs);
+
       // Inter-level prediction:
       //  - Find the parent neighbours of the current node
-      //  - Generate prediction for all attributes into transformPredBuf
+      //  - Generate prediction for all attributes into transformIntraBuf
       //  - Subtract transformed coefficients from forward transform
-      //  - The transformPredBuf is then used for reconstruction
-      bool enablePrediction = enablePredictionInLvl;
-      if (enablePredictionInLvl) {
+      //  - The transformIntraBuf is then used for reconstruction
+      bool enableIntraPrediction = enableIntraPredictionInLvl;
+
+      if (enableIntraPrediction) {
         weightsParentIt->occupancy = occupancy;
-        // indexes of the neighbouring parents
-        int parentNeighIdx[19];
-        int childNeighIdx[12][8];
 
         int parentNeighCount = 0;
-        if (rahtPredParams.raht_prediction_skip1_flag && nodeCnt == 1) {
-          enablePrediction = false;
+        if (rahtPredParams.prediction_skip1_flag && nodeCnt == 1) {
+          enableIntraPrediction = false;
           parentNeighCount = 19;
         } else if (
-          *numGrandParentNeighIt < rahtPredParams.raht_prediction_threshold0) {
-          enablePrediction = false;
+          *numGrandParentNeighIt < rahtPredParams.prediction_threshold0) {
+          enableIntraPrediction = false;
         } else {
           findNeighbours(
             weightsParent.begin(), weightsParent.end(), weightsParentIt,
             weightsLf.begin(), weightsLf.begin() + i, level + 3, occupancy,
-            parentNeighIdx, childNeighIdx,
-            rahtPredParams.raht_subnode_prediction_enabled_flag);
-          for (int i = 0; i < 19; i++) {
-            parentNeighCount += (parentNeighIdx[i] != -1);
-          }
-          if (parentNeighCount < rahtPredParams.raht_prediction_threshold1) {
-            enablePrediction = false;
-          } else
-            intraDcPred(
-              numAttrs, parentNeighIdx, childNeighIdx, occupancy,
-              attrRecParent.begin(), attrRec.begin(), transformPredBuf,
-              rahtPredParams);
-        }
+            parentNeighIdx, rahtPredParams.subnode_prediction_enabled_flag);
 
+          parentNeighCount = std::count_if(
+            parentNeighIdx.begin(), parentNeighIdx.end(),
+            [](const int idx) { return idx >= 0; });
+          if (parentNeighCount < rahtPredParams.prediction_threshold1) {
+            enableIntraPrediction = false;
+          } else if (isEncoder) {
+            intraDcPred(
+              numAttrs, parentNeighIdx, occupancy, attrRecParent.begin(),
+              attrRec.begin(), attrPredIntra, weightsParent.begin(),
+              rahtPredParams);
+          }
+        }
         for (int j = i, nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
           if (!weights[nodeIdx])
             continue;
@@ -905,18 +873,20 @@ uraht_process(
         }
       }
 
+      int parentWeight = 0;
       if (inheritDc) {
-        weightsParentIt++;
         numGrandParentNeighIt++;
+        parentWeight = weightsParentIt->weight;
+        weightsParentIt->decoded = true;
       }
 
-      // normalise coefficients
-      for (int childIdx = 0; childIdx < 8; childIdx++) {
-        if (weights[childIdx] <= 1)
-          continue;
+      if (isEncoder) {
+        // normalise coefficients
+        for (int childIdx = 0; childIdx < 8; childIdx++) {
+          if (weights[childIdx] <= 1)
+            continue;
 
-        // Summed attribute values
-        if (isEncoder) {
+          // Summed attribute values
           FixedPoint rsqrtWeight;
           uint64_t w = weights[childIdx];
           int shift = w > 1024 ? ilog2(w - 1) >> 1 : 0;
@@ -925,27 +895,70 @@ uraht_process(
             transformBuf[k][childIdx].val >>= shift;
             transformBuf[k][childIdx] *= rsqrtWeight;
           }
-        }
 
-        // Predicted attribute values
-        if (enablePrediction) {
+          // Predicted attribute values
           FixedPoint sqrtWeight;
           sqrtWeight.val =
             isqrt(uint64_t(weights[childIdx]) << (2 * FixedPoint::kFracBits));
+          attrPred = transformBuf.begin() + numAttrs;
+          while (attrPred < transformBuf.end()) {
+            for (int k = 0; k < numAttrs; k++)
+              attrPred[k][childIdx] *= sqrtWeight;
+            attrPred += numAttrs;
+          }
+        }
+
+        fwdTransformBlock222(
+          transformBuf.size(), transformBuf.begin(), weights);
+      }
+
+      Mode predMode = nodeCnt > 1 && enableIntraPrediction ? Mode::Intra : Mode::Null;
+
+      for (auto weightsChild = weightsParentIt->firstChild;
+           weightsChild < weightsParentIt->lastChild; weightsChild++) {
+        weightsChild->mode = predMode;
+      }
+
+      if (isEncoder) {
+        if (attr::isNull(predMode)) {
+          attrPred = std::next(transformBuf.begin(), numAttrs);
           for (int k = 0; k < numAttrs; k++)
-            transformPredBuf[k][childIdx] *= sqrtWeight;
+            std::fill(attrPred[k].begin(), attrPred[k].end(), FixedPoint(0));
+        } else {
+          attrPred = attrPredIntra;
         }
       }
 
-      // forward transform:
-      //  - encoder: transform both attribute sums and prediction
-      //  - decoder: just transform prediction
-      if (isEncoder && enablePrediction)
-        fwdTransformBlock222<RahtKernel>(2 * numAttrs, transformBuf, weights);
-      else if (isEncoder)
-        fwdTransformBlock222<RahtKernel>(numAttrs, transformBuf, weights);
-      else if (enablePrediction)
-        fwdTransformBlock222<RahtKernel>(numAttrs, transformPredBuf, weights);
+      if (!isEncoder) {
+        // prediction
+        if (attr::isNull(predMode)) {
+          attrPred = std::next(transformBuf.begin(), numAttrs);
+          for (int k = 0; k < numAttrs; k++)
+            std::fill(attrPred[k].begin(), attrPred[k].end(), FixedPoint(0));
+        } else {
+          intraDcPred(
+            numAttrs, parentNeighIdx, occupancy, attrRecParent.begin(),
+            attrRec.begin(), attrPredIntra, weightsParent.begin(),
+            rahtPredParams);
+          attrPred = attrPredIntra;
+        }
+
+        if (!attr::isNull(predMode)) {
+          // normalise predicted attribute values
+          for (int childIdx = 0; childIdx < 8; childIdx++) {
+            if (weights[childIdx] <= 1)
+              continue;
+
+            FixedPoint sqrtWeight;
+            sqrtWeight.val = isqrt(
+              uint64_t(weights[childIdx]) << (2 * FixedPoint::kFracBits));
+            for (int k = 0; k < numAttrs; k++)
+              attrPred[k][childIdx] *= sqrtWeight;
+          }
+
+          fwdTransformBlock222(numAttrs, attrPred, weights);
+        }
+      }
 
       // per-coefficient operations:
       //  - subtract transform domain prediction (encoder)
@@ -957,16 +970,14 @@ uraht_process(
           return;
 
         // subtract transformed prediction (skipping DC)
-        if (isEncoder && enablePrediction) {
+        if (isEncoder && !attr::isNull(predMode)) {
           for (int k = 0; k < numAttrs; k++) {
-            transformBuf[k][idx] -= transformPredBuf[k][idx];
+            transformBuf[k][idx] -= attrPred[k][idx];
           }
         }
 
         // decision for RDOQ
         int64_t sumCoeff = 0;
-        const int LUTlog[16] = {0,   256, 406, 512, 594, 662, 719,  768,
-                                812, 850, 886, 918, 947, 975, 1000, 1024};
         bool flagRDOQ = false;
         if (isEncoder) {
           int64_t Dist2 = 0;
@@ -982,11 +993,9 @@ uraht_process(
             auto Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
             sumCoeff += std::abs(Qcoeff);
             //Ratecoeff += !!Qcoeff; // sign
-            Ratecoeff +=
-              std::abs(Qcoeff) < 15 ? LUTlog[std::abs(Qcoeff)] : LUTlog[15];
+            Ratecoeff += int(std::log2(1 + std::abs(Qcoeff)) * 256.);
             if (!k)
               lambda0 = q.scale(1);
-
           }
 
           if (sumCoeff < 3) {
@@ -1035,11 +1044,11 @@ uraht_process(
             assert(coeff <= INT_MAX && coeff >= INT_MIN);
             *coeffBufItK[k]++ = coeff =
               q.quantize(coeff << kFixedPointAttributeShift);
-            transformPredBuf[k][idx] +=
+            attrPred[k][idx] +=
               divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
           } else {
             int64_t coeff = *coeffBufItK[k]++;
-            transformPredBuf[k][idx] +=
+            attrPred[k][idx] +=
               divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
           }
         }
@@ -1048,19 +1057,18 @@ uraht_process(
       // replace DC coefficient with parent if inheritable
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {
-          attrRecParentIt++;
-          transformPredBuf[k][0].val = *attrRecParentUsIt++;
+          attrPred[k][0].val = attrRecParentUsIt[k];
         }
       }
 
-      invTransformBlock222<RahtKernel>(numAttrs, transformPredBuf, weights);
+      invTransformBlock222(numAttrs, attrPred, weights);
 
       for (int j = i, nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
         if (!weights[nodeIdx])
           continue;
 
         for (int k = 0; k < numAttrs; k++)
-          attrRecUs[j * numAttrs + k] = transformPredBuf[k][nodeIdx].val;
+          attrRecUs[j * numAttrs + k] = attrPred[k][nodeIdx].val;
 
         // scale values for next level
         if (weights[nodeIdx] > 1) {
@@ -1069,13 +1077,14 @@ uraht_process(
           int shift = w > 1024 ? ilog2(w - 1) >> 1 : 0;
           rsqrtWeight.val = irsqrt(w) >> (40 - shift - FixedPoint::kFracBits);
           for (int k = 0; k < numAttrs; k++) {
-            transformPredBuf[k][nodeIdx].val >>= shift;
-            transformPredBuf[k][nodeIdx] *= rsqrtWeight;
+            attrPred[k][nodeIdx].val >>= shift;
+            attrPred[k][nodeIdx] *= rsqrtWeight;
           }
         }
 
-        for (int k = 0; k < numAttrs; k++)
-          attrRec[j * numAttrs + k] = transformPredBuf[k][nodeIdx].val;
+        for (int k = 0; k < numAttrs; k++) {
+          attrRec[j * numAttrs + k] = attrPred[k][nodeIdx].val;
+        }
         j++;
       }
     }
@@ -1139,9 +1148,7 @@ uraht_process(
           transformBuf[0].val >>= shift;
           transformBuf[0] *= rsqrtWeight;
 
-          kernel.fwdTransform(
-            transformBuf[0], transformBuf[1], &transformBuf[0],
-            &transformBuf[1]);
+          kernel.fwdTransform(transformBuf[0], transformBuf[1]);
 
           auto coeff = transformBuf[1].round();
           assert(coeff <= INT_MAX && coeff >= INT_MIN);
@@ -1160,9 +1167,7 @@ uraht_process(
         // inherit the DC value
         transformBuf[0] = attrRecDc[k];
 
-        kernel.invTransform(
-          transformBuf[0], transformBuf[1], &transformBuf[0],
-          &transformBuf[1]);
+        kernel.invTransform(transformBuf[0], transformBuf[1]);
 
         attrRecDc[k] = transformBuf[0];
         attrRec[out + w * numAttrs + k] = transformBuf[1].val;
@@ -1177,7 +1182,6 @@ uraht_process(
         else
           trainZeros = 0;
       }
-
     }
 
     attrsHfIt += (weight - 1) * numAttrs;
@@ -1186,9 +1190,11 @@ uraht_process(
 
   // write-back reconstructed attributes
   assert(attrRec.size() == numAttrs * numPoints);
-  for (auto& attr : attrRec) {
+  auto attrOut = attributes;
+  for (auto attr : attrRec) {
     attr += FixedPoint::kOneHalf;
-    *(attributes++) = attr >> FixedPoint::kFracBits;
+    attr >>= FixedPoint::kFracBits;
+    *attrOut++ = attr;
   }
 }
 
@@ -1213,7 +1219,7 @@ uraht_process(
  */
 void
 regionAdaptiveHierarchicalTransform(
-  const RahtPredictionParams &rahtPredParams,
+  const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
   const Qps* pointQpOffsets,
   int64_t* mortonCode,
@@ -1246,7 +1252,7 @@ regionAdaptiveHierarchicalTransform(
  */
 void
 regionAdaptiveHierarchicalInverseTransform(
-  const RahtPredictionParams &rahtPredParams,
+  const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
   const Qps* pointQpOffsets,
   int64_t* mortonCode,
