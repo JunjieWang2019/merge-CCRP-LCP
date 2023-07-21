@@ -443,7 +443,15 @@ intraDcPred(
 {
   static const uint8_t predMasks[19] = MASKS;
 
-  int weightSum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  static const int kDivisors[64] = {
+    32768, 16384, 10923, 8192, 6554, 5461, 4681, 4096, 3641, 3277, 2979,
+    2731,  2521,  2341,  2185, 2048, 1928, 1820, 1725, 1638, 1560, 1489,
+    1425,  1365,  1311,  1260, 1214, 1170, 1130, 1092, 1057, 1024, 993,
+    964,   936,   910,   886,  862,  840,  819,  799,  780,  762,  745,
+    728,   712,   697,   683,  669,  655,  643,  630,  618,  607,  596,
+    585,   575,   565,   555,  546,  537,  529,  520,  512};
+
+  int weightSum[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
   int64_t neighValue[3];
   int64_t childNeighValue[3];
@@ -503,17 +511,12 @@ intraDcPred(
   }
 
   // normalise
-  for (int i = 0; i < 8; i++) {
-    int64_t div = weightSum[i];
-    if (div > 1) {
-      int64_t divHalf = div >> 1;
-      for (int k = 0; k < numAttrs; k++) {
-        auto& val = predBuf[k][i].val;
-        if (val < 0)
-          val = -((divHalf - val) / div);
-        else
-          val = +((divHalf + val) / div);
-      }
+  FixedPoint div;
+  for (int i = 0; i < 8; i++, occupancy >>= 1) {
+    if (occupancy & 1) {
+      div.val = kDivisors[weightSum[i]];
+      for (int k = 0; k < numAttrs; k++)
+        predBuf[k][i] *= div;
     }
   }
 }
