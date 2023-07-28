@@ -94,7 +94,7 @@ public:
 private:
   void activateParameterSets(const AttributeParamInventoryHdr& gbh);
   void activateParameterSets(const GeometryBrickHeader& gbh);
-  int decodeGeometryBrick(const PayloadBuffer& buf);
+  int decodeGeometryBrick(const PayloadBuffer& buf, AttributeInterPredParams& attrInterPredParams);
   void decodeAttributeBrick(const PayloadBuffer& buf);
   void decodeConstantAttribute(const PayloadBuffer& buf);
   bool dectectFrameBoundary(const PayloadBuffer* buf);
@@ -107,6 +107,8 @@ private:
   //==========================================================================
 
 private:
+  attr::ModeDecoder predDecoder;
+
   // Decoder specific parameters
   DecoderParams _params;
 

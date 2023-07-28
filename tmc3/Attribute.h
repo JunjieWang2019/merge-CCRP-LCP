@@ -67,7 +67,8 @@ public:
     size_t payloadLen,
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud, 
-    const AttributeInterPredParams& attrInterPredParams
+    const AttributeInterPredParams& attrInterPredParams,
+    attr::ModeDecoder& predDecoder
     ) = 0;
 };
 
@@ -89,7 +90,8 @@ public:
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     PayloadBuffer* payload, 
-    const AttributeInterPredParams &attrInterPredParams
+    const AttributeInterPredParams &attrInterPredParams,
+    attr::ModeEncoder& predEncoder
   ) = 0;
 };
 

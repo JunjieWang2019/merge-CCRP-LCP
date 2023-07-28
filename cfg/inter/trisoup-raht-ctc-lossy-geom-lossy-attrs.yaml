@@ -53,6 +53,7 @@ categories:
      #  - use raht
      - convertPlyColourspace: 1
      - transformType: 0
+     - rahtInterPredictionEnabled: 1
 
      ##
      # attribute coding -- colour

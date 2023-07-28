@@ -541,17 +541,22 @@ isSibling(int64_t pos0, int64_t pos1, int level)
 //============================================================================
 // Core transform process (for encoder/decoder)
 
-template<bool isEncoder>
-void
+template<class ModeCoder, class GetMode>
+inline void
 uraht_process(
   const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
   const Qps* pointQpOffsets,
-  int numPoints,
   int numAttrs,
+  int numPoints,
   int64_t* positions,
   int* attributes,
-  int32_t* coeffBufIt)
+  int numPoints_mc,
+  int64_t* positions_mc,
+  int* attributes_mc,
+  int32_t* coeffBufIt,
+  ModeCoder& coder,
+  GetMode getMode)
 {
   // coefficients are stored in three planar arrays.  coeffBufItK is a set
   // of iterators to each array.
@@ -566,7 +571,7 @@ uraht_process(
     for (int k = 0; k < numAttrs; k++) {
       auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
-      if (isEncoder) {
+      if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
         auto coeff = attributes[k];
         assert(coeff <= INT_MAX && coeff >= INT_MIN);
         *coeffBufItK[k]++ = coeff =
@@ -584,6 +589,17 @@ uraht_process(
 
   std::vector<UrahtNode> weightsLf, weightsHf;
   std::vector<int> attrsLf, attrsHf;
+
+  coder.setInterEnabled(
+    rahtPredParams.prediction_enabled_flag
+    && rahtPredParams.enable_inter_prediction && (numPoints_mc > 0));
+
+  std::vector<int64_t> interTree;
+  std::vector<int64_t> mortonTranslated;
+  if (coder.isInterEnabled()) {
+    mortonTranslated.resize(numPoints);
+    std::copy(&positions[0], &positions[numPoints], mortonTranslated.begin());
+  }
 
   weightsLf.reserve(numPoints);
   attrsLf.reserve(numPoints * numAttrs);
@@ -652,14 +668,27 @@ uraht_process(
   VecAttr::iterator attrPred;
   VecAttr::iterator attrReal;
   VecAttr::iterator attrPredIntra;
+  VecAttr::iterator attrPredInter;
+  std::vector<Mode> modes;
   std::vector<FixedPoint> parentDc(numAttrs);
 
-  transformBuf.resize(2 * numAttrs);
+  if (coder.isInterEnabled())
+    transformBuf.resize(3 * numAttrs);
+  else
+    transformBuf.resize(2 * numAttrs);
 
   attrReal = transformBuf.begin();
   attrPred = std::next(attrReal, numAttrs);
+  modes.push_back(Mode::Null);
+
+  if (coder.isInterEnabled()) {
+    attrPredInter = attrPred;
+    modes.push_back(Mode::Inter);
+    attrPred = std::next(attrPred, numAttrs);
+  }
 
   attrPredIntra = attrPred;
+  modes.push_back(Mode::Intra);
 
   // quant layer selection
   auto qpLayer = 0;
@@ -668,6 +697,7 @@ uraht_process(
   weightsLf.resize(1);
   attrsLf.resize(numAttrs);
   int trainZeros = 0;
+  int rootLevel = (levelHfPos.size() - 1) / 3;
   for (int level = levelHfPos.size() - 1, isFirst = 1; level > 0; /*nop*/) {
     int numNodes = weightsHf.size() - levelHfPos[level];
     weightsLf.resize(weightsLf.size() + numNodes);
@@ -684,6 +714,21 @@ uraht_process(
     if (level % 3)
       continue;
 
+    int predCtxLevel = 0;
+    if (rahtPredParams.enable_inter_prediction) {
+      predCtxLevel = (level / 3) - rahtPredParams.mode_level;
+      if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
+        predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
+    }
+    int distanceToRoot = rootLevel - level / 3;
+
+    // Motion compensation
+    if (coder.isInterEnabled()) {
+      translateLayer(
+        interTree, level / 3, numAttrs, numPoints, numPoints_mc, positions,
+        mortonTranslated.data(), positions_mc, attributes_mc);
+    }
+
     // initial scan position of the coefficient buffer
     //  -> first level = all coeffs
     //  -> otherwise = ac coeffs only
@@ -691,7 +736,7 @@ uraht_process(
     bool enableIntraPredictionInLvl =
       inheritDc && rahtPredParams.prediction_enabled_flag;
 
-    if (enableIntraPredictionInLvl) {
+    if (rahtPredParams.enable_inter_prediction || enableIntraPredictionInLvl) {
       for (auto& ele : weightsParent)
         ele.occupancy = 0;
 
@@ -720,6 +765,11 @@ uraht_process(
     std::swap(attrRecUs, attrRecParentUs);
     std::swap(numParentNeigh, numGrandParentNeigh);
     auto numGrandParentNeighIt = numGrandParentNeigh.cbegin();
+
+    if (numPoints_mc) {
+      assert(interTree.size() <= attrRec.size());
+      std::copy(interTree.begin(), interTree.end(), attrRec.begin());
+    }
 
     int i = 0;
     for (auto weightsParentIt = weightsParent.begin();
@@ -751,10 +801,11 @@ uraht_process(
 
         occupancy |= 1 << nodeIdx;
 
-        if (rahtPredParams.prediction_skip1_flag)
+        if (rahtPredParams.enable_inter_prediction
+            || rahtPredParams.prediction_skip1_flag)
           nodeCnt++;
 
-        if (isEncoder) {
+        if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
           for (int k = 0; k < numAttrs; k++)
             attrReal[k][nodeIdx] = attrsLf[j * numAttrs + k];
         }
@@ -779,31 +830,76 @@ uraht_process(
       //  - Generate prediction for all attributes into transformIntraBuf
       //  - Subtract transformed coefficients from forward transform
       //  - The transformIntraBuf is then used for reconstruction
-      bool enableIntraPrediction = enableIntraPredictionInLvl;
+      bool enableIntraPrediction =
+        rahtPredParams.enable_inter_prediction
+        ? enableIntraPredictionInLvl && (nodeCnt > 1) && (distanceToRoot > 2)
+        : enableIntraPredictionInLvl;
+      bool enableInterPrediction = coder.isInterEnabled() && (nodeCnt > 1);
+
+      // inter prediction
+      weightsParentIt->occupancy = occupancy;
+      Mode neighborsMode = Mode::size;
+      if (enableInterPrediction) {
+        bool notCalculatedParentDc = true;
+        auto pred = attrPredInter;
+        auto inter = std::next(
+          interTree.begin(),
+          std::distance(weightsLf.begin(), weightsParentIt->firstChild)
+            * numAttrs);
+
+        uint8_t availablePrediction = 0;
+        for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
+          if (!((occupancy >> nodeIdx) & 0x1))
+            continue;
+
+          if (*inter < 0) {
+            inter += numAttrs;
+            if (notCalculatedParentDc) {
+              computeParentDc(weights, attrRecParentUsIt, parentDc);
+              notCalculatedParentDc = false;
+            }
+            for (int k = 0; k < numAttrs; k++)
+              pred[k][nodeIdx] = parentDc[k];
+          } else {
+            availablePrediction |= 0x1 << nodeIdx;
+            for (int k = 0; k < numAttrs; k++) {
+              pred[k][nodeIdx].val = *(inter++);
+            }
+          }
+        }
+        enableInterPrediction =
+          availablePrediction == weightsParentIt->occupancy;
+      }
 
       if (enableIntraPrediction) {
-        weightsParentIt->occupancy = occupancy;
-
+        bool foundNeighbours = false;
         int parentNeighCount = 0;
-        if (rahtPredParams.prediction_skip1_flag && nodeCnt == 1) {
-          enableIntraPrediction = false;
-          parentNeighCount = 19;
-        } else if (
-          *numGrandParentNeighIt < rahtPredParams.prediction_threshold0) {
-          enableIntraPrediction = false;
-        } else {
+        if (rahtPredParams.enable_inter_prediction
+            || (!(rahtPredParams.prediction_skip1_flag && nodeCnt == 1)
+              && !(*numGrandParentNeighIt < rahtPredParams.prediction_threshold0))) {
           findNeighbours(
             weightsParent.begin(), weightsParent.end(), weightsParentIt,
             weightsLf.begin(), weightsLf.begin() + i, level + 3, occupancy,
             parentNeighIdx, childNeighIdx,
             rahtPredParams.subnode_prediction_enabled_flag);
-
           parentNeighCount = std::count_if(
             parentNeighIdx, parentNeighIdx+19,
             [](const int idx) { return idx >= 0; });
-          if (parentNeighCount < rahtPredParams.prediction_threshold1) {
+          if (rahtPredParams.enable_inter_prediction)
+            neighborsMode =
+              attr::getNeighborsMode(parentNeighIdx, weightsParent);
+        }
+        if (!rahtPredParams.enable_inter_prediction
+            && rahtPredParams.prediction_skip1_flag && nodeCnt == 1) {
+          enableIntraPrediction = false;
+          parentNeighCount = 19;
+        } else if (!rahtPredParams.enable_inter_prediction
+            && *numGrandParentNeighIt < rahtPredParams.prediction_threshold0) {
+          enableIntraPrediction = false;
+        } else if (parentNeighCount < rahtPredParams.prediction_threshold1) {
             enableIntraPrediction = false;
-          } else if (isEncoder) {
+        } else {
+          if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
             intraDcPred(
               numAttrs, parentNeighIdx, childNeighIdx, occupancy,
               attrRecParent.begin(), attrRec.begin(), attrPredIntra,
@@ -824,7 +920,7 @@ uraht_process(
         weightsParentIt->decoded = true;
       }
 
-      if (isEncoder) {
+      if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
         // normalise coefficients
         for (int childIdx = 0; childIdx < 8; childIdx++) {
           if (weights[childIdx] <= 1)
@@ -856,35 +952,48 @@ uraht_process(
           transformBuf.size(), transformBuf.begin(), weights);
       }
 
-      Mode predMode = nodeCnt > 1 && enableIntraPrediction ? Mode::Intra : Mode::Null;
+      Mode predMode =
+        rahtPredParams.enable_inter_prediction
+        ? getMode(
+            coder, nodeCnt, predCtxLevel, enableIntraPrediction,
+            enableInterPrediction, weightsParentIt->mode, neighborsMode, numAttrs,
+            weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp)
+        : nodeCnt > 1 && enableIntraPrediction ? Mode::Intra : Mode::Null;
 
       for (auto weightsChild = weightsParentIt->firstChild;
            weightsChild < weightsParentIt->lastChild; weightsChild++) {
-        weightsChild->mode = predMode;
+        if (int(predMode) >= Mode::Inter)
+          weightsChild->mode = Mode::Inter;
+        else
+          weightsChild->mode = predMode;
       }
 
-      if (isEncoder) {
+      if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
         if (attr::isNull(predMode)) {
           attrPred = std::next(transformBuf.begin(), numAttrs);
           for (int k = 0; k < numAttrs; k++)
             std::fill(attrPred[k].begin(), attrPred[k].end(), FixedPoint(0));
-        } else {
+        } else if (attr::isIntra(predMode)) {
           attrPred = attrPredIntra;
+        } else {
+          attrPred = attrPredInter;
         }
       }
 
-      if (!isEncoder) {
+      if (typeid(ModeCoder) == typeid(attr::ModeDecoder)) {
         // prediction
         if (attr::isNull(predMode)) {
           attrPred = std::next(transformBuf.begin(), numAttrs);
           for (int k = 0; k < numAttrs; k++)
             std::fill(attrPred[k].begin(), attrPred[k].end(), FixedPoint(0));
-        } else {
+        } else if (attr::isIntra(predMode)) {
           intraDcPred(
             numAttrs, parentNeighIdx, childNeighIdx, occupancy,
             attrRecParent.begin(), attrRec.begin(), attrPredIntra,
             rahtPredParams);
           attrPred = attrPredIntra;
+        } else {
+          attrPred = attrPredInter;
         }
 
         if (!attr::isNull(predMode)) {
@@ -914,7 +1023,7 @@ uraht_process(
           return;
 
         // subtract transformed prediction (skipping DC)
-        if (isEncoder && !attr::isNull(predMode)) {
+        if (typeid(ModeCoder) == typeid(attr::ModeEncoder) && !attr::isNull(predMode)) {
           for (int k = 0; k < numAttrs; k++) {
             transformBuf[k][idx] -= attrPred[k][idx];
           }
@@ -925,7 +1034,7 @@ uraht_process(
         const int LUTlog[16] = {0,   256, 406, 512, 594, 662, 719,  768,
                                 812, 850, 886, 918, 947, 975, 1000, 1024};
         bool flagRDOQ = false;
-        if (isEncoder) {
+        if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
           int64_t Dist2 = 0;
           int Ratecoeff = 0;
           int64_t lambda0;
@@ -986,7 +1095,7 @@ uraht_process(
 
           auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
-          if (isEncoder) {
+          if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
             auto coeff = transformBuf[k][idx].round();
             assert(coeff <= INT_MAX && coeff >= INT_MIN);
             *coeffBufItK[k]++ = coeff =
@@ -1009,6 +1118,8 @@ uraht_process(
       }
 
       invTransformBlock222(numAttrs, attrPred, weights);
+
+      weightsParentIt->mc = Mode::Inter;
 
       for (int j = i, nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
         if (!weights[nodeIdx])
@@ -1066,7 +1177,7 @@ uraht_process(
 
     int64_t sumCoeff = 0;
     for (int k = 0; k < numAttrs; k++) {
-      if (isEncoder)
+      if (typeid(ModeCoder) == typeid(attr::ModeEncoder))
         attrSum[k] = attrsLf[i * numAttrs + k];
       attrRecDc[k].val = *attrRecParentIt++;
       attrRecDc[k] *= sqrtWeight;
@@ -1076,7 +1187,7 @@ uraht_process(
     for (int w = weight - 1; w > 0; w--) {
       RahtKernel kernel(w, 1);
       int shift = w > 1024 ? ilog2(uint32_t(w - 1)) >> 1 : 0;
-      if (isEncoder)
+      if (typeid(ModeCoder) == typeid(attr::ModeEncoder))
         rsqrtWeight.val = irsqrt(w) >> (40 - shift - FixedPoint::kFracBits);
 
       auto quantizers = qpset.quantizers(qpLayer, nodeQp);
@@ -1084,7 +1195,7 @@ uraht_process(
         auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
         FixedPoint transformBuf[2];
-        if (isEncoder) {
+        if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
           // invert the initial reduction (sum)
           // NB: read from (w-1) since left side came from attrsLf.
           transformBuf[1] = attrsHfIt[(w - 1) * numAttrs + k];
@@ -1123,7 +1234,7 @@ uraht_process(
       }
 
       // Track RL for RDOQ
-      if (isEncoder) {
+      if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
         if (sumCoeff == 0)
           trainZeros++;
         else
@@ -1169,15 +1280,49 @@ regionAdaptiveHierarchicalTransform(
   const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
   const Qps* pointQpOffsets,
-  int64_t* mortonCode,
-  int* attributes,
   const int attribCount,
   const int voxelCount,
-  int* coefficients)
+  int64_t* mortonCode,
+  int* attributes,
+  const int voxelCount_mc,
+  int64_t* mortonCode_mc,
+  int* attributes_mc,
+  int* coefficients,
+  attr::ModeEncoder& encoder)
 {
-  uraht_process<true>(
-    rahtPredParams, qpset, pointQpOffsets, voxelCount, attribCount, mortonCode,
-    attributes, coefficients);
+  uraht_process(
+    rahtPredParams, qpset, pointQpOffsets, attribCount, voxelCount, mortonCode,
+    attributes, voxelCount_mc, mortonCode_mc, attributes_mc, coefficients,
+    encoder,
+    [&qpset, &rahtPredParams](
+      attr::ModeEncoder& encoder,
+      int nodeCnt, int predCtxLevel,
+      bool enableIntraPrediction, bool enableInterPrediction, Mode parentMode,
+      Mode neighborsMode, int numAttrs, int64_t weights[],
+      std::vector<int64_t>::const_iterator attrRecParent,
+      VecAttr& transformBuf, std::vector<Mode>& modes, const int qpLayer,
+      const Qps* nodeQp) {
+      if (nodeCnt > 1) {
+        int predCtxMode;
+        auto inferredPredMode = attr::getInferredMode(
+          predCtxMode, enableIntraPrediction,
+          enableInterPrediction, nodeCnt, parentMode, neighborsMode, numAttrs,
+          weights, attrRecParent);
+
+        if (inferredPredMode == Mode::Null)
+          return Mode::Null;
+        if (predCtxLevel < 0)
+          return inferredPredMode;
+
+        encoder.getEntropy(predCtxMode, predCtxLevel);
+        auto predMode = attr::choseMode(
+          encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
+          nodeQp);
+        encoder.encode(predCtxMode, predCtxLevel, predMode);
+        return predMode;
+      }
+      return Mode::Null;
+    });
 }
 
 //============================================================================
@@ -1202,15 +1347,42 @@ regionAdaptiveHierarchicalInverseTransform(
   const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
   const Qps* pointQpOffsets,
-  int64_t* mortonCode,
-  int* attributes,
   const int attribCount,
   const int voxelCount,
-  int* coefficients)
+  int64_t* mortonCode,
+  int* attributes,
+  const int voxelCount_mc,
+  int64_t* mortonCode_mc,
+  int* attributes_mc,
+  int* coefficients,
+  attr::ModeDecoder& decoder)
 {
-  uraht_process<false>(
-    rahtPredParams, qpset, pointQpOffsets, voxelCount, attribCount, mortonCode,
-    attributes, coefficients);
+  uraht_process(
+    rahtPredParams, qpset, pointQpOffsets, attribCount, voxelCount, mortonCode,
+    attributes, voxelCount_mc, mortonCode_mc, attributes_mc, coefficients,
+    decoder,
+    [&qpset, &rahtPredParams](
+      attr::ModeDecoder& decoder, int nodeCnt, int predCtxLevel,
+      bool enableIntraPrediction, bool enableInterPrediction, Mode parentMode,
+      Mode neighborsMode, int numAttrs, int64_t weights[],
+      std::vector<int64_t>::const_iterator attrRecParent,
+      VecAttr& transformBuf, std::vector<Mode>& modes, const int qpLayer,
+      const Qps* nodeQp) {
+      if (nodeCnt > 1) {
+        int predCtxMode;
+        auto inferredPredMode = attr::getInferredMode(
+          predCtxMode, enableIntraPrediction,
+          enableInterPrediction, nodeCnt, parentMode, neighborsMode, numAttrs,
+          weights, attrRecParent);
+
+        if (inferredPredMode == Mode::Null)
+          return Mode::Null;
+        if (predCtxLevel < 0)
+          return inferredPredMode;
+        return decoder.decode(predCtxMode, predCtxLevel);
+      }
+      return Mode::Null;
+    });
 }
 
 //============================================================================

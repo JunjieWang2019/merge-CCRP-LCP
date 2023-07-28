@@ -589,8 +589,8 @@ decodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud
-)
+  PCCPointSet3& compensatedPointCloud,
+  std::vector<MotionVector>& motionVectors)
 {
   const bool isInter = gbh.interPredictionEnabledFlag;
 
@@ -659,7 +659,7 @@ decodeGeometryOctree(
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  std::vector<std::vector<Vec3<int>>> firstLpuActiveWindow;
+  std::vector<std::vector<LPUwindow>> firstLpuActiveWindow;
   if (isInter && gps.localMotionEnabled) {
     const int extended_window = gps.motion.motion_window_size / 2;
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
@@ -866,7 +866,7 @@ decodeGeometryOctree(
             decode_splitPU_MV_MC(
               &node0, gps.motion, nodeSizeLog2,
               &arithmeticDecoder, &compensatedPointCloud,
-              firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize);
+              firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize, motionVectors);
           }
         }
 
@@ -1168,12 +1168,13 @@ decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud
+  PCCPointSet3& compensatedPointCloud,
+  std::vector<MotionVector>& motionVectors
 )
 {
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, compensatedPointCloud);
+    refFrame, minimum_position, compensatedPointCloud, motionVectors);
 }
 
 //-------------------------------------------------------------------------
@@ -1191,9 +1192,10 @@ decodeGeometryOctreeScalable(
 {
   std::vector<PCCOctree3Node> nodes;
   PCCPointSet3 compensatedPointCloud;
+  std::vector<MotionVector> motionVectors;
   decodeGeometryOctree(
     gps, gbh, minGeomNodeSizeLog2, pointCloud, ctxtMem, arithmeticDecoder,
-    &nodes, refFrame, { 0, 0, 0 }, compensatedPointCloud);
+    &nodes, refFrame, { 0, 0, 0 }, compensatedPointCloud, motionVectors);
 
   if (minGeomNodeSizeLog2 > 0) {
     size_t size =

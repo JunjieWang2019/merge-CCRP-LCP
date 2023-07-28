@@ -850,6 +850,10 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     if (aps.rahtPredParams.prediction_enabled_flag) {
       bs.writeUe(aps.rahtPredParams.prediction_threshold0);
       bs.writeUe(aps.rahtPredParams.prediction_threshold1);
+      bs.write(aps.rahtPredParams.enable_inter_prediction);
+      if(aps.rahtPredParams.enable_inter_prediction) {
+        bs.writeUe(aps.rahtPredParams.mode_level);
+      }
     }
   }
 
@@ -905,10 +909,15 @@ parseAps(const PayloadBuffer& buf)
   bs.read(&aps.aps_slice_qp_deltas_present_flag);
 
   if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
+    aps.rahtPredParams.mode_level = 0;
     bs.read(&aps.rahtPredParams.prediction_enabled_flag);
     if (aps.rahtPredParams.prediction_enabled_flag) {
       bs.readUe(&aps.rahtPredParams.prediction_threshold0);
       bs.readUe(&aps.rahtPredParams.prediction_threshold1);
+      bs.read(&aps.rahtPredParams.enable_inter_prediction);
+      if(aps.rahtPredParams.enable_inter_prediction) {
+        bs.readUe(&aps.rahtPredParams.mode_level);
+      }
     }
   }
 

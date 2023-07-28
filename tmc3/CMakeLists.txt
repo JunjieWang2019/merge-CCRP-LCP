@@ -58,6 +58,7 @@ file(GLOB PROJECT_IN_FILES
 )
 
 file(GLOB PROJECT_INC_FILES
+  "ModeCoder.h"
   "attr_tools.h"
   "Attribute.h"
   "AttributeCommon.h"

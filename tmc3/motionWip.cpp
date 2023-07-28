@@ -413,7 +413,7 @@ static double
 find_motion(
   const GeometryParameterSet::Motion& param,
   const MotionEntropyEstimate& motionEntropy,
-  const std::vector<Vec3<int>>& Window,
+  const std::vector<LPUwindow>& Window,
   const std::vector<Vec3<int>>& Block0,
   int x0,
   int y0,
@@ -458,7 +458,7 @@ find_motion(
     int min_d = max_distance;
     //for (const auto w : Window) {
     for (int idxW = 0; idxW < Window.size(); idxW++) {
-      auto w = Window[idxW];
+      auto w = Window[idxW].pos;
       t0 = b[0] - w[0];
       t1 = b[1] - w[1];
       t2 = b[2] - w[2];
@@ -607,7 +607,7 @@ find_motion(
 
     std::vector<Vec3<int>> Block1;
     Block1.reserve(Block0.size());
-    std::vector<Vec3<int>> Window1;
+    std::vector<LPUwindow> Window1;
     Window1.reserve(Window.size());
 
     for (int t = 0; t < 8; t++) {
@@ -646,7 +646,7 @@ find_motion(
 
       Window1.resize(0);
       for (const auto& b : Window) {
-        if (b[0] >= xx1 && b[0] < xhigh && b[1] >= yy1 && b[1] < yhigh && b[2] >= zz1 && b[2] < zhigh)
+        if (b.pos[0] >= xx1 && b.pos[0] < xhigh && b.pos[1] >= yy1 && b.pos[1] < yhigh && b.pos[2] >= zz1 && b.pos[2] < zhigh)
           Window1.push_back(b);
       }
       cost_Split += find_motion(param, motionEntropy, Window1, Block1, x1, y1, z1, local_size1, Split_PU_tree, bufferPoints, LUT_MVestimate);
@@ -737,7 +737,7 @@ extracPUsubtree(
 //----------------------------------------------------------------------------
 void
 buildActiveWindowAndBoundToBB(
-  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int& LPUnumInAxis,
   const int maxBB,
   PCCPointSet3& predPointCloud,
@@ -773,6 +773,7 @@ buildActiveWindowAndBoundToBB(
   int numPoints = 0;
   for (size_t i = 0; i < predPointCloud.getPointCount(); ++i) {
     const auto point = predPointCloud[i] - BBorig;
+    const auto& color = predPointCloud.getColor(i);
 
     // keep only pred poitns in BB
     if (point[0] >= 0 && point[1] >= 0 && point[2] >= 0 && point[0] < boundx && point[1] < boundy && point[2] < boundz) {
@@ -798,7 +799,7 @@ buildActiveWindowAndBoundToBB(
 
           if (oldz != zidx && zidx >= 0 && zidx < LPUnumInAxis) {
             int idx = (xidx * LPUnumInAxis + yidx) * LPUnumInAxis + zidx;
-            lpuActiveWindow[idx].push_back(point);
+            lpuActiveWindow[idx].push_back({point, color});
           }
 
           oldz = zidx;
@@ -821,7 +822,7 @@ motionSearchForNode(
   EntropyEncoder* arithmeticEncoder,
   int8_t* bufferPoints,
   PUtree* local_PU_tree,
-  const std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  const std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int lpuIdx)
 {
   // if window is empty, no compensation
@@ -864,9 +865,10 @@ encode_splitPU_MV_MC(
   Vec3<int> nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int numLPUPerLine,
-  int log2MotionBlkSize)
+  int log2MotionBlkSize,
+  std::vector<MotionVector>& motionVectors)
 {
   const int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
@@ -880,10 +882,12 @@ encode_splitPU_MV_MC(
     // encode MV
     Vec3<int> MV = local_PU_tree->MVs[0];
     motionEncoder.encodeVector(MV);
+    motionVectors.push_back({node0->pos * node_size, node_size, MV});
+
     Vec3<int> MVd = MV;
 
     // find search window
-    std::vector<Vec3<int>> Window;
+    std::vector<LPUwindow> Window;
     const Vec3<int32_t> pos = node0->pos << nodeSizeLog2;
     const int lpuX = pos[0] >> log2MotionBlkSize;
     const int lpuY = pos[1] >> log2MotionBlkSize;
@@ -896,7 +900,7 @@ encode_splitPU_MV_MC(
       Window.push_back(lpuActiveWindow[lpuIdx][i]);
     }
 
-    std::vector<Vec3<int>> pointPredictorMC;
+    std::vector<LPUwindow> pointPredictorMC;
     // create the compensated points
     int xlow = pos[0];
     int xhigh = pos[0] + (1 << nodeSizeLog2[0]);
@@ -906,23 +910,25 @@ encode_splitPU_MV_MC(
     int zhigh = pos[2] + (1 << nodeSizeLog2[2]);
     for (auto& w : Window) {
       // apply best motion
-      const Vec3<int> wV = w - MVd;
+      const Vec3<int> wV = w.pos - MVd;
       if (
         wV[0] >= xlow && wV[0] < xhigh && wV[1] >= ylow && wV[1] < yhigh
         && wV[2] >= zlow && wV[2] < zhigh)
-        pointPredictorMC.push_back(wV);
+        pointPredictorMC.push_back({wV, w.color});
     }
 
     //and make node0 point to them
     node0->predStart = compensatedPointCloud->getPointCount();
     compensatedPointCloud->resize(
       compensatedPointCloud->getPointCount() + pointPredictorMC.size());
+    compensatedPointCloud->addColors();
     size_t counter = node0->predStart;
     for (const auto& p : pointPredictorMC) {
-      auto& predPoint = (*compensatedPointCloud)[counter++];
-      predPoint[0] = p[0];
-      predPoint[1] = p[1];
-      predPoint[2] = p[2];
+      auto& predPoint = (*compensatedPointCloud)[counter];
+      auto& color = compensatedPointCloud->getColor(counter);
+      predPoint = p.pos;
+      color = p.color;
+      counter++;
     }
     node0->predEnd = compensatedPointCloud->getPointCount();
     node0->isCompensated = true;
@@ -942,9 +948,10 @@ decode_splitPU_MV_MC(
   Vec3<int> nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int numLPUPerLine,
-  int log2MotionBlkSize)
+  int log2MotionBlkSize,
+  std::vector<MotionVector>& motionVectors)
 {
   int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyDecoder motionDecoder(arithmeticDecoder);
@@ -961,8 +968,10 @@ decode_splitPU_MV_MC(
     motionDecoder.decodeVector(&MV);
     MVd = MV;
 
+    motionVectors.push_back({node0->pos * node_size, node_size, MV});
+
     // find search window
-    std::vector<Vec3<int>> Window;
+    std::vector<LPUwindow> Window;
     Vec3<int32_t> pos = node0->pos << nodeSizeLog2;
 
     const int lpuX = pos[0] >> log2MotionBlkSize;
@@ -976,7 +985,7 @@ decode_splitPU_MV_MC(
       Window.push_back(lpuActiveWindow[lpuIdx][i]);
     }
 
-    std::vector<Vec3<int>> pointPredictorMC;
+    std::vector<LPUwindow> pointPredictorMC;
     // create the compensated points
     const int xlow = pos[0];
     const int xhigh = pos[0] + (1 << nodeSizeLog2[0]);
@@ -987,23 +996,25 @@ decode_splitPU_MV_MC(
 
     for (const auto& w : Window) {
       // apply best motion
-      Vec3<int> wV = w - MVd;
+      Vec3<int> wV = w.pos - MVd;
       if (
         wV[0] >= xlow && wV[0] < xhigh && wV[1] >= ylow && wV[1] < yhigh
         && wV[2] >= zlow && wV[2] < zhigh)
-        pointPredictorMC.push_back(wV);
+        pointPredictorMC.push_back({wV, w.color});
     }
 
     //and make node0 point to them
     node0->predStart = compensatedPointCloud->getPointCount();
     compensatedPointCloud->resize(
       compensatedPointCloud->getPointCount() + pointPredictorMC.size());
+    compensatedPointCloud->addColors();
     size_t counter = node0->predStart;
     for (const auto& p : pointPredictorMC) {
-      auto& predPoint = (*compensatedPointCloud)[counter++];
-      predPoint[0] = p[0];
-      predPoint[1] = p[1];
-      predPoint[2] = p[2];
+      auto& predPoint = (*compensatedPointCloud)[counter];
+      auto& color = compensatedPointCloud->getColor(counter);
+      predPoint = p.pos;
+      color = p.color;
+      counter++;
     }
     node0->predEnd = compensatedPointCloud->getPointCount();
     node0->isCompensated = true;

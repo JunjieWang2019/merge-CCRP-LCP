@@ -438,6 +438,9 @@ struct SequenceParameterSet {
 //============================================================================
 
 struct RahtPredictionParams {
+  bool enable_inter_prediction;
+  int mode_level;
+
   bool prediction_enabled_flag;
   int prediction_threshold0;
   int prediction_threshold1;

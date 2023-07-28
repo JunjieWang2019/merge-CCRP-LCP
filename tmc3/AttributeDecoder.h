@@ -66,7 +66,8 @@ public:
     size_t payloadLen,
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud, 
-    const AttributeInterPredParams& attrInterPredParams
+    const AttributeInterPredParams& attrInterPredParams,
+    attr::ModeDecoder& predDecoder
   ) override;
 
 protected:
@@ -77,14 +78,18 @@ protected:
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCResidualsDecoder& decoder,
-    PCCPointSet3& pointCloud);
+    PCCPointSet3& pointCloud,
+    attr::ModeDecoder& predDecoder,
+    const AttributeInterPredParams& attrInterPredParams);
 
   void decodeColorsRaht(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCResidualsDecoder& decoder,
-    PCCPointSet3& pointCloud);
+    PCCPointSet3& pointCloud,
+    attr::ModeDecoder& predDecoder,
+    const AttributeInterPredParams& attrInterPredParams);
 };
 
 //============================================================================

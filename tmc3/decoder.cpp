@@ -268,7 +268,8 @@ PCCTMC3Decoder3::decompress(
     // Avoid dropping an actual frame
     _suppressOutput = false;
 
-    return decodeGeometryBrick(*buf);
+    attrInterPredParams.motionVectors.clear();
+    return decodeGeometryBrick(*buf, attrInterPredParams);
 
   case PayloadType::kAttributeBrick:
     decodeAttributeBrick(*buf);
@@ -378,7 +379,9 @@ PCCTMC3Decoder3::activateParameterSets(const AttributeParamInventoryHdr& hdr)
 // Initialise the point cloud storage and decode a single geometry slice.
 
 int
-PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
+PCCTMC3Decoder3::decodeGeometryBrick(
+  const PayloadBuffer& buf,
+  AttributeInterPredParams& attrInterPredParams)
 {
   assert(buf.type == PayloadType::kGeometryBrick);
   std::cout << "positions bitstream size " << buf.size() << " B\n";
@@ -396,6 +399,8 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
       return desc.attributeLabel == KnownAttributeLabel::kReflectance;
     });
 
+  attrInterPredParams.compensatedPointCloud.clear();
+  attrInterPredParams.compensatedPointCloud.addRemoveAttributes(hasColour, hasReflectance);
   _currentPointCloud.clear();
   _currentPointCloud.addRemoveAttributes(hasColour, hasReflectance);
 
@@ -498,13 +503,10 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
 
   if (!_gps->trisoup_enabled_flag) {
     if (!_params.minGeomNodeSizeLog2) {
-      PCCPointSet3 compensatedPointCloud;
       decodeGeometryOctree(
-        *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec
-        ,_refFrame
-        ,_sps->seqBoundingBoxOrigin,
-        compensatedPointCloud
-	  );
+        *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
+        _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud,
+        attrInterPredParams.motionVectors);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
@@ -513,7 +515,8 @@ PCCTMC3Decoder3::decodeGeometryBrick(const PayloadBuffer& buf)
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin);
+      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud,
+      attrInterPredParams.motionVectors);
   }
 
   // At least the first slice's geometry has been decoded
@@ -581,16 +584,23 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 
   for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
     _currentPointCloud[i] += _sliceOrigin;
+  for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
+    attrInterPredParams.compensatedPointCloud[i] += _sliceOrigin;
+  for (auto& mv : attrInterPredParams.motionVectors)
+    mv.position += _sliceOrigin;
 
   auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
   _attrDecoder->decode(
     *_sps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
     _params.minGeomNodeSizeLog2, buf.data() + abhSize, buf.size() - abhSize,
-    ctxtMemAttr, _currentPointCloud
-    , attrInterPredParams);
+    ctxtMemAttr, _currentPointCloud, attrInterPredParams, predDecoder);
 
   for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
     _currentPointCloud[i] -= _sliceOrigin;
+  for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
+    attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
+  for (auto& mv : attrInterPredParams.motionVectors)
+    mv.position -= _sliceOrigin;
 
   attrInterPredParams.referencePointCloud.clear();
 

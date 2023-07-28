@@ -66,7 +66,8 @@ public:
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     PayloadBuffer* payload,
-    const AttributeInterPredParams& attrInterPredParams
+    const AttributeInterPredParams &attrInterPredParams,
+    attr::ModeEncoder& predEncoder
     ) override;
 
 protected:
@@ -77,14 +78,18 @@ protected:
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder);
+    PCCResidualsEncoder& encoder,
+    attr::ModeEncoder& predEncoder,
+    const AttributeInterPredParams& attrInterPredParams);
 
   void encodeColorsTransformRaht(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
-    PCCResidualsEncoder& encoder);
+    PCCResidualsEncoder& encoder,
+    attr::ModeEncoder& predEncoder,
+    const AttributeInterPredParams& attrInterPredParams);
 
 private:
   // The current attribute slice header

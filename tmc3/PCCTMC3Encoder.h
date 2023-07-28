@@ -166,11 +166,12 @@ public:
 private:
   void appendSlice(PCCPointSet3& cloud);
 
-  void encodeGeometryBrick(const EncoderParams*, PayloadBuffer* buf);
+  void encodeGeometryBrick(const EncoderParams*, PayloadBuffer* buf, AttributeInterPredParams& attrInterPredParams);
 
   SrcMappedPointSet quantization(const PCCPointSet3& src);
 
 private:
+  attr::ModeEncoder predCoder;
   PCCPointSet3 pointCloud;
 
   // Point positions in spherical coordinates of the current slice

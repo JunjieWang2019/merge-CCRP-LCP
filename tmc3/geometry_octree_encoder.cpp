@@ -783,7 +783,8 @@ encodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& compensatedPointCloud)
+  PCCPointSet3& compensatedPointCloud,
+  std::vector<MotionVector>& motionVectors)
 {
   // TODO: we don't need to keep points never visible is prediction search window
   PCCPointSet3 predPointCloud(refFrame.cloud);
@@ -807,7 +808,7 @@ encodeGeometryOctree(
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  std::vector<std::vector<Vec3<int>>> firstLpuActiveWindow;
+  std::vector<std::vector<LPUwindow>> firstLpuActiveWindow;
   if (isInter && gps.localMotionEnabled) {
     bufferPoints.reset(new int8_t[3 * 128 * 10000]);
 
@@ -1156,7 +1157,7 @@ encodeGeometryOctree(
           encode_splitPU_MV_MC(
             &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
             encoder._arithmeticEncoder, &compensatedPointCloud,
-            firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize);
+            firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize, motionVectors);
         }
 
         // split the current node into 8 children
@@ -1513,11 +1514,12 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& compensatedPointCloud)
+  PCCPointSet3& compensatedPointCloud,
+  std::vector<MotionVector>& motionVectors)
 {
   encodeGeometryOctree(
-    opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr,
-    refFrame, sps, compensatedPointCloud);
+    opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
+    sps, compensatedPointCloud, motionVectors);
 }
 
 //============================================================================

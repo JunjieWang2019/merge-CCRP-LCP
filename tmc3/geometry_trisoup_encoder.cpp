@@ -52,14 +52,15 @@ encodeGeometryTrisoup(
   GeometryOctreeContexts& ctxtMemOctree,
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
-  const SequenceParameterSet& sps)
+  const SequenceParameterSet& sps,
+  PCCPointSet3& compensatedPointCloud,
+  std::vector<MotionVector>& motionVectors)
 {
   // trisoup uses octree coding until reaching the triangulation level.
   std::vector<PCCOctree3Node> nodes;
-  PCCPointSet3 compensatedPointCloud;  // set of points after motion compensation
   encodeGeometryOctree(
     optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
-    refFrame, sps, compensatedPointCloud);
+    refFrame, sps, compensatedPointCloud, motionVectors);
 
   std::cout << "\nSize compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
   bool isInter = gbh.interPredictionEnabledFlag;

@@ -200,7 +200,8 @@ AttributeDecoder::decode(
   size_t payloadLen,
   AttributeContexts& ctxtMem,
   PCCPointSet3& pointCloud,
-  const AttributeInterPredParams& attrInterPredParams)
+  const AttributeInterPredParams& attrInterPredParams,
+  attr::ModeDecoder& predDecoder)
 {
   if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
     AttrRawDecoder::decode(
@@ -216,7 +217,9 @@ AttributeDecoder::decode(
   if (attr_desc.attr_num_dimensions_minus1 == 0) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
-      decodeReflectancesRaht(attr_desc, attr_aps, qpSet, decoder, pointCloud);
+      decodeReflectancesRaht(
+        attr_desc, attr_aps, qpSet, decoder, pointCloud, predDecoder,
+        attrInterPredParams);
       break;
 
     case AttributeEncoding::kRaw:
@@ -226,7 +229,7 @@ AttributeDecoder::decode(
   } else if (attr_desc.attr_num_dimensions_minus1 == 2) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
-      decodeColorsRaht(attr_desc, attr_aps, qpSet, decoder, pointCloud);
+      decodeColorsRaht(attr_desc, attr_aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
       break;
 
     case AttributeEncoding::kRaw:
@@ -254,7 +257,9 @@ decodeRaht(
   const AttributeParameterSet& aps,
   const QpSet& qpSet,
   PCCResidualsDecoder& decoder,
-  PCCPointSet3& pointCloud)
+  PCCPointSet3& pointCloud,
+  attr::ModeDecoder& predDecoder,
+  const AttributeInterPredParams& attrInterPredParams)
 {
   const int voxelCount = pointCloud.getPointCount();
 
@@ -303,10 +308,32 @@ decodeRaht(
     }
   }
 
-  regionAdaptiveHierarchicalInverseTransform(
-    aps.rahtPredParams, qpSet,
-    pointQpOffsets.data(), mortonCode.data(), attributes.data(), attribCount,
-    voxelCount, coefficients.data());
+  if (attrInterPredParams.hasLocalMotion()) {
+    predDecoder.set(&decoder.arithmeticDecoder);
+    const int voxelCount_mc =
+      int(attrInterPredParams.compensatedPointCloud.getPointCount());
+    std::cout << "Using inter MC for prediction" << std::endl;
+
+    std::vector<int64_t> mortonCode_mc;
+    std::vector<int> attributes_mc;
+    sortedPointCloud(
+      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
+      attributes_mc);
+
+    regionAdaptiveHierarchicalInverseTransform(
+      aps.rahtPredParams, qpSet, pointQpOffsets.data(), attribCount,
+      voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
+      mortonCode_mc.data(), attributes_mc.data(), coefficients.data(),
+      predDecoder);
+  } else {
+    predDecoder.reset();
+    predDecoder.set(&decoder.arithmeticDecoder);
+
+    regionAdaptiveHierarchicalInverseTransform(
+      aps.rahtPredParams, qpSet, pointQpOffsets.data(), attribCount,
+      voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
+      coefficients.data(), predDecoder);
+  }
 
   int clipMax = (1 << desc.bitdepth) - 1;
   auto attribute = attributes.begin();
@@ -331,9 +358,12 @@ AttributeDecoder::decodeReflectancesRaht(
   const AttributeParameterSet& aps,
   const QpSet& qpSet,
   PCCResidualsDecoder& decoder,
-  PCCPointSet3& pointCloud)
+  PCCPointSet3& pointCloud,
+  attr::ModeDecoder& predDecoder,
+  const AttributeInterPredParams& attrInterPredParams)
 {
-  decodeRaht<1>(desc, aps, qpSet, decoder, pointCloud);
+  decodeRaht<1>(
+    desc, aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
 }
 
 void
@@ -342,9 +372,12 @@ AttributeDecoder::decodeColorsRaht(
   const AttributeParameterSet& aps,
   const QpSet& qpSet,
   PCCResidualsDecoder& decoder,
-  PCCPointSet3& pointCloud)
+  PCCPointSet3& pointCloud,
+  attr::ModeDecoder& predDecoder,
+  const AttributeInterPredParams& attrInterPredParams)
 {
-  decodeRaht<3>(desc, aps, qpSet, decoder, pointCloud);
+  decodeRaht<3>(
+    desc, aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
 }
 
 //============================================================================

@@ -49,21 +49,29 @@ namespace pcc {
 void regionAdaptiveHierarchicalTransform(
   const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
-  const Qps* pointQPOffset,
-  int64_t* mortonCode,
-  int* attributes,
+  const Qps* pointQpOffsets,
   const int attribCount,
   const int voxelCount,
-  int* coefficients);
+  int64_t* mortonCode,
+  int* attributes,
+  const int voxelCount_mc,
+  int64_t* mortonCode_mc,
+  int* attributes_mc,
+  int* coefficients,
+  attr::ModeEncoder& encoder);
 
 void regionAdaptiveHierarchicalInverseTransform(
   const RahtPredictionParams& rahtPredParams,
   const QpSet& qpset,
-  const Qps* pointQpOffset,
-  int64_t* mortonCode,
-  int* attributes,
+  const Qps* pointQpOffsets,
   const int attribCount,
   const int voxelCount,
-  int* coefficients);
+  int64_t* mortonCode,
+  int* attributes,
+  const int voxelCount_mc,
+  int64_t* mortonCode_mc,
+  int* attributes_mc,
+  int* coefficients,
+  attr::ModeDecoder& decoder);
 
 } /* namespace pcc */

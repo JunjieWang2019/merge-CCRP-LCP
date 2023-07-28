@@ -65,8 +65,13 @@ struct PUtree {
 int deriveMotionMaxPrefixBits(const GeometryParameterSet::Motion& param);
 int deriveMotionMaxSuffixBits(const GeometryParameterSet::Motion& param);
 
+struct LPUwindow {
+  Vec3<int> pos;
+  Vec3<attr_t> color;
+};
+
 void buildActiveWindowAndBoundToBB(
-  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int& LPUnumInAxis,
   const int maxBB,
   PCCPointSet3& predPointCloud,
@@ -83,7 +88,7 @@ bool motionSearchForNode(
   EntropyEncoder* arithmeticEncoder,
   int8_t* bufferPoints,
   PUtree* local_PU_tree,
-  const std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  const std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int numLPUPerLine);
 
 
@@ -94,9 +99,10 @@ void encode_splitPU_MV_MC(
   Vec3<int> nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int numLPUPerLine,
-  int log2MotionBlkSize);
+  int log2MotionBlkSize,
+  std::vector<MotionVector>& motionVectors);
 
 void extracPUsubtree(
   const GeometryParameterSet::Motion& param,
@@ -115,9 +121,10 @@ void decode_splitPU_MV_MC(
   Vec3<int> nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  std::vector<std::vector<Vec3<int>>>& lpuActiveWindow,
+  std::vector<std::vector<LPUwindow>>& lpuActiveWindow,
   int numLPUPerLine,
-  int log2MotionBlkSize);
+  int log2MotionBlkSize,
+  std::vector<MotionVector>& motionVectors);
 
   //============================================================================
 

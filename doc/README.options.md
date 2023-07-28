@@ -656,6 +656,13 @@ transform tree.
 A list of five weights that are used in the derivation of transform 
 domain prediction of RAHT coefficients when subnode prediction is enabled.
 
+### `--rahtInterPredictionEnabled=0|1`
+Controls the use of transform domain prediction of RAHT coefficients
+from motion compensated reference frame.
+
+### `--rahtModeLevel=INT-VALUE`
+Controls the RAHT level from which the prediction mode is signaled.
+
 ### `--qp=INT-VALUE`
 Attribute's luma quantization parameter.
 

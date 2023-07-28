@@ -668,13 +668,15 @@ PCCTMC3Encoder3::compressPartition(
   _sliceBoxWhd = bbox.max + 1;
 
   // geometry encoding
+  attrInterPredParams.compensatedPointCloud.clear();
+  attrInterPredParams.motionVectors.clear();
   if (1) {
     PayloadBuffer payload(PayloadType::kGeometryBrick);
 
     pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
     clock_user.start();
 
-    encodeGeometryBrick(params, &payload);
+    encodeGeometryBrick(params, &payload, attrInterPredParams);
 
     clock_user.stop();
 
@@ -760,13 +762,23 @@ PCCTMC3Encoder3::compressPartition(
 
     for (auto i = 0; i < pointCloud.getPointCount(); i++)
       pointCloud[i] += _sliceOrigin;
+    for (auto i = 0;
+         i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
+      attrInterPredParams.compensatedPointCloud[i] += _sliceOrigin;
+    for (auto& mv : attrInterPredParams.motionVectors)
+      mv.position += _sliceOrigin;
 
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
     attrEncoder->encode(
-      *_sps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud, &payload, attrInterPredParams);
+      *_sps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud, &payload, attrInterPredParams, predCoder);
 
     for (auto i = 0; i < pointCloud.getPointCount(); i++)
       pointCloud[i] -= _sliceOrigin;
+    for (auto i = 0;
+         i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
+      attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
+    for (auto& mv : attrInterPredParams.motionVectors)
+      mv.position -= _sliceOrigin;
 
     {
       attrInterPredParams.referencePointCloud.clear();
@@ -813,7 +825,9 @@ PCCTMC3Encoder3::compressPartition(
 
 void
 PCCTMC3Encoder3::encodeGeometryBrick(
-  const EncoderParams* params, PayloadBuffer* buf)
+  const EncoderParams* params,
+  PayloadBuffer* buf,
+  AttributeInterPredParams& attrInterPredParams)
 {
   GeometryBrickHeader gbh;
   gbh.geom_geom_parameter_set_id = _gps->gps_geom_parameter_set_id;
@@ -908,11 +922,10 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   }
 
   if (!_gps->trisoup_enabled_flag) {
-    PCCPointSet3 compensatedPointCloud;
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
       arithmeticEncoders, _refFrame, *_sps,
-      compensatedPointCloud);
+      attrInterPredParams.compensatedPointCloud, attrInterPredParams.motionVectors);
   }
   else
   {
@@ -922,7 +935,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryTrisoup(
       params->trisoup, params->geom, *_gps, gbh, pointCloud,
       *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
-      *_sps);
+      *_sps, attrInterPredParams.compensatedPointCloud, attrInterPredParams.motionVectors);
   }
 
   // signal the actual number of points coded

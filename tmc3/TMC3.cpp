@@ -962,6 +962,14 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.rahtPredParams.prediction_weights, {9,3,1,5,2},
     "Prediction weights for neighbours")
 
+  ("rahtInterPredictionEnabled",
+    params_attr.aps.rahtPredParams.enable_inter_prediction, false,
+    "Controls the use of transform-domain prediction")
+
+  ("rahtModeLevel",
+    params_attr.aps.rahtPredParams.mode_level, 2,
+    "Level to start signaling the prediction mode")
+
   ("qp",
     // NB: this is adjusted with minus 4 after the arguments are parsed
     params_attr.aps.init_qp_minus4, 4,
