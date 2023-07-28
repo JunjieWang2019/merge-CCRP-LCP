@@ -938,6 +938,7 @@ parseAps(const PayloadBuffer& buf)
         aps.rahtPredParams.prediction_weights.resize(5);
         for (int i = 0; i < 5; i++)
           bs.readUe(&aps.rahtPredParams.prediction_weights[i]);
+        aps.rahtPredParams.setPredictionWeights();
       }
     }
   }

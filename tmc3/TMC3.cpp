@@ -1309,6 +1309,7 @@ sanitizeEncoderOpts(
                        << "ignoring others.\n";
             weights.erase(weights.begin() + 5, weights.end());
           }
+          predParams.setPredictionWeights();
         }
       }
     }

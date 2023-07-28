@@ -444,6 +444,25 @@ struct RahtPredictionParams {
   bool prediction_skip1_flag;
   bool subnode_prediction_enabled_flag;
   std::vector<int> prediction_weights;
+
+  std::vector<int> predWeightParent;
+  std::vector<int> predWeightChild;
+
+  RahtPredictionParams()
+  {
+    predWeightParent = {4, 2, 2, 2, 1, 1, 1, 1, 1, 2,
+                        1, 2, 2, 1, 1, 1, 1, 1, 1};
+  }
+  void setPredictionWeights()
+  {
+    auto& w = prediction_weights;
+    predWeightChild = {w[4], w[4], w[3], w[4], w[3], w[3],
+                       w[4], w[4], w[4], w[4], w[4], w[4]};
+
+    predWeightParent = {w[0], w[1], w[1], w[1], w[2], w[2], w[2],
+                        w[2], w[2], w[1], w[2], w[1], w[1], w[2],
+                        w[2], w[2], w[2], w[2], w[2]};
+  }
 };
 
 //============================================================================
