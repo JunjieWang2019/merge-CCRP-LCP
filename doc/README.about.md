@@ -29,12 +29,122 @@ contents. The original implementation started from the experimental model
 being studied in EE13.60, and is based on the `release-v20.0-rc1` of G-PCC
 test model TMC13.
 
+ ### `ges-tm-v3.0`
+
+-Tag `ges-tm-v3.0` will be released after reported issues are resolved,
+if any.
+
+### `ges-tm-v3.0-rc1`
+
+Tag `ges-tm-v3.0-rc1` includes adoptions made during the meeting in
+Geneva (July 2023), a few new features, cleanups and some refactoring.
+
+- `misc: add parenthesis delimiter for arguments parsing`:  
+    Arguments/arguments-list can now be delimited by parenthesis to allow
+    nested sequencial types.
+
+- `trisoup: m63661 - inter skip mode`:  
+    In non-moving parts of a dynamic point cloud, it has been observed that
+    the geometry inter prediction based on (zero) motion compensation may
+    not be optimal due to lack of invariance of the compensation process.
+  
+    A new inter coding mode based on colocated vertices and nodes has been
+    introduced to mimic a kind of skip mode for point cloud coding.
+
+- `trisoup/ctc: m63660 - align slice BB to zero`:  
+    Aligning slice origin to (0, 0, 0) coordinates by default.
+
+- `trisoup: m63660 - hls for skip mode and grid alignment`:  
+    Adds high level syntax to align trisoup slices according to trisoup node
+    sizes. Also adds restrictions to enforce this alignment with skip mode.
+
+- `refactor: m64005 - refactoring Attribute{Enc,Dec}oder`:  
+    This is extracted from monolitic commit made for m64005  in EE repository.
+    It refactors Attributes code to get a single templated implementation for
+    both 1 dimention attribute luminance, and 3 dimention attributes color.
+
+- `refactor: m64005 - refactoring of RAHT intra`:  
+    This is extracted from monolitic commit made for m64005  in EE repository.
+    It provides some refactoring to RAHT.
+
+- `restore: divisionless RAHT prediction`:  
+    Reverts normative change made during the refactoring of RAHT. Integer
+    division was (re-)introduced for inter layer prediction, but had not been
+    presented nor discussed with WG7 during the meeting.  
+    The original behavior (with tabulated division approximation) has been
+    restored.
+
+- `restore: fixed point log2 estimation for RAHT RDOQ`:  
+    Reverts non-normative change made during the refactoring of RAHT.
+    Fixed point arithmetic for RAHT RDOQ was replaced by floating points
+    operations, but had not been presented nor discussed with WG7 during the
+    meeting.  
+    The original behavior (with fixed point approximation) has been
+    restored.
+
+- `restore: original neighbours retrieval for intra RAHT`:  
+    Reverts normative change made during the refactoring of RAHT.
+    The refactoring of the neighbours retrieval for RAHT was modifying the
+    behaviour of the inter layer prediction, but had not been presented nor
+    discussed with WG7 during the meeting.
+    The original code and behavior has been restored.
+
+- `raht/inter: m64005 - inter RAHT`:  
+    This is extracted from monolitic commit made for m64005  in EE repository.
+    In provides the inter RAHT discussed with WG7 and adopted.  
+  
+    Integration notes:  
+    - Some modifications affecting all-intra behaviour have been removed,
+      as they were not discussed in WG7. It includes the coding of a mode
+      for choosing the enabling or not of the inter layer prediction.
+    - The syntax element `mode_level` has been moved as an inter-prediction
+      dependent syntax element, since it should not affect all-intra.
+
+- `attr/raht: m64218 - inference of prediction modes`:  
+    Provides the inference of the prediction modes at certains levels of the
+    RAHT decomposition.  
+  
+    Integration notes:  
+    - The syntax element `upper_mode_level` has been moved and made
+      dependent on RAHT `enable_inter_prediction`, since the mode
+      should be infered only when inter prediction is enabled.
+
+- `attr/raht: m64112 - fix rootLevel value`:  
+    This is a fix on the derivation of the rootLevel value within RAHT.
+    The rootLevel should be obtained by rounding to the upper integer value
+    the division by 3 of the number of RAHT decomposition layers, to get the
+    number of dyadic decomposition levels. Because latest one might be
+    incomplete.
+
+- `attr/raht: m64118 - integer Haar` 
+    Introduces lossless extension to RAHT.  
+  
+    Integration notes:  
+    - Added support for inter-RAHT with m64005:  
+      - A simple rounding of the motion compensated predictor has
+        been added,
+      - The refactoring from m64005 has been modified to re-introduce
+        templated use of RAHT/Haar kernels,
+      - Kernel support for already normalized weights has been added.
+    - Added cfg file for octree-raht-inter with lossless attributes
 
 ### `ges-tm-v2.0`
 
-Tag `ges-tm-v2.0` will be released after reported issues are resolved, if any,
-and before the 2nd of June 2023.
+Tag `ges-tm-v2.0` was released on top of `ges-tm-v2.0-rc3` since no other
+issue had been reported.
 
+### `ges-tm-v2.0-rc3`
+
+Tag `ges-tm-v2.0-rc3`,
+- fixes an out of bound memory access, causing an assertion to occure in debug
+  mode. This was unsucessfuly fixed in `ges-tm-v2.0-rc2`.
+
+### `ges-tm-v2.0-rc2`
+
+Tag `ges-tm-v2.0-rc2`,
+- fixes uninitialized memory access to an encoding parameters;
+- restores the output points being reordered in decoding order within octree
+  encoder, which had been accidentaly removed during refactoring.
 
 ### `ges-tm-v2.0-rc1`
 
