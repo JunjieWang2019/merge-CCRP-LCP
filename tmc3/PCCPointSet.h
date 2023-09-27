@@ -262,7 +262,7 @@ public:
     swap(withLaserAngles, other.withLaserAngles);
   }
 
-  PointType operator[](const size_t index) const
+  const PointType& operator[](const size_t index) const
   {
     assert(index < positions.size());
     return positions[index];

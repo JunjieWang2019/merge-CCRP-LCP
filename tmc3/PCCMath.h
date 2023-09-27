@@ -392,9 +392,9 @@ public:
     return is;
   }
 
-  Vec3(const T a) { data[0] = data[1] = data[2] = a; }
+  Vec3(const T& a) { data[0] = data[1] = data[2] = a; }
 
-  Vec3(const T x, const T y, const T z)
+  Vec3(const T& x, const T& y, const T& z)
   {
     data[0] = x;
     data[1] = y;
