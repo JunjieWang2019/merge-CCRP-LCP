@@ -513,6 +513,9 @@ along edges.
 Controls the activation of coding residual position value for centroid 
 vertex in trisoup coding. 
 
+### `--trisoupFaceVertexEnabled=0|1`
+Controls the activation of using vertices on faces in trisoup coding.
+
 ### `--trisoupHaloEnabled=0|1`
 Controls the activation of using halo around trisoup triangles for ray
 tracing.

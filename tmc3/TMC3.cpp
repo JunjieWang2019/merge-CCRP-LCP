@@ -791,6 +791,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gbh.trisoup_centroid_vertex_residual_flag, true,
     "Trisoup activate residual position value for the centroid vertex")
 
+  ("trisoupFaceVertexEnabled",
+    params.encoder.gbh.trisoup_face_vertex_flag, true,
+    "Trisoup activate the face vertex")
+
   ("trisoupHaloEnabled",
     params.encoder.gbh.trisoup_halo_flag, true,
     "Trisoup activate halo around triangles for ray tracing")

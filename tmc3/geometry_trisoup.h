@@ -410,6 +410,55 @@ determineCentroidResidual(
   int lowBound,
   int  highBound);
 
+bool nodeBoundaryInsideCheck(Vec3<int32_t> bw, Vec3<int32_t> pt);
+
+
+struct CentroidDrift {
+  int driftQ;
+  int lowBound;
+  int highBound;
+  int ctxMinMax;
+  int lowBoundSurface;
+  int highBoundSurface;
+};
+
+struct TrisoupNodeEdgeVertex {
+  int dominantAxis;
+  // ( x - 0.5 ) << kTrisoupFpBits ( [-0.5, W-0.5] x256 )
+  std::vector<Vertex> vertices;
+};
+
+
+struct TrisoupCentroidVertex {
+  bool valid;  // this represents centroid existence
+  Vec3<int32_t> pos;
+  int32_t drift;
+  bool boundaryInside;  // true if pos is inside of node boundary
+};
+
+
+struct TrisoupNodeFaceVertex {
+  std::vector<Vertex> vertices;
+  std::vector<int> formerEdgeVertexIdx;
+};
+
+
+struct TrisoupFace {
+  bool connect;
+
+  TrisoupFace(const bool cn)
+  : connect(cn)
+  {}
+
+  TrisoupFace()
+  { this->clear(); }
+
+  void clear(void)
+  { connect = false; }
+};
+
+
+
 //============================================================================
 
 }  // namespace pcc

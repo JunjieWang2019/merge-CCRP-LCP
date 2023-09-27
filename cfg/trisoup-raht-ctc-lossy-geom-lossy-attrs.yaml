@@ -36,6 +36,11 @@ categories:
          r02: 1
          r03: 1
          r04: 0
+     - trisoupFaceVertexEnabled:
+         r01: 1
+         r02: 1
+         r03: 1
+         r04: 0
      - trisoupFineRayTracingEnabled: 1
      -
        - !conditional '"${group}" =~ m{^cat2}'
