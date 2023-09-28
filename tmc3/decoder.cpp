@@ -602,8 +602,6 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   for (auto& mv : attrInterPredParams.motionVectors)
     mv.position -= _sliceOrigin;
 
-  attrInterPredParams.referencePointCloud.clear();
-
   // Note the current sliceID for loss detection
   _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;
 

@@ -209,13 +209,10 @@ struct PCCNeighborInfo {
 //---------------------------------------------------------------------------
 
 struct AttributeInterPredParams {
-  PCCPointSet3 referencePointCloud;
   PCCPointSet3 compensatedPointCloud;
   std::vector<MotionVector> motionVectors;
   int frameDistance;
   bool enableAttrInterPred;
-  int getPointCount() const { return referencePointCloud.getPointCount(); }
-  void clear() { referencePointCloud.clear(); }
   bool hasLocalMotion() const { return compensatedPointCloud.getPointCount() > 0; }
 };
 

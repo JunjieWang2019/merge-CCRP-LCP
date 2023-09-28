@@ -756,7 +756,7 @@ PCCTMC3Encoder3::compressPartition(
     }
     // Number of regions is constrained to at most 1.
     assert(abh.qpRegions.size() <= 1);
-    
+
     abh.disableAttrInterPred = true;
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
 
@@ -779,19 +779,6 @@ PCCTMC3Encoder3::compressPartition(
       attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
     for (auto& mv : attrInterPredParams.motionVectors)
       mv.position -= _sliceOrigin;
-
-    {
-      attrInterPredParams.referencePointCloud.clear();
-    }
-
-    if(!attrInterPredParams.getPointCount())
-    {
-      attrInterPredParams.referencePointCloud = pointCloud;
-      for (int count = 0; count < attrInterPredParams.referencePointCloud.getPointCount(); count++) {
-        attrInterPredParams.referencePointCloud[count] += _sliceOrigin;
-      }
-    }
-
 
     clock_user.stop();
 
