@@ -789,6 +789,12 @@ encodeGeometryOctree(
   // TODO: we don't need to keep points never visible is prediction search window
   PCCPointSet3 predPointCloud(refFrame.cloud);
 
+  MSOctree mSOctree(&predPointCloud, -gbh.geomBoxOrigin, 2);
+  MSOctree mSOctreeCurr;
+
+  if (gbh.interPredictionEnabledFlag)
+    mSOctreeCurr = MSOctree(&pointCloud, {}, gbh.trisoupNodeSizeLog2(gps));
+
   auto arithmeticEncoderIt = arithmeticEncoders.begin();
   GeometryOctreeEncoder encoder(gps, gbh, ctxtMem, arithmeticEncoderIt->get());
 
@@ -802,17 +808,12 @@ encodeGeometryOctree(
   auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
 
   // variables for local motion
-  std::unique_ptr<int8_t[]> bufferPoints;
 
   int LPUnumInAxis = 0;
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  std::vector<PCCPointSet3> firstLpuActiveWindow;
   if (isInter && gps.localMotionEnabled) {
-    bufferPoints.reset(new int8_t[3 * 128 * 10000]);
-
-    const int extended_window = gps.motion.motion_window_size / 2;
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
     const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
 
@@ -824,7 +825,6 @@ encodeGeometryOctree(
 
     // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
     point_t BBorig = gbh.geomBoxOrigin;
-    buildActiveWindowAndBoundToBB(firstLpuActiveWindow, LPUnumInAxis, maxBB, predPointCloud, extended_window, log2MotionBlockSize, lvlNodeSizeLog2[0], BBorig);
     std::cout << "rootNodeSize for brick = " << (1 << gbh.rootNodeSizeLog2) << "\n";
     std::cout << "LPU size = " << (1 << log2MotionBlockSize) << "\n";
     std::cout << "Predictor size = " << predPointCloud.getPointCount() << std::endl;
@@ -848,9 +848,11 @@ encodeGeometryOctree(
   node00.start = uint32_t(0);
   node00.end = uint32_t(pointCloud.getPointCount());
   node00.pos = int32_t(0);
+  node00.mSOctreeNodeIdx = uint32_t(0);
 
   node00.numSiblingsMispredicted = 0;
   node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : uint32_t(0);
+  node00.mSONodeIdx = isInter && gps.localMotionEnabled ? 0 : -1;
   node00.predStart = uint32_t(0);
   node00.siblingOccupancy = 0;
   //node00.idcmEligible = false;
@@ -1131,34 +1133,22 @@ encodeGeometryOctree(
           const int lpuIdx = (lpuX * LPUnumInAxis + lpuY) * LPUnumInAxis + lpuZ;
 
           // no local motion if not enough points
-          const bool isLocalEnabled = firstLpuActiveWindow[lpuIdx].size() > 50;
+          const bool isLocalEnabled =
+            true;
           std::unique_ptr<PUtree> PU_tree(new PUtree);
 
-          if (isLocalEnabled) {
-            node0.hasMotion = motionSearchForNode(pointCloud, &node0, gps.motion, nodeSizeLog2[0],
-              encoder._arithmeticEncoder, bufferPoints.get(),
-              PU_tree.get(), firstLpuActiveWindow, lpuIdx);
-          }
-          else {
-            node0.hasMotion = false;
-          }
-
-          if (node0.hasMotion) {
+            node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, gps.motion, nodeSizeLog2[0],
+              encoder._arithmeticEncoder, PU_tree.get());
             node0.PU_tree = std::move(PU_tree);
-          }
-          else {
-            node0.PU_tree = nullptr;
-            noMotionForNode(predPointCloud, &compensatedPointCloud, &node0);
-          }
         }
 
         // code split PU flag. If not split, code  MV and apply MC
         // results of MC are stacked in compensatedPointCloud that starts empty
         if (node0.PU_tree != nullptr) {
-          encode_splitPU_MV_MC(
+          encode_splitPU_MV_MC(mSOctree,
             &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
             encoder._arithmeticEncoder, &compensatedPointCloud,
-            firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize, motionVectors);
+            LPUnumInAxis, log2MotionBlockSize, motionVectors);
         }
 
         // split the current node into 8 children
@@ -1191,15 +1181,16 @@ encodeGeometryOctree(
             });
           }
           else {
-            countingSort(
-              PCCPointSet3::iterator(&predPointCloud, node0.predStart),
-              PCCPointSet3::iterator(&predPointCloud, node0.predEnd),
-              node0.predCounts, [=](const PCCPointSet3::Proxy& proxy) {
-              const auto & point = *proxy;
-              return !!(int(point[2]) & pointSortMask[2])
-                | (!!(int(point[1]) & pointSortMask[1]) << 1)
-                | (!!(int(point[0]) & pointSortMask[0]) << 2);
-            });
+            if (depth < mSOctree.depth && node0.mSONodeIdx >= 0) {
+              const auto & msoNode = mSOctree.nodes[node0.mSONodeIdx];
+              for (int i = 0; i < 8; ++i) {
+                uint32_t msoChildIdx = msoNode.child[i];
+                if (msoChildIdx) {
+                  const auto & msoChild = mSOctree.nodes[msoChildIdx];
+                  node0.predCounts[i] = msoChild.end - msoChild.start;
+                }
+              }
+            }
           }
         }
 
@@ -1403,6 +1394,9 @@ encodeGeometryOctree(
             node0.predPointsStartIdx += node0.predCounts[childIndex];
             child.predEnd = node0.predPointsStartIdx;
             child.numSiblingsMispredicted = predFailureCount;
+            if (node0.mSONodeIdx >= 0) {
+              child.mSONodeIdx = mSOctree.nodes[node0.mSONodeIdx].child[childIndex];
+            }
 
             //local motion PU inheritance
             child.hasMotion = node0.hasMotion;
@@ -1416,6 +1410,12 @@ encodeGeometryOctree(
                 node0.pos_fp, node0.pos_MV, child_PU_tree.get());
 
               child.PU_tree = std::move(child_PU_tree);
+
+            }
+
+            if (isInter) {
+              child.mSOctreeNodeIdx = mSOctreeCurr.nodes[node0.mSOctreeNodeIdx].child[childIndex];
+              assert(child.mSOctreeNodeIdx); // if not, missmatch between octrees
             }
 
             //if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)

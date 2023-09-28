@@ -85,6 +85,9 @@ struct PCCOctree3Node {
   // count of childs predicted
   std::array<int32_t, 8> predCounts = {};
 
+  // collocated mSOctree node index if any
+  int mSONodeIdx = -1;
+
   // encoder for motion
   // Note: there is probably better way to do that
   // This is for quick porting of the existing code with raster scan order
@@ -128,6 +131,8 @@ struct PCCOctree3Node {
   // The qp used for geometry quantisation.
   // NB: this qp value always uses a step size doubling interval of 8 qps
   int8_t qp;
+
+  uint32_t mSOctreeNodeIdx;
 };
 
 //============================================================================

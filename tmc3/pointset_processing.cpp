@@ -79,9 +79,9 @@ reducePointSet(const PCCPointSet3& src, UniqueFn uniqueFn, QFn qFn)
 
   // Number of quantised points is now known
   dst.cloud.resize(numDstPoints);
+  // Add attribute storage to match src
+  dst.cloud.addRemoveAttributes(src);
   dst.idxToSrcIdx.resize(numDstPoints);
-  if (src.hasLaserAngles())
-    dst.cloud.addLaserAngles();
 
   // Generate dst outputs
   for (int i = 0, dstIdx = 0; i < numSrcPoints; ++i) {
@@ -93,11 +93,12 @@ reducePointSet(const PCCPointSet3& src, UniqueFn uniqueFn, QFn qFn)
     dst.idxToSrcIdx[dstIdx] = i;
     if (src.hasLaserAngles() == true)
       dst.cloud.setLaserAngle(dstIdx, src.getLaserAngle(i));
+    if (src.hasColors() == true)
+      dst.cloud.setColor(dstIdx, src.getColor(i));
+    if (src.hasReflectances() == true)
+      dst.cloud.setReflectance(dstIdx, src.getReflectance(i));
     dst.cloud[dstIdx++] = qFn(src[i]);
   }
-
-  // Add attribute storage to match src
-  dst.cloud.addRemoveAttributes(src.hasColors(), src.hasReflectances());
 
   return dst;
 }
@@ -108,7 +109,8 @@ reducePointSet(const PCCPointSet3& src, UniqueFn uniqueFn, QFn qFn)
 // @sampleScale.  Output points are quantised by @quantScale with rounding,
 // and translated by -@offset.
 //
-// NB: attributes are not processed.
+// NB: One attribute value is arbitrarily kept from samples sharing same
+// quantized position
 
 SrcMappedPointSet
 samplePositionsUniq(
@@ -138,7 +140,8 @@ samplePositionsUniq(
 // Points in the @src point cloud are translated by -@offset, quantised by a
 // multiplicitive @scaleFactor with rounding, then clamped to @clamp.
 //
-// NB: attributes are not processed.
+// NB: One attribute value is arbitrarily kept from quantized points at same
+// position
 
 SrcMappedPointSet
 quantizePositionsUniq(

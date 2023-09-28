@@ -595,9 +595,13 @@ decodeGeometryOctree(
   const bool isInter = gbh.interPredictionEnabledFlag;
 
   PCCPointSet3 predPointCloud;
+  MSOctree mSOctree;
 
-  if (isInter)
+  if (isInter) {
+    int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
     predPointCloud = refFrame->cloud;
+    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(5,log2MinPUSize));
+  }
 
   // init main fifo
   //  -- worst case size is the last level containing every input poit
@@ -659,9 +663,7 @@ decodeGeometryOctree(
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  std::vector<PCCPointSet3> firstLpuActiveWindow;
   if (isInter && gps.localMotionEnabled) {
-    const int extended_window = gps.motion.motion_window_size / 2;
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
     const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
 
@@ -673,7 +675,6 @@ decodeGeometryOctree(
 
     // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
     point_t BBorig = gbh.geomBoxOrigin;
-    buildActiveWindowAndBoundToBB(firstLpuActiveWindow, LPUnumInAxis, maxBB, predPointCloud, extended_window, log2MotionBlockSize, lvlNodeSizeLog2[0], BBorig);
   }
 
 
@@ -685,6 +686,7 @@ decodeGeometryOctree(
   node00.pos = int32_t(0);
   node00.predStart = uint32_t(0);
   node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : uint32_t(0);
+  node00.mSONodeIdx = isInter && gps.localMotionEnabled ? 0 : -1;
   node00.numSiblingsMispredicted = 0;
   node00.numSiblingsPlus1 = 8;
   node00.siblingOccupancy = 0;
@@ -857,19 +859,17 @@ decodeGeometryOctree(
             const int lpuIdx = (lpuX * LPUnumInAxis + lpuY) * LPUnumInAxis + lpuZ;
 
             // no local motion if not enough points
-            const bool isLocalEnabled = firstLpuActiveWindow[lpuIdx].size() > 50;
+            const bool isLocalEnabled =
+              true;
             node0.hasMotion = isLocalEnabled;
-            if (!node0.hasMotion) {
-              noMotionForNode(predPointCloud, &compensatedPointCloud, &node0);
-            }
           }
 
           // decode LPU/PU/MV
           if (node0.hasMotion && !node0.isCompensated) {
-            decode_splitPU_MV_MC(
+            decode_splitPU_MV_MC(mSOctree,
               &node0, gps.motion, nodeSizeLog2,
               &arithmeticDecoder, &compensatedPointCloud,
-              firstLpuActiveWindow, LPUnumInAxis, log2MotionBlockSize, motionVectors);
+              LPUnumInAxis, log2MotionBlockSize, motionVectors);
           }
         }
 
@@ -887,15 +887,16 @@ decodeGeometryOctree(
             });
           }
           else {
-            countingSort(
-              PCCPointSet3::iterator(&predPointCloud, node0.predStart),
-              PCCPointSet3::iterator(&predPointCloud, node0.predEnd),
-              node0.predCounts, [=](const PCCPointSet3::Proxy& proxy) {
-              const auto & point = *proxy;
-              return !!(int(point[2]) & pointSortMask[2])
-                | (!!(int(point[1]) & pointSortMask[1]) << 1)
-                | (!!(int(point[0]) & pointSortMask[0]) << 2);
-            });
+            if (depth < mSOctree.depth && node0.mSONodeIdx >= 0) {
+              const auto & msoNode = mSOctree.nodes[node0.mSONodeIdx];
+              for (int i = 0; i < 8; ++i) {
+                uint32_t msoChildIdx = msoNode.child[i];
+                if (msoChildIdx) {
+                  const auto & msoChild = mSOctree.nodes[msoChildIdx];
+                  node0.predCounts[i] = msoChild.end - msoChild.start;
+                }
+              }
+            }
           }
         }
         node0.predPointsStartIdx = node0.predStart;
@@ -1104,6 +1105,9 @@ decodeGeometryOctree(
             node0.predPointsStartIdx += node0.predCounts[childIndex];
             child.predEnd = node0.predPointsStartIdx;
             child.numSiblingsMispredicted = predFailureCount;
+            if (node0.mSONodeIdx >= 0) {
+              child.mSONodeIdx = mSOctree.nodes[node0.mSONodeIdx].child[childIndex];
+            }
 
             //local motion PU inheritance
             child.hasMotion = node0.hasMotion;

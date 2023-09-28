@@ -38,6 +38,7 @@
 #include "PCCMisc.h"
 #include "hls.h"
 #include "io_hls.h"
+#include "motionWip.h"
 
 #include <iomanip>
 #include <iterator>
@@ -691,12 +692,11 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
         throw std::runtime_error("Global motion shall not be enabled");
       }
 
-      //local 
-      bs.write(gps.localMotionEnabled);     
-      if (gps.localMotionEnabled) { 
+      //local
+      bs.write(gps.localMotionEnabled);
+      if (gps.localMotionEnabled) {
         bs.writeUe(gps.motion.motion_block_size);
-        bs.writeUe(gps.motion.motion_window_size);
-        bs.writeUe(gps.motion.motion_min_pu_size);       
+        bs.writeUe(gps.motion.motion_min_pu_size);
       }
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
@@ -803,10 +803,9 @@ parseGps(const PayloadBuffer& buf)
       }
 
       //local
-      bs.read(&gps.localMotionEnabled);     
-      if (gps.localMotionEnabled) {        
+      bs.read(&gps.localMotionEnabled);
+      if (gps.localMotionEnabled) {
         bs.readUe(&gps.motion.motion_block_size);
-        bs.readUe(&gps.motion.motion_window_size);
         bs.readUe(&gps.motion.motion_min_pu_size);
       }
 

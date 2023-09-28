@@ -556,7 +556,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
 
     case 2:
       std::cout << "presetMode  for octree dense \n";
-      motion.motion_block_size = 32 ;
+      motion.motion_block_size = std::max(32, int(std::round(128 * scaleFactor)));
       motion.motion_window_size = std::max(2, int(std::round(8 * scaleFactor)));
       motion.motion_min_pu_size = motion.motion_block_size >> 1;
 
@@ -564,6 +564,8 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       motion.Amotion0 = 1; // std::max(1, int(std::round(2 * scaleFactor)));
       motion.lambda = 0.5/std::sqrt(4.*scaleFactor)*4.0;
       motion.decimate = 7;
+      motion.dgeom_color_factor = 0.015;
+      motion.K = 10;
       break;
 
     case 3:
@@ -580,6 +582,8 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       motion.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
       motion.lambda = 2.5*TriSoupSize*4;
       motion.decimate = 7;
+      motion.dgeom_color_factor = 0.015;
+      motion.K = 10;
       break;
 
     default:
@@ -908,7 +912,6 @@ PCCTMC3Encoder3::encodeGeometryBrick(
       ctxtMem.reset();
   }
 
-  PCCPointSet3 compensatedPointCloud;  // set of points after motion compensation
   if (!_gps->trisoup_enabled_flag) {
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,

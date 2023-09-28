@@ -573,7 +573,9 @@ struct GeometryParameterSet {
     int motion_max_prefix_bits = 0;
     int motion_max_suffix_bits = 0;
     int Amotion0 = 0;
+    int K = 1;
     double lambda = 0.;
+    double dgeom_color_factor = 0.;
     int decimate = 0;
   } motion;
 };

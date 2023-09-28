@@ -84,7 +84,9 @@ struct SrcMappedPointSet {
 // @sampleScale.  Output points are quantised by @quantScale with rounding,
 // and translated by -@offset.
 //
-// NB: attributes are not processed.
+// NB: One attribute value is arbitrarily kept from samples sharing same
+// quantized position
+
 
 SrcMappedPointSet samplePositionsUniq(
   float sampleScale,
@@ -97,7 +99,8 @@ SrcMappedPointSet samplePositionsUniq(
 // Points in the @src point cloud are translated by -@offset, quantised by a
 // multiplicitive @scaleFactor with rounding, then clamped to @clamp.
 //
-// NB: attributes are not processed.
+// NB: One attribute value is arbitrarily kept from quantized points at same
+// position
 
 SrcMappedPointSet quantizePositionsUniq(
   const float scaleFactor,

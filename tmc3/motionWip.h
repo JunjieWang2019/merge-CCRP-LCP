@@ -42,6 +42,9 @@
 #include "entropy.h"
 #include "hls.h"
 
+#include <queue>
+#include <tuple>
+
 namespace pcc {
 
 //============================================================================
@@ -50,7 +53,7 @@ static const unsigned int motionParamScale = 1 << motionParamPrec;
 static const unsigned int motionParamOffset = 1 << (motionParamPrec - 1);
 int plus1log2shifted4(int x);
 struct PCCOctree3Node;
-
+struct MSOctree;
 //============================================================================
 
 int roundIntegerHalfInf(const double x);
@@ -70,40 +73,15 @@ struct LPUwindow {
   Vec3<attr_t> color;
 };
 
-void buildActiveWindowAndBoundToBB(
-  std::vector<PCCPointSet3>& lpuActiveWindow,
-  int& LPUnumInAxis,
-  const int maxBB,
-  PCCPointSet3& predPointCloud,
-  int th_dists,
-  const int log2MotionBlockSize,
-  point_t lvlNodeSizeLog2,
-  point_t BBorig);
-
-bool motionSearchForNode(
-  const PCCPointSet3& pointCloud,
-  const PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
-  int nodeSizeLog2,
-  EntropyEncoder* arithmeticEncoder,
-  int8_t* bufferPoints,
-  PUtree* local_PU_tree,
-  const std::vector<PCCPointSet3>& lpuActiveWindow,
-  int numLPUPerLine);
-
-void noMotionForNode(
-  const PCCPointSet3& predPointCloud,
-  PCCPointSet3* compensatedPointCloud,
-  PCCOctree3Node* node0);
 
 void encode_splitPU_MV_MC(
+  const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   PUtree* local_PU_tree,
   const GeometryParameterSet::Motion& param,
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  std::vector<PCCPointSet3>& lpuActiveWindow,
   int numLPUPerLine,
   int log2MotionBlkSize,
   std::vector<MotionVector>& motionVectors);
@@ -120,16 +98,97 @@ void extracPUsubtree(
 // motion decoder
 
 void decode_splitPU_MV_MC(
+  const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   const GeometryParameterSet::Motion& param,
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  std::vector<PCCPointSet3>& lpuActiveWindow,
   int numLPUPerLine,
   int log2MotionBlkSize,
   std::vector<MotionVector>& motionVectors);
 
   //============================================================================
+
+class MotionEntropyEstimate;
+struct MSOctree {
+  MSOctree& operator=(const MSOctree&) = default;
+  MSOctree& operator=(MSOctree&&) = default;
+  MSOctree() = default;
+  MSOctree(const MSOctree&) = default;
+  MSOctree(MSOctree&&) = default;
+  MSOctree(
+    PCCPointSet3* predPointCloud,
+    point_t offsetOrigin,
+    uint32_t leafSizeLog2 = 0
+    );
+
+  struct MSONode {
+    uint32_t start;
+    uint32_t end;
+    std::array<uint32_t, 8> child = {}; // 0 means none
+    int32_t sizeMinus1;
+    point_t pos0;
+    uint32_t parent;
+    uint32_t reserved; // to align to 64 bytes (otherwise could be avoided)
+
+    uint32_t numPoints() const { return end - start; }
+  };
+
+  point_t offsetOrigin; // offset applied to origin while construction the octree
+  uint32_t maxDepth; // depth of full octree to get unitary sized nodes
+  uint32_t depth; // depth of the motion search octree
+  PCCPointSet3* pointCloud;
+  std::vector<MSONode> nodes;
+
+  int32_t
+  nearestNeighbour_estimateDMax(point_t pos, int32_t d_max, uint32_t depthMax = UINT32_MAX) const;
+
+  std::tuple<int, int, int>
+  nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax = UINT32_MAX) const;
+
+  std::tuple<std::queue<uint32_t>, int>
+  nearestNodes(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2) const;
+
+  std::tuple<uint32_t, int>
+  nearestNode(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2) const;
+
+  double
+  find_motion(
+    const GeometryParameterSet::Motion& param,
+    const MotionEntropyEstimate& motionEntropy,
+    const MSOctree& mSOctreeOrig,
+    uint32_t mSOctreeOrigNodeIdx,
+    const PCCPointSet3& Block0,
+    const point_t& xyz0,
+    int local_size,
+    PUtree* local_PU_tree
+  ) const;
+
+  void
+  apply_motion(
+    point_t Mvd,
+    PCCOctree3Node* node0,
+    const GeometryParameterSet::Motion& param,
+    int nodeSizeLog2,
+    PCCPointSet3* compensatedPointCloud,
+    uint32_t depthMax = UINT32_MAX
+  ) const;
+private:
+  mutable std::queue<int> fifo; // for search
+};
+
+//----------------------------------------------------------------------------
+bool
+motionSearchForNode(
+  const MSOctree& mSOctreeOrig,
+  const MSOctree& mSOctree,
+  const PCCOctree3Node* node0,
+  const GeometryParameterSet::Motion& param,
+  int nodeSizeLog2,
+  EntropyEncoder* arithmeticEncoder,
+  PUtree* local_PU_tree);
+
+//============================================================================
 
 }  // namespace pcc
