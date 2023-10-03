@@ -438,6 +438,7 @@ struct SequenceParameterSet {
 //============================================================================
 
 struct RahtPredictionParams {
+  int intra_mode_level;
   bool enable_inter_prediction;
   int mode_level;
   int upper_mode_level;

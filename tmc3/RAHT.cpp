@@ -745,7 +745,12 @@ uraht_process(
       predCtxLevel = (level / 3) - rahtPredParams.mode_level;
       if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
         predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
+    } else if (rahtPredParams.prediction_enabled_flag) {
+      predCtxLevel = (level / 3) - rahtPredParams.intra_mode_level;
+      if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
+        predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
     }
+
     int distanceToRoot = rootLevel - level / 3;
     bool upperInferMode = false;
     if (coder.isInterEnabled()) {
@@ -918,7 +923,7 @@ uraht_process(
           parentNeighCount = std::count_if(
             parentNeighIdx, parentNeighIdx+19,
             [](const int idx) { return idx >= 0; });
-          if (rahtPredParams.enable_inter_prediction)
+          if (rahtPredParams.prediction_enabled_flag)
             neighborsMode =
               attr::getNeighborsMode(parentNeighIdx, weightsParent);
         }
@@ -991,12 +996,12 @@ uraht_process(
       }
 
       Mode predMode =
-        rahtPredParams.enable_inter_prediction
+        rahtPredParams.prediction_enabled_flag
         ? getMode(
             coder, nodeCnt, predCtxLevel, enableIntraPrediction,
             enableInterPrediction, weightsParentIt->mode, neighborsMode, numAttrs,
             weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp, upperInferMode)
-        : nodeCnt > 1 && enableIntraPrediction ? Mode::Intra : Mode::Null;
+        : Mode::Null;
 
       for (auto weightsChild = weightsParentIt->firstChild;
            weightsChild < weightsParentIt->lastChild; weightsChild++) {

@@ -968,6 +968,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.rahtPredParams.prediction_weights, {9,3,1,5,2},
     "Prediction weights for neighbours")
 
+  ("rahtIntraModeLevel",
+    params_attr.aps.rahtPredParams.intra_mode_level, 4,
+    "Level to start using the prediction mode in all-intra cfg")
+
   ("rahtInterPredictionEnabled",
     params_attr.aps.rahtPredParams.enable_inter_prediction, false,
     "Controls the use of transform-domain prediction")
