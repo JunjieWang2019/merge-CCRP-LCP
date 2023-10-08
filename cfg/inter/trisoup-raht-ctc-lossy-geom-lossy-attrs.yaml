@@ -19,7 +19,6 @@ categories:
      # geometry parameters (trisoup)
      - randomAccessPeriod: 32
      - interPredictionEnabled: 1
-     - localMotionEnabled: 1
 
      - motionParamPreset: 3
      - entropyContinuationEnabled: 1
@@ -28,7 +27,6 @@ categories:
      - qtbtEnabled: 0
 
      - neighbourAvailBoundaryLog2: 8
-     - intra_pred_max_node_size_log2: 6
      - inferredDirectCodingMode: 0
      - positionQuantizationScale: '$eval{ 1 / (1 << ( ${src-geometry-precision} - ${test-depth} )) }'
      - trisoupNodeSizeLog2:
@@ -43,7 +41,6 @@ categories:
          r03: 1
          r04: 0
      - trisoupHaloEnabled: 1
-     - trisoupFineRayTracingEnabled: 0
      - trisoupThickness: '${thickness}'
      - trisoupImprovedEncoderEnabled: 1
      - safeTrisoupPartionning: 0 # safeTrisoupPartitionning not working properly with cat2

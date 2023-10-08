@@ -18,11 +18,9 @@ categories:
      - trisoupNodeSizeLog2: 0
      - mergeDuplicatedPoints: 0
      - neighbourAvailBoundaryLog2: 8
-     - intra_pred_max_node_size_log2: 6
      - positionQuantizationScale: 1
      - randomAccessPeriod: 32
      - interPredictionEnabled: 1
-     - localMotionEnabled: 1
 
      - motionParamPreset: 2
      - entropyContinuationEnabled: 1

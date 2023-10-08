@@ -22,7 +22,6 @@ categories:
      - qtbtEnabled: 0
 
      - neighbourAvailBoundaryLog2: 8
-     - intra_pred_max_node_size_log2: 6
      - inferredDirectCodingMode: 0
      - positionQuantizationScale: '$eval{ 1 / (1 << ( ${src-geometry-precision} - ${test-depth} )) }'
      - trisoupNodeSizeLog2:
@@ -41,11 +40,9 @@ categories:
          r02: 1
          r03: 1
          r04: 0
-     - trisoupFineRayTracingEnabled: 1
      -
        - !conditional '"${group}" =~ m{^cat2}'
        - trisoupThickness: '${thickness}'
-       - trisoupFineRayTracingEnabled: 0
 
      - trisoupImprovedEncoderEnabled: 1
      - safeTrisoupPartionning: 0 # safeTrisoupPartitionning not working properly with cat2

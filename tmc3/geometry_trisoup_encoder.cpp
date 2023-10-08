@@ -94,11 +94,7 @@ encodeGeometryTrisoup(
 
   // reconstruct points  with some sampling value
   bool haloFlag = gbh.trisoup_halo_flag;
-  bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
-  bool fineRayFlag = gbh.trisoup_fine_ray_tracing_flag;
   int thickness = gbh.trisoup_thickness;
-  std::cout << "GeSTM  Sample is imposed to 1 \n";
-  gbh.trisoup_sampling_value_minus1 = 0;
 
   // Determine neighbours
   EntropyDecoder foo;
@@ -106,14 +102,11 @@ encodeGeometryTrisoup(
   codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder,
     isInter, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, nSegments);
 
-  gbh.num_unique_segments_minus1 = nSegments - 1;
-  gbh.num_unique_segments_bits_minus1 = numBits(gbh.num_unique_segments_minus1) - 1;
-
-
-
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
 
-  if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
+  if (!(gps.interPredictionEnabledFlag
+        && gps.gof_geom_entropy_continuation_enabled_flag)
+      && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
   }
 }

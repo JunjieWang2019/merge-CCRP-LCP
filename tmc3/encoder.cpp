@@ -152,7 +152,7 @@ PCCTMC3Encoder3::compress(
     }
 
     // derive local motion parameters
-    if (params->gps.localMotionEnabled)
+    if (params->gps.interPredictionEnabledFlag)
          deriveMotionParams(params);
     params->gps.motion.motion_max_prefix_bits = deriveMotionMaxPrefixBits(params->gps.motion);
     params->gps.motion.motion_max_suffix_bits = deriveMotionMaxSuffixBits(params->gps.motion);
@@ -483,12 +483,6 @@ PCCTMC3Encoder3::fixupParameterSets(EncoderParams* params)
   // derive the idcm qp offset from cli
   params->gps.geom_idcm_qp_offset = params->idcmQp - params->gps.geom_base_qp;
 
-  // Feature dependencies
-  if (!params->gps.neighbour_avail_boundary_log2_minus1) {
-    params->gps.adjacent_child_contextualization_enabled_flag = 0;
-    params->gps.intra_pred_max_node_size_log2 = 0;
-  }
-
   // fixup attribute parameters
   for (auto it : params->attributeIdxMap) {
     //auto& attr_sps = params->sps.attributeSets[it.second];
@@ -536,7 +530,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
   int presetMode = params->motionPreset;
   int TriSoupSize = 1;
   std::cout << "presetMode  " << params->motionPreset << "\n";
-  if (params->gps.localMotionEnabled) {
+  if (params->gps.interPredictionEnabledFlag) {
     switch (presetMode) {
     case 0:
       motion = GeometryParameterSet::Motion();
@@ -842,12 +836,8 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     params->gbh.trisoup_face_vertex_flag;
   gbh.trisoup_halo_flag =
     params->gbh.trisoup_halo_flag;
-  gbh.trisoup_adaptive_halo_flag =
-    params->gbh.trisoup_adaptive_halo_flag;
-  gbh.trisoup_fine_ray_tracing_flag =
-    params->gbh.trisoup_fine_ray_tracing_flag;
   gbh.trisoup_thickness =
-    +params->gbh.trisoup_thickness;
+    params->gbh.trisoup_thickness;
   gbh.slice_bb_pos   = params->gbh.slice_bb_pos;
   gbh.slice_bb_width = params->gbh.slice_bb_width;
   gbh.slice_bb_pos_bits = params->gbh.slice_bb_pos_bits;

@@ -484,9 +484,6 @@ struct GeometryParameterSet {
   // Default scaling factor for per-slice geometry box origin
   int gps_geom_box_log2_scale;
 
-  // Selects between predictive and octree geometry coding methods.
-  bool predgeom_enabled_flag{false};
-
   // Controls the ability to represent multiple points (with associated
   // attributes) at the same spatial position.
   bool geom_unique_points_flag;
@@ -503,17 +500,6 @@ struct GeometryParameterSet {
   // Permits coding the common prefix of two idcm points
   bool joint_2pt_idcm_enabled_flag;
 
-  // Selects between bitwise and bytewise occupancy coding
-  bool bitwise_occupancy_coding_flag = true;
-
-  // Controlls contextualization of occupancy bits and refinement of
-  // the neighbour pattern according to the occupancy of adjacent
-  // children in neighbouring nodes.
-  bool adjacent_child_contextualization_enabled_flag;
-
-  // Maximum node size where intra prediction is enabled
-  int intra_pred_max_node_size_log2;
-
   // Enables trisoup
   bool trisoup_enabled_flag;
 
@@ -521,10 +507,6 @@ struct GeometryParameterSet {
   bool non_cubic_node_start_edge;
   // Enable non cubic nodes on end edges of a slice
   bool non_cubic_node_end_edge;
-
-  // sampling value of trisoup decoding process
-  // a value of zero set the automatic sampling value setting to avoid over point of slice MAX points(sliceMaxPoints)
-  int trisoup_sampling_value;
 
   // Enable skip mode for inter
   bool trisoup_skip_mode_enabled_flag;
@@ -544,12 +526,6 @@ struct GeometryParameterSet {
   // Enables/disables non-cubic geometry nodes
   bool qtbt_enabled_flag;
 
-  // Controls the use of planar mode
-  bool geom_planar_mode_enabled_flag{false}; //NOTE[FT] : explicitely FORCING geom_planar_mode_enabled_flag=false
-
-  // Enables angular coding in octree/predgeom
-  bool geom_angular_mode_enabled_flag = false;
-
   // block size (i.e. number of points per block) in predictive geometry coding
   int geom_qp_offset_intvl_log2;
 
@@ -559,8 +535,6 @@ struct GeometryParameterSet {
 
   // Enable inter prediction
   bool interPredictionEnabledFlag;
-  bool globalMotionEnabled = false;
-  bool localMotionEnabled;
 
   //Permits entropy continuation enabled in GoF for inter frame coding
   bool gof_geom_entropy_continuation_enabled_flag;
@@ -652,14 +626,6 @@ struct GeometryBrickHeader {
     return gps.trisoup_enabled_flag ? trisoup_node_size_log2_minus2 + 2 : 0;
   }
 
-  // downsampling rate used in tringle voxelisation
-  int trisoup_sampling_value_minus1;
-
-  int num_unique_segments_minus1;
-
-  // Number of bits to represent num_unique_segments_minus1
-  int num_unique_segments_bits_minus1;
-
   // Number of bits used to quantize vertex positioning in a node
   // 0 means same number of bits as trisoupNodeSizeLog2
   int trisoup_vertex_quantization_bits;
@@ -672,12 +638,6 @@ struct GeometryBrickHeader {
 
   // Indicates if the trisoup halo is enabled or not
   bool trisoup_halo_flag;
-
-  // Indicates if the trisoup halo is adaptive or not
-  bool trisoup_adaptive_halo_flag;
-
-  // Indicates if fine ray tracing must be used for trisoup nodes
-  bool trisoup_fine_ray_tracing_flag;
 
   // Indicates the thickess of TriSoup Triangles
   int trisoup_thickness;
@@ -717,10 +677,6 @@ struct AttributeParameterSet {
 
   //--- raht parameters
   RahtPredictionParams rahtPredParams;
-
-  // indicates that attribute coding should be performed in
-  // pseudo-spherical domain
-  bool spherical_coord_flag{false}; //NOTE[FT] : setting to false
 
   // Whether raw attribute are coded as fixed width or variable length.
   bool raw_attr_variable_len_flag;

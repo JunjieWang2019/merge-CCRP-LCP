@@ -764,23 +764,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gps.joint_2pt_idcm_enabled_flag, true,
     "Jointly code common prefix of two IDCM points")
 
-  ("adjacentChildContextualization",
-    params.encoder.gps.adjacent_child_contextualization_enabled_flag, true,
-    "Occupancy contextualization using neighbouring adjacent children")
-
-  ("intra_pred_max_node_size_log2",
-    params.encoder.gps.intra_pred_max_node_size_log2, 0,
-    "octree nodesizes eligible for occupancy intra prediction")
-
   ("trisoupNodeSizeLog2",
     params.encoder.trisoupNodeSizesLog2, {0},
     "Node size for surface triangulation\n"
     " <2: disabled")
-
-  ("trisoup_sampling_value",
-    params.encoder.gps.trisoup_sampling_value, 1,
-    "Trisoup voxelisation sampling rate\n"
-    "  1: no sub-sampling")
 
   ("trisoupQuantizationBits",
     params.encoder.gbh.trisoup_vertex_quantization_bits, 0,
@@ -798,15 +785,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("trisoupHaloEnabled",
     params.encoder.gbh.trisoup_halo_flag, true,
     "Trisoup activate halo around triangles for ray tracing")
-
- ("trisoupAdaptiveHaloEnabled",
-    params.encoder.gbh.trisoup_adaptive_halo_flag, true,
-    "Trisoup activate adaptive halo around triangles for ray tracing when "
-    "halo is activated")
-
-  ("trisoupFineRayTracingEnabled",
-    params.encoder.gbh.trisoup_fine_ray_tracing_flag, true,
-    "Trisoup activate more ray tracing from non-integer origin")
 
   ("trisoupImprovedEncoderEnabled",
     params.encoder.trisoup.improvedVertexDetermination, true,
@@ -886,10 +864,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("interPredictionEnabled",
     params.encoder.gps.interPredictionEnabledFlag, false,
     "Enable inter prediciton")
-
-   ("localMotionEnabled",
-     params.encoder.gps.localMotionEnabled, false,
-     "Enable global motion compensation for inter prediction")
 
    ("motionParamPreset",
      params.encoder.motionPreset, 0,
@@ -1180,9 +1154,6 @@ sanitizeEncoderOpts(
       && params.encoder.gps.qtbt_enabled_flag)
     err.error() << "GeS-TM does not support QTBT with inter\n";
 
-  if (params.encoder.gps.trisoup_sampling_value != 1)
-    err.error() << "GeS-TM only supports trisoup_sampling_value=1\n";
-
   // Trisoup is enabled when a node size is specified
   // sanity: don't enable if only node size is 0.
   // todo(df): this needs to take into account slices where it is disabled
@@ -1220,7 +1191,6 @@ sanitizeEncoderOpts(
     params.encoder.gps.trisoup_enabled_flag;
 
   if (!params.encoder.gps.interPredictionEnabledFlag) {
-    params.encoder.gps.globalMotionEnabled = false;
     params.encoder.gps.gof_geom_entropy_continuation_enabled_flag = false;
   }
 
@@ -1345,23 +1315,8 @@ sanitizeEncoderOpts(
   }
 
   // sanity checks
-
   if (params.encoder.gps.geom_qp_multiplier_log2 & ~3)
     err.error() << "positionQpMultiplierLog2 must be in the range 0..3\n";
-
-  // The following featues depend upon the occupancy atlas
-  if (!params.encoder.gps.neighbour_avail_boundary_log2_minus1) {
-    if (params.encoder.gps.adjacent_child_contextualization_enabled_flag)
-      err.warn() << "ignoring adjacentChildContextualization when"
-                    " neighbourAvailBoundaryLog2=0\n";
-
-    if (params.encoder.gps.intra_pred_max_node_size_log2)
-      err.warn() << "ignoring intra_pred_max_node_size_log2 when"
-                    " neighbourAvailBoundaryLog2=0\n";
-
-    params.encoder.gps.adjacent_child_contextualization_enabled_flag = 0;
-    params.encoder.gps.intra_pred_max_node_size_log2 = 0;
-  }
 
   if (
     params.encoder.partition.sliceMaxPoints

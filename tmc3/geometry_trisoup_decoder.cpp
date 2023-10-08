@@ -92,7 +92,9 @@ decodeGeometryTrisoup(
   codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, false, bitDropped, 1 /*distanceSearchEncoder*/,
     isInter, compensatedPointCloud,  gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree, nSegments);
 
-  if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
+  if (!(gps.interPredictionEnabledFlag
+        && gps.gof_geom_entropy_continuation_enabled_flag)
+      && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
   }
 }
@@ -996,7 +998,6 @@ struct RasterScanTrisoupEdges {
     std::vector<int64_t> renderedBlock(blockWidth * blockWidth * 16, 0) ;
 
     bool haloFlag = gbh.trisoup_halo_flag;
-    bool adaptiveHaloFlag = gbh.trisoup_adaptive_halo_flag;
     int thickness = gbh.trisoup_thickness;
     bool isCentroidDriftActivated = gbh.trisoup_centroid_vertex_residual_flag;
     bool isFaceVertexActivated = gbh.trisoup_face_vertex_flag;

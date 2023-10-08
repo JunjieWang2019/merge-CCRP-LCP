@@ -336,10 +336,6 @@ struct RasterScanContext {
 };
 
 //---------------------------------------------------------------------------
-
-int neighPatternFromOccupancy(int pos, int occupancy);
-
-//---------------------------------------------------------------------------
 // Determine if a node is a leaf node based on size.
 // A node with all dimension = 0 is a leaf node.
 // NB: some dimensions may be less than zero if coding of that dimension
@@ -412,66 +408,6 @@ isDirectModeEligible_Inter(
 
   return (nodeSizeLog2 >= 2) && (nodeNeighPattern == 0)
     && (child.numSiblingsPlus1 == 1) && (node.numSiblingsPlus1 <= 2);
-}
-
-//---------------------------------------------------------------------------
-// Select the neighbour pattern reduction table according to GPS config.
-
-inline const uint8_t*
-neighPattern64toR1(const GeometryParameterSet& gps)
-{
-  if (gps.neighbour_avail_boundary_log2_minus1 > 0)
-    return kNeighPattern64to9;
-  return kNeighPattern64to6;
-}
-
-//---------------------------------------------------------------------------
-// Encapsulates the derivation of ctxIdx for occupancy coding.
-
-class CtxMapOctreeOccupancy {
-public:
-  struct CtxIdxMap {
-    uint8_t b0[9];
-    uint8_t b1[18];
-    uint8_t b2[35];
-    uint8_t b3[68];
-    uint8_t b4[69];
-    uint8_t b5[134];
-    uint8_t b6[135];
-    uint8_t b7[136];
-  };
-
-  CtxMapOctreeOccupancy();
-  CtxMapOctreeOccupancy(const CtxMapOctreeOccupancy&);
-  CtxMapOctreeOccupancy(CtxMapOctreeOccupancy&&);
-  CtxMapOctreeOccupancy& operator=(const CtxMapOctreeOccupancy&);
-  CtxMapOctreeOccupancy& operator=(CtxMapOctreeOccupancy&&);
-
-  const uint8_t* operator[](int bit) const { return b[bit]; }
-
-  uint8_t* operator[](int bit) { return b[bit]; }
-
-  // return *ctxIdx and update *ctxIdx according to bit
-  static uint8_t evolve(bool bit, uint8_t* ctxIdx);
-
-private:
-  std::unique_ptr<CtxIdxMap> map;
-  std::array<uint8_t*, 8> b;
-};
-
-//----------------------------------------------------------------------------
-
-inline uint8_t
-CtxMapOctreeOccupancy::evolve(bool bit, uint8_t* ctxIdx)
-{
-  uint8_t retval = *ctxIdx;
-
-  if (bit)
-    *ctxIdx += kCtxMapDynamicOBUFDelta[(255 - *ctxIdx) >> 4];
-  else
-    *ctxIdx -= kCtxMapDynamicOBUFDelta[*ctxIdx >> 4];
-
-  return retval;
 }
 
 //============================================================================
@@ -835,78 +771,6 @@ nonSplitQtBtAxes(const Vec3<int>& nodeSizeLog2, const Vec3<int>& childSizeLog2)
   return indicator;
 }
 
-//============================================================================
-// Scales quantized positions used internally in angular coding.
-//
-// NB: this is not used to scale output positions since generated positions
-//     are not clipped to node boundaries.
-//
-// NB: there are two different position representations used in the codec:
-//        ppppppssssss = original position
-//        ppppppqqqq00 = pos, (quantisation) node size aligned -> use scaleNs()
-//        00ppppppqqqq = pos, effective node size aligned -> use scaleEns()
-//     where p are unquantised bits, q are quantised bits, and 0 are zero bits.
-
-class OctreeAngPosScaler {
-  QuantizerGeom _quant;
-  Vec3<uint32_t> _mask;
-  int _qp;
-
-public:
-  OctreeAngPosScaler(int qp, const Vec3<uint32_t>& quantMaskBits)
-    : _quant(qp), _qp(qp), _mask(quantMaskBits)
-  {}
-
-  // Scale an effectiveNodeSize aligned position as the k-th position component.
-  int scaleEns(int k, int pos) const;
-
-  // Scale an effectiveNodeSize aligned position.
-  Vec3<int> scaleEns(Vec3<int> pos) const;
-
-  // Scale a NodeSize aligned position.
-  Vec3<int> scaleNs(Vec3<int> pos) const;
-};
-
-//----------------------------------------------------------------------------
-
-inline int
-OctreeAngPosScaler::scaleEns(int k, int pos) const
-{
-  if (!_qp)
-    return pos;
-
-  int shiftBits = QuantizerGeom::qpShift(_qp);
-  int lowPart = pos & (_mask[k] >> shiftBits);
-  int highPart = pos ^ lowPart;
-  int lowPartScaled = _quant.scale(lowPart);
-
-  return (highPart << shiftBits) + lowPartScaled;
-}
-
-//----------------------------------------------------------------------------
-
-inline Vec3<int32_t>
-OctreeAngPosScaler::scaleEns(Vec3<int32_t> pos) const
-{
-  if (!_qp)
-    return pos;
-
-  for (int k = 0; k < 3; k++)
-    pos[k] = scaleEns(k, pos[k]);
-
-  return pos;
-}
-//----------------------------------------------------------------------------
-
-inline Vec3<int32_t>
-OctreeAngPosScaler::scaleNs(Vec3<int32_t> pos) const
-{
-  if (!_qp)
-    return pos;
-
-  // convert pos to effectiveNodeSize form
-  return scaleEns(pos >> QuantizerGeom::qpShift(_qp));
-}
 
 //============================================================================
 

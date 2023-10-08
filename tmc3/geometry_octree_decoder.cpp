@@ -61,31 +61,19 @@ public:
   GeometryOctreeDecoder& operator=(const GeometryOctreeDecoder&) = default;
   GeometryOctreeDecoder& operator=(GeometryOctreeDecoder&&) = default;
 
-  void beginOctreeLevel();
-
   // dynamic OBUF
   void resetMap() { GeometryOctreeContexts::resetMap(); }
   void clearMap() { GeometryOctreeContexts::clearMap(); };
 
   int decodePositionLeafNumPoints();
 
-  uint32_t decodeOccupancyFullNeihbourgsNZ(
-    const RasterScanContext::occupancy& occ,
-    int planarMaskX,
-    int planarMaskY,
-    int planarMaskZ,
-    int predOcc,
-    bool isInter,
-    bool flagNoSingle);
-
   uint32_t decodeOccupancyFullNeihbourgs(
     const RasterScanContext::occupancy& occ,
     int planarMaskX,
     int planarMaskY,
     int planarMaskZ,
-    bool flagWord4,
-    bool adjacent_child_contextualization_enabled_flag
-    , int predOcc, bool isInter
+    int predOcc,
+    bool isInter
   );
 
   Vec3<int32_t> decodePointPosition(
@@ -114,8 +102,6 @@ public:
   const GeometryOctreeContexts& getCtx() const { return *this; }
 
 public:
-  const uint8_t* _neighPattern64toR1;
-
   EntropyDecoder* _arithmeticDecoder;
 };
 
@@ -127,21 +113,12 @@ GeometryOctreeDecoder::GeometryOctreeDecoder(
   const GeometryOctreeContexts& ctxtMem,
   EntropyDecoder* arithmeticDecoder)
   : GeometryOctreeContexts(ctxtMem)
-  , _neighPattern64toR1(neighPattern64toR1(gps))
   , _arithmeticDecoder(arithmeticDecoder)
 {
 }
-//============================================================================
-
-void
-GeometryOctreeDecoder::beginOctreeLevel()
-{
-}
-
 
 //============================================================================
 // Decode the number of points in a leaf node of the octree.
-
 int
 GeometryOctreeDecoder::decodePositionLeafNumPoints()
 {
@@ -178,32 +155,44 @@ static const int LUTinitCoded0[27][6] = {
   {3, 3, 4, 2, 2, 4}, {4, 3, 4, 3, 3, 4}, {3, 4, 4, 3, 3, 4},
   {3, 3, 2, 4, 2, 4}, {4, 3, 3, 4, 3, 4}, {3, 4, 3, 4, 3, 4}};
 
+//-------------------------------------------------------------------------
+// decode node occupancy bits
+//
 uint32_t
-GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
+GeometryOctreeDecoder::decodeOccupancyFullNeihbourgs(
   const RasterScanContext::occupancy& occ,
   int planarMaskX,
   int planarMaskY,
   int planarMaskZ,
   int predOcc,
-  bool isInter,
-  bool flagNoSingle)
+  bool isInter)
 {
+  // decode occupancy pattern
+  uint32_t occupancy = 0;
+
+  // 3 planars => single child and we know its position
+  if (planarMaskX && planarMaskY && planarMaskZ) {
+    uint32_t cnt = (planarMaskZ & 1);
+    cnt |= (planarMaskY & 1) << 1;
+    cnt |= (planarMaskX & 1) << 2;
+    occupancy = 1 << cnt;
+    return occupancy;
+  }
+
+  // neighbour empty and only one point => decode index, not pattern
+  //------ Z occupancy decoding from here ----------------
   bool sure_planarityX = planarMaskX;
   bool sure_planarityY = planarMaskY;
   bool sure_planarityZ = planarMaskZ;
-  const int maxPerPlaneX = planarMaskX && flagNoSingle ? 2 : 3;
-  const int maxPerPlaneY = planarMaskY && flagNoSingle ? 2 : 3;
-  const int maxPerPlaneZ = planarMaskZ && flagNoSingle ? 2 : 3;
-  const int maxAll = flagNoSingle ? 6 : 7;
 
   //int  MaskConfig = !planarMaskX ? 0 : planarMaskX == 15 ? 1 : 2;
   //MaskConfig += !planarMaskY ? 0 : planarMaskY == 51 ? 3 : 6;
   //MaskConfig += !planarMaskZ ? 0 : planarMaskZ == 85 ? 9 : 18;
-  int MaskConfig = (!!planarMaskX) * (1 + (planarMaskX != 0x0F));
-  MaskConfig += (!!planarMaskY) * 3 * (1 + (planarMaskY != 0x33));
-  MaskConfig += (!!planarMaskZ) * 9 * (1 + (planarMaskZ != 0x55));
+  int MaskConfig = sure_planarityX * (1 + (planarMaskX != 0x0F));
+  MaskConfig += sure_planarityY * 3 * (1 + (planarMaskY != 0x33));
+  MaskConfig += sure_planarityZ * 9 * (1 + (planarMaskZ != 0x55));
 
-  int coded0[6] = {0, 0, 0, 0, 0, 0};  // mask x0 x1 y0 y1 z0 z1
+  int coded0[6] = { 0, 0, 0, 0, 0, 0 };  // mask x0 x1 y0 y1 z0 z1
   if (MaskConfig) {
     memcpy(coded0, LUTinitCoded0[MaskConfig], 6 * sizeof(int));
   }
@@ -213,7 +202,6 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
 
   // loop on occupancy bits from occupancy map
   uint32_t partialOccupancy = 0;
-  uint32_t occupancy = 0;
   int maskedOccupancy = planarMaskX | planarMaskY | planarMaskZ;
   for (int i = 0; i < 8; i++) {
     if ((maskedOccupancy >> i) & 1) {
@@ -227,12 +215,12 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
     int mask0Z = 4 + ((0xaa >> i) & 1);
 
     bool bitIsOne =
-      (sure_planarityX && coded0[mask0X] >= maxPerPlaneX)
-      || (coded0[0] + coded0[1] >= maxAll)
-      || (sure_planarityY && coded0[mask0Y] >= maxPerPlaneY)
-      || (coded0[2] + coded0[3] >= maxAll)
-      || (sure_planarityZ && coded0[mask0Z] >= maxPerPlaneZ)
-      || (coded0[4] + coded0[5] >= maxAll);
+      (sure_planarityX && coded0[mask0X] >= 3)
+      || (coded0[0] + coded0[1] >= 7)
+      || (sure_planarityY && coded0[mask0Y] >= 3)
+      || (coded0[2] + coded0[3] >= 7)
+      || (sure_planarityZ && coded0[mask0Z] >= 3)
+      || (coded0[4] + coded0[5] >= 7);
 
     if (bitIsOne) {
       occupancy += 1 << i;
@@ -248,7 +236,7 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
     int ctx1, ctx2;
     bool Sparse;
     (*pointer2FunctionContext[i])(
-      octreeNeighours, occupancy,  ctx1, ctx2, Sparse);
+      octreeNeighours, occupancy, ctx1, ctx2, Sparse);
 
     bool isInter2 = isInter && predOcc;
     if (isInter2) {
@@ -267,7 +255,7 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
     }
     else {
       bit = _MapOccupancy[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, _CtxMapDynamicOBUF[2+ isInter2], ctx2, ctx1,
+        _arithmeticDecoder, _CtxMapDynamicOBUF[2 + isInter2], ctx2, ctx1,
         &_OBUFleafNumber, _BufferOBUFleaves);
     }
 
@@ -281,90 +269,6 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgsNZ(
   }
 
   return occupancy;
-}
-
-//-------------------------------------------------------------------------
-// decode node occupancy bits
-//
-uint32_t
-GeometryOctreeDecoder::decodeOccupancyFullNeihbourgs(
-  const RasterScanContext::occupancy& occ,
-  int planarMaskX,
-  int planarMaskY,
-  int planarMaskZ,
-  bool flagWord4,
-  bool adjacent_child_contextualization_enabled_flag,
-  int predOcc,
-  bool isInter)
-{
-  // decode occupancy pattern
-  uint32_t occupancy;
-
-  // single child and we know its position
-  if (planarMaskX && planarMaskY && planarMaskZ) {
-    uint32_t cnt = (planarMaskZ & 1);
-    cnt |= (planarMaskY & 1) << 1;
-    cnt |= (planarMaskX & 1) << 2;
-    occupancy = 1 << cnt;
-    return occupancy;
-  }
-
-  // neighbour empty and only one point => decode index, not pattern
-  //------ Z occupancy decoding from here ----------------
-
-  bool flagNoSingle = false;
-
-  if (
-    occ.neighPattern == 0
-    && (!predOcc || (planarMaskX | planarMaskY | planarMaskZ))) {
-    bool singleChild =
-      _arithmeticDecoder->decode(_ctxSingleChild) == 1;
-
-    if (singleChild) {
-      uint32_t cnt;
-      if (!planarMaskZ)
-        cnt = _arithmeticDecoder->decode();
-      else
-        cnt = (planarMaskZ & 1);
-
-      if (!planarMaskY)
-        cnt |= _arithmeticDecoder->decode() << 1;
-      else
-        cnt |= (planarMaskY & 1) << 1;
-
-      if (!planarMaskX)
-        cnt |= _arithmeticDecoder->decode() << 2;
-      else
-        cnt |= (planarMaskX & 1) << 2;
-
-      occupancy = 1 << cnt;
-      return occupancy;
-    }
-
-    flagNoSingle = true;
-    // at least two child nodes occupied and two planars => we know the occupancy
-    if (planarMaskX && planarMaskY) {
-      uint32_t cnt = ((planarMaskX & 1) << 2) | ((planarMaskY & 1) << 1);
-      occupancy = (1 << cnt) | (1 << (cnt + 1));
-      return occupancy;
-    }
-
-    if (planarMaskY && planarMaskZ) {
-      uint32_t cnt = ((planarMaskY & 1) << 1) | (planarMaskZ & 1);
-      occupancy = (1 << cnt) | (1 << (cnt + 4));
-      return occupancy;
-    }
-
-    if (planarMaskX && planarMaskZ) {
-      uint32_t cnt = ((planarMaskX & 1) << 2) | (planarMaskZ & 1);
-      occupancy = (1 << cnt) | (1 << (cnt + 2));
-      return occupancy;
-    }
-  }
-
-  return decodeOccupancyFullNeihbourgsNZ(
-    occ, planarMaskX, planarMaskY, planarMaskZ,
-    predOcc, isInter, flagNoSingle);
 }
 //-------------------------------------------------------------------------
 
@@ -524,10 +428,6 @@ GeometryOctreeDecoder::decodeDirectPosition(
       nodeSizeLog2Rem[k]--;
     }
 
-  // quantised partial positions must be scaled for angular coding
-  // nb, the decoded position remains quantised.
-  OctreeAngPosScaler quant(node.qp, posQuantBitMask);
-
   // Indicates which components are directly coded
   Vec3<bool> directIdcm = true;
 
@@ -663,7 +563,7 @@ decodeGeometryOctree(
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
-  if (isInter && gps.localMotionEnabled) {
+  if (isInter) {
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
     const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
 
@@ -685,8 +585,8 @@ decodeGeometryOctree(
   node00.end = uint32_t(0);
   node00.pos = int32_t(0);
   node00.predStart = uint32_t(0);
-  node00.predEnd = isInter && gps.localMotionEnabled ? predPointCloud.getPointCount() : uint32_t(0);
-  node00.mSONodeIdx = isInter && gps.localMotionEnabled ? 0 : -1;
+  node00.predEnd = isInter ? predPointCloud.getPointCount() : uint32_t(0);
+  node00.mSONodeIdx = isInter ? 0 : -1;
   node00.numSiblingsMispredicted = 0;
   node00.numSiblingsPlus1 = 8;
   node00.siblingOccupancy = 0;
@@ -703,7 +603,7 @@ decodeGeometryOctree(
   // per coded occupancy.
   int nodesBeforePlanarUpdate = 1;
 
-  if (!(isInter && gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
+  if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     decoder.clearMap();
     decoder.resetMap();
   }
@@ -770,7 +670,6 @@ decodeGeometryOctree(
     // support multiple streams
     auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
 
-    decoder.beginOctreeLevel();
     rsc.initializeNextDepth();
 
 
@@ -849,7 +748,7 @@ decodeGeometryOctree(
 
       if(!tubeIndex && !nodeSliceIndex) {
         // decode local motion PU tree
-        if (isInter && gps.localMotionEnabled) {
+        if (isInter) {
 
           if (nodeSizeLog2[0] == log2MotionBlockSize) {
             const Vec3<int32_t> pos = node0.pos << nodeSizeLog2;
@@ -874,7 +773,7 @@ decodeGeometryOctree(
         }
 
         // ...for local motion
-        if (isInter && gps.localMotionEnabled) {
+        if (isInter) {
           if (node0.isCompensated) {
             countingSort(
               PCCPointSet3::iterator(&compensatedPointCloud, node0.predStart),  // Need to update the predStar
@@ -1010,11 +909,8 @@ decodeGeometryOctree(
         //int planarMask[3] = {0, 0, 0};
         //maskPlanar(planar, planarMask, codedAxesCurNode);
 
-        bool flagWord4 =
-          gps.neighbour_avail_boundary_log2_minus1 > 0;  //&& intraPredUsed;
         node0.childOccupancy = decoder.decodeOccupancyFullNeihbourgs(
           contextualOccupancy, planarMask[0], planarMask[1], planarMask[2],
-          flagWord4, gps.adjacent_child_contextualization_enabled_flag,
           predOccupancy | (predOccupancyStrong <<8) , isInter);
       }
       occupancy = node0.childOccupancy;
@@ -1141,7 +1037,9 @@ decodeGeometryOctree(
     // todo(df): this check is too weak to spot overflowing the fifo
     assert(numNodesNextLvl <= ringBufferSize);
   }
-  if (!(gps.localMotionEnabled && gps.gof_geom_entropy_continuation_enabled_flag) && !(gps.trisoup_enabled_flag || gbh.entropy_continuation_flag))
+  if (!(gps.interPredictionEnabledFlag
+        && gps.gof_geom_entropy_continuation_enabled_flag)
+      && !(gps.trisoup_enabled_flag || gbh.entropy_continuation_flag))
     decoder.clearMap();
 
   // save the context state for re-use by a future slice if required

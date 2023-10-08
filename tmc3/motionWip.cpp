@@ -52,10 +52,6 @@ namespace pcc {
 
 //============================================================================
 struct MotionEntropy {
-  // global
-  AdaptiveBitModelFast _ctxIsWorld;
-
-  //local
   AdaptiveBitModel splitPu;
   StaticBitModel mvSign;
   AdaptiveBitModel mvIsZero;

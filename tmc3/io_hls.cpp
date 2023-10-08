@@ -627,38 +627,14 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
   bs.write(gps.geom_unique_points_flag);
 
-  bs.write(gps.predgeom_enabled_flag);
-  if (gps.predgeom_enabled_flag) {
-    throw std::runtime_error("Predictive Geometry shall not be enabled");
-  }
-  else {
-    bs.write(gps.octree_point_count_list_present_flag);
+  bs.write(gps.octree_point_count_list_present_flag);
 
-    bs.writeUn(2, /*gps.inferred_direct_coding_mode*/0);
-    /*if (gps.inferred_direct_coding_mode)
-      bs.write(gps.joint_2pt_idcm_enabled_flag);*/
+  bs.writeUn(2, /*gps.inferred_direct_coding_mode*/0);
+  /*if (gps.inferred_direct_coding_mode)
+    bs.write(gps.joint_2pt_idcm_enabled_flag);*/
 
-    bs.write(gps.qtbt_enabled_flag);
-    bs.writeUn(3, gps.neighbour_avail_boundary_log2_minus1);
-    if (gps.neighbour_avail_boundary_log2_minus1 > 0) {
-      bs.write(gps.adjacent_child_contextualization_enabled_flag);
-      bs.writeUe(gps.intra_pred_max_node_size_log2);
-    }
-    bs.write(gps.bitwise_occupancy_coding_flag);
-    if (!gps.bitwise_occupancy_coding_flag) {
-      throw std::runtime_error("Bitwise coding shall not be disabled");
-    }
-
-    bs.write(gps.geom_planar_mode_enabled_flag);
-    if (gps.geom_planar_mode_enabled_flag) {
-      throw std::runtime_error("Planar mode shall not be enabled");
-    }
-  }
-
-  bs.write(gps.geom_angular_mode_enabled_flag);
-  if (gps.geom_angular_mode_enabled_flag) {
-    throw std::runtime_error("Angular mode shall not be enabled");
-  }
+  bs.write(gps.qtbt_enabled_flag);
+  bs.writeUn(3, gps.neighbour_avail_boundary_log2_minus1);
 
   bs.write(gps.geom_scaling_enabled_flag);
   if (gps.geom_scaling_enabled_flag) {
@@ -673,31 +649,18 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
   bool gps_extension_flag = sps.profile.isDraftProfile();
   bs.write(gps_extension_flag);
   if (gps_extension_flag) {
-    if(true)
-      bs.write(gps.trisoup_enabled_flag);
-
+    bs.write(gps.trisoup_enabled_flag);
     if (gps.trisoup_enabled_flag){
       bs.write(gps.non_cubic_node_start_edge);
       bs.write(gps.non_cubic_node_end_edge);
     }
 
-    if (true)
-      bs.write(gps.interPredictionEnabledFlag);
-
     // inter
+    bs.write(gps.interPredictionEnabledFlag);
     if (gps.interPredictionEnabledFlag) {
-      //global
-      bs.write(gps.globalMotionEnabled);
-      if (gps.globalMotionEnabled) {
-        throw std::runtime_error("Global motion shall not be enabled");
-      }
 
-      //local
-      bs.write(gps.localMotionEnabled);
-      if (gps.localMotionEnabled) {
-        bs.writeUe(gps.motion.motion_block_size);
-        bs.writeUe(gps.motion.motion_min_pu_size);
-      }
+      bs.writeUe(gps.motion.motion_block_size);
+      bs.writeUe(gps.motion.motion_min_pu_size);
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
 
@@ -729,41 +692,15 @@ parseGps(const PayloadBuffer& buf)
   bs.read(&gps.geom_unique_points_flag);
 
   gps.octree_point_count_list_present_flag = false;
-  bs.read(&gps.predgeom_enabled_flag);
-  if (gps.predgeom_enabled_flag) {
-    throw std::runtime_error("Predictive Geometry shall not be enabled");
-  }
-  else {
-    bs.read(&gps.octree_point_count_list_present_flag);
 
-    bs.readUn(2, &gps.inferred_direct_coding_mode);
-    /*if (gps.inferred_direct_coding_mode)
-      bs.read(&gps.joint_2pt_idcm_enabled_flag);*/
+  bs.read(&gps.octree_point_count_list_present_flag);
 
-    bs.read(&gps.qtbt_enabled_flag);
-    bs.readUn(3, &gps.neighbour_avail_boundary_log2_minus1);
+  bs.readUn(2, &gps.inferred_direct_coding_mode);
+  /*if (gps.inferred_direct_coding_mode)
+    bs.read(&gps.joint_2pt_idcm_enabled_flag);*/
 
-    gps.adjacent_child_contextualization_enabled_flag = 0;
-    gps.intra_pred_max_node_size_log2 = 0;
-    if (gps.neighbour_avail_boundary_log2_minus1 > 0) {
-      bs.read(&gps.adjacent_child_contextualization_enabled_flag);
-      bs.readUe(&gps.intra_pred_max_node_size_log2);
-    }
-    bs.read(&gps.bitwise_occupancy_coding_flag);
-    if (!gps.bitwise_occupancy_coding_flag) {
-      throw std::runtime_error("Bitwise coding shall not be disabled");
-    }
-
-    bs.read(&gps.geom_planar_mode_enabled_flag);
-    if (gps.geom_planar_mode_enabled_flag) {
-      throw std::runtime_error("Planar mode shall not be enabled");
-    }
-  }
-
-  bs.read(&gps.geom_angular_mode_enabled_flag);
-  if (gps.geom_angular_mode_enabled_flag) {
-    throw std::runtime_error("Angular mode shall not be enabled");
-  }
+  bs.read(&gps.qtbt_enabled_flag);
+  bs.readUn(3, &gps.neighbour_avail_boundary_log2_minus1);
 
   gps.geom_base_qp = 0;
   gps.geom_qp_multiplier_log2 = 0;
@@ -776,38 +713,23 @@ parseGps(const PayloadBuffer& buf)
 
   gps.trisoup_enabled_flag = false;
   gps.interPredictionEnabledFlag = false;
-  gps.globalMotionEnabled = false;
-  gps.localMotionEnabled = false;
   gps.gof_geom_entropy_continuation_enabled_flag = false;
   gps.trisoup_skip_mode_enabled_flag = false;
   bool gps_extension_flag = bs.read();
   if (gps_extension_flag) {
-    if(true)
-      bs.read(&gps.trisoup_enabled_flag);
 
+    bs.read(&gps.trisoup_enabled_flag);
     if (gps.trisoup_enabled_flag) {
       bs.read(&gps.non_cubic_node_start_edge);
       bs.read(&gps.non_cubic_node_end_edge);
     }
 
-    if (true)
-      bs.read(&gps.interPredictionEnabledFlag);
-
     // inter
+    bs.read(&gps.interPredictionEnabledFlag);
     if (gps.interPredictionEnabledFlag) {
 
-      //global
-      bs.read(&gps.globalMotionEnabled);
-      if (gps.globalMotionEnabled) {
-        throw std::runtime_error("Global motion shall not be enabled");
-      }
-
-      //local
-      bs.read(&gps.localMotionEnabled);
-      if (gps.localMotionEnabled) {
-        bs.readUe(&gps.motion.motion_block_size);
-        bs.readUe(&gps.motion.motion_min_pu_size);
-      }
+      bs.readUe(&gps.motion.motion_block_size);
+      bs.readUe(&gps.motion.motion_min_pu_size);
 
       bs.read(&gps.gof_geom_entropy_continuation_enabled_flag);
 
@@ -862,11 +784,6 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
 
   if (aps.attr_encoding == AttributeEncoding::kRaw)
     bs.write(aps.raw_attr_variable_len_flag);
-
-  bs.write(aps.spherical_coord_flag);
-  if (aps.spherical_coord_flag) {
-    throw std::runtime_error("Spherical coordinates shall not be enabled");
-  }
 
   // NB: bitstreams conforming to the first edition must set
   // aps_extension_flag equal to 0.
@@ -932,11 +849,6 @@ parseAps(const PayloadBuffer& buf)
 
   if (aps.attr_encoding == AttributeEncoding::kRaw)
     bs.read(&aps.raw_attr_variable_len_flag);
-
-  bs.read(&aps.spherical_coord_flag);
-  if (aps.spherical_coord_flag) {
-    throw std::runtime_error("Spherical coordinates shall not be enabled");
-  }
 
   bool aps_extension_flag = bs.read();
   aps.rahtPredParams.prediction_skip1_flag = false;
@@ -1014,15 +926,13 @@ write(
     bs.writeUn(originBits, geom_box_origin.z());
   }
 
-  if (true) {
-    int tree_depth_minus1 = gbh.tree_depth_minus1();
-    bs.writeUe(tree_depth_minus1);
-    if (gps.qtbt_enabled_flag)
-      for (int i = 0; i <= tree_depth_minus1; i++)
-        bs.writeUn(3, gbh.tree_lvl_coded_axis_list[i]);
+  int tree_depth_minus1 = gbh.tree_depth_minus1();
+  bs.writeUe(tree_depth_minus1);
+  if (gps.qtbt_enabled_flag)
+    for (int i = 0; i <= tree_depth_minus1; i++)
+      bs.writeUn(3, gbh.tree_lvl_coded_axis_list[i]);
 
-    bs.writeUe(gbh.geom_stream_cnt_minus1);
-  }
+  bs.writeUe(gbh.geom_stream_cnt_minus1);
 
   if (gps.geom_scaling_enabled_flag) {
     bs.writeSe(gbh.geom_slice_qp_offset);
@@ -1030,19 +940,12 @@ write(
 
   if (gps.trisoup_enabled_flag) {
     bs.writeUe(gbh.trisoup_node_size_log2_minus2);
-    bs.writeUe(gbh.trisoup_sampling_value_minus1);
-    bs.writeUe(gbh.num_unique_segments_bits_minus1);
-    auto segmentBits = gbh.num_unique_segments_bits_minus1 + 1;
-    bs.writeUn(segmentBits, gbh.num_unique_segments_minus1);
     bs.writeUe(gbh.trisoup_vertex_quantization_bits);
     bs.write(gbh.trisoup_centroid_vertex_residual_flag);
     if( gbh.trisoup_centroid_vertex_residual_flag ){
       bs.write(gbh.trisoup_face_vertex_flag);
     }
     bs.write(gbh.trisoup_halo_flag);
-    if (gbh.trisoup_halo_flag)
-      bs.write(gbh.trisoup_adaptive_halo_flag);
-    bs.write(gbh.trisoup_fine_ray_tracing_flag);
     bs.writeUe(gbh.trisoup_thickness);
 
     int _write_bits = 0;
@@ -1118,17 +1021,16 @@ parseGbh(
   gbh.geomBoxOrigin *= 1 << gbh.geomBoxLog2Scale(gps);
 
   gbh.geom_stream_cnt_minus1 = 0;
-  if (true) {
-    int tree_depth_minus1;
-    bs.readUe(&tree_depth_minus1);
 
-    gbh.tree_lvl_coded_axis_list.resize(tree_depth_minus1 + 1, 7);
-    if (gps.qtbt_enabled_flag)
-      for (int i = 0; i <= tree_depth_minus1; i++)
-        bs.readUn(3, &gbh.tree_lvl_coded_axis_list[i]);
+  int tree_depth_minus1;
+  bs.readUe(&tree_depth_minus1);
 
-    bs.readUe(&gbh.geom_stream_cnt_minus1);
-  }
+  gbh.tree_lvl_coded_axis_list.resize(tree_depth_minus1 + 1, 7);
+  if (gps.qtbt_enabled_flag)
+    for (int i = 0; i <= tree_depth_minus1; i++)
+      bs.readUn(3, &gbh.tree_lvl_coded_axis_list[i]);
+
+  bs.readUe(&gbh.geom_stream_cnt_minus1);
 
   gbh.geom_slice_qp_offset = 0;
   if (gps.geom_scaling_enabled_flag) {
@@ -1137,20 +1039,12 @@ parseGbh(
 
   if (gps.trisoup_enabled_flag) {
     bs.readUe(&gbh.trisoup_node_size_log2_minus2);
-    bs.readUe(&gbh.trisoup_sampling_value_minus1);
-    bs.readUe(&gbh.num_unique_segments_bits_minus1);
-    auto segmentBits = gbh.num_unique_segments_bits_minus1 + 1;
-    bs.readUn(segmentBits, &gbh.num_unique_segments_minus1);
     bs.readUe(&gbh.trisoup_vertex_quantization_bits);
     bs.read(&gbh.trisoup_centroid_vertex_residual_flag);
     if( gbh.trisoup_centroid_vertex_residual_flag ){
       bs.read(&gbh.trisoup_face_vertex_flag);
     }
     bs.read(&gbh.trisoup_halo_flag);
-    gbh.trisoup_adaptive_halo_flag = false;
-    if (gbh.trisoup_halo_flag)
-      bs.read(&gbh.trisoup_adaptive_halo_flag);
-    bs.read(&gbh.trisoup_fine_ray_tracing_flag);
     bs.readUe(&gbh.trisoup_thickness);
 
     gbh.slice_bb_pos_bits = 0;
