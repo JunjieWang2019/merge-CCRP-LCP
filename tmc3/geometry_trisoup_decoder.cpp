@@ -474,15 +474,14 @@ struct RasterScanTrisoupEdges {
 
     gCenter = blockCentroid;
 
-    if (vtxCount == 3 && isCentroidDriftActivated
-        || !isCentroidDriftActivated) {
+    if (!isCentroidDriftActivated) {
       cVerts.push_back({ false, gCenter, 0, true });
       gravityCenter.push_back(gCenter);
       return;
     }
 
     // Refinement of the centroid along the domiannt axis
-    if (vtxCount > 3 && isCentroidDriftActivated) {
+    if (vtxCount >= 3 && isCentroidDriftActivated) {
       int bitDropped2 = bitDropped;
 
       // colocated centroid
@@ -820,7 +819,7 @@ struct RasterScanTrisoupEdges {
       return nPointsInBlock;
     }
 
-    if (eVerts[i].vertices.size() > 3) {
+    if (eVerts[i].vertices.size() >= 3) {
       Vec3<int32_t> foundvoxel =
         cVerts[i].pos + truncateValue >> kTrisoupFpBits;
       if (boundaryinsidecheck(foundvoxel, blockWidth - 1)) {
@@ -848,13 +847,11 @@ struct RasterScanTrisoupEdges {
     // and upsample each triangle by an upsamplingFactor.
     int vtxCount = nodeVertices.size();
     Vec3<int32_t> blockCentroid = cVerts[i].pos;
-    Vec3<int32_t> v2 = vtxCount == 3 ? nodeVertices[2].pos : blockCentroid;
+    Vec3<int32_t> v2 = blockCentroid;
     Vec3<int32_t> v1 = nodeVertices[0].pos;
     Vec3<int32_t> posNode = nodepos << kTrisoupFpBits;
 
-    for (int vtxIndex = 0;
-        vtxIndex < (vtxCount == 3 ? 1 : vtxCount);
-        vtxIndex++) {
+    for (int vtxIndex = 0; vtxIndex < vtxCount; vtxIndex++) {
       int j0 = vtxIndex;
       int j1 = vtxIndex + 1;
       if (j1 >= vtxCount)
@@ -2052,7 +2049,7 @@ int findDominantAxis(
   int dominantAxis = 0;
   int triCount = leafVertices.size();
 
-  if (triCount > 3) {
+  if (triCount >= 3) {
     Vertex vertex;
     const int sIdx1[3] = { 2,2,1 };
     const int sIdx2[3] = { 1,0,0 };

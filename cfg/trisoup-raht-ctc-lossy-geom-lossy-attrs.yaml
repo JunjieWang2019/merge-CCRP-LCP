@@ -30,11 +30,6 @@ categories:
          r03: 3
          r04: 2
      - trisoupQuantizationBits: 2
-     - trisoupCentroidResidualEnabled:
-         r01: 1
-         r02: 1
-         r03: 1
-         r04: 0
      - trisoupFaceVertexEnabled:
          r01: 1
          r02: 1
@@ -81,6 +76,6 @@ categories:
       8ivfbv2_loot_vox10:                { test-depth: 10, thickness: 24 }
       8ivfbv2_redandblack_vox10:         { test-depth: 10, thickness: 24 }
       8ivfbv2_soldier_vox10:             { test-depth: 10, thickness: 24 }
-      basketball_player_vox11:           { test-depth: 11, thickness: 32 }
-      dancer_player_vox11:               { test-depth: 11, thickness: 32 }
+      basketball_player_vox11:           { test-depth: 11, thickness: 36 }
+      dancer_player_vox11:               { test-depth: 11, thickness: 36 }
       queen:                             { test-depth: 10, thickness: 40 }
