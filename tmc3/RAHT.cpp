@@ -60,8 +60,8 @@ reduceUnique(
   int numAttrs,
   std::vector<UrahtNode>* weightsIn,
   std::vector<UrahtNode>* weightsOut,
-  std::vector<int>* attrsIn,
-  std::vector<int>* attrsOut,
+  std::vector<int64_t>* attrsIn,
+  std::vector<int64_t>* attrsOut,
   bool integer_haar_enable_flag)
 {
   // process a single level of the tree
@@ -112,8 +112,8 @@ reduceLevel(
   int numAttrs,
   std::vector<UrahtNode>* weightsIn,
   std::vector<UrahtNode>* weightsOut,
-  std::vector<int>* attrsIn,
-  std::vector<int>* attrsOut,
+  std::vector<int64_t>* attrsIn,
+  std::vector<int64_t>* attrsOut,
   bool integer_haar_enable_flag)
 {
   // process a single level of the tree
@@ -163,8 +163,8 @@ expandLevel(
   int numAttrs,
   std::vector<UrahtNode>* weightsIn,   // expand by numNodes before expand
   std::vector<UrahtNode>* weightsOut,  // shrink after expand
-  std::vector<int>* attrsIn,
-  std::vector<int>* attrsOut,
+  std::vector<int64_t>* attrsIn,
+  std::vector<int64_t>* attrsOut,
   bool integer_haar_enable_flag)
 {
   if (numNodes == 0)
@@ -613,7 +613,7 @@ uraht_process(
   }
 
   std::vector<UrahtNode> weightsLf, weightsHf;
-  std::vector<int> attrsLf, attrsHf;
+  std::vector<int64_t> attrsLf, attrsHf;
 
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag
