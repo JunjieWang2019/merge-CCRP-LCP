@@ -913,8 +913,6 @@ MSOctree::find_motion(
   int jumpBlock = 1 + (Block0.size() >> param.decimate);  // (kind of) random sampling of the original block to code
 
   int Dist = 0;
-  double DistR = 0;
-  int DColorBlock=0;
 
   // TODO: buffer vector difference or dmax to estimate dmax after motion is applied
   std::vector<int32_t> min_d0(1+Block0.size()/jumpBlock);
@@ -988,8 +986,6 @@ MSOctree::find_motion(
     point_t meanV = {};
     NtestedPoints = 0;
     Dist = 0;
-    DistR = 0;
-    DColorBlock=0;
     for (int Nb = 0, idx = 0; Nb < Block0.size(); Nb += jumpBlock, ++idx) {
       int32_t d_max = INT32_MAX;
       auto p = Block0[Nb];
@@ -1072,8 +1068,6 @@ MSOctree::find_motion(
         continue;
 
       Dist = 0;
-      DistR = 0;
-      DColorBlock=0;
       for (int Nb = 0, idx = 0; Nb < Block0.size(); Nb += jumpBlock, ++idx) {
         int32_t d_max = INT32_MAX;
         auto p = Block0[Nb];

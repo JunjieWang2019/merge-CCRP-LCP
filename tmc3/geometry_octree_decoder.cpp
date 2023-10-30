@@ -229,9 +229,6 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgs(
       continue;
     }
 
-    int bitPred = (predOcc >> i) & 1;
-    int interCtx = bitPred;
-
     // OBUF contexts
     int ctx1, ctx2;
     bool Sparse;
@@ -524,8 +521,8 @@ decodeGeometryOctree(
   size_t processedPointCount = 0;
   std::vector<uint32_t> values;
 
-  // rotating mask used to enable idcm
-  uint32_t idcmEnableMaskInit = /*mkIdcmEnableMask(gps)*/ 0; //NOTE[FT] : set to 0 by construction
+  //// rotating mask used to enable idcm
+  //uint32_t idcmEnableMaskInit = /*mkIdcmEnableMask(gps)*/ 0; //NOTE[FT] : set to 0 by construction
 
   Vec3<uint32_t> posQuantBitMasks = 0xffffffff;
   int idcmQp = 0;
@@ -565,8 +562,6 @@ decodeGeometryOctree(
   // local motion prediction structure -> LPUs from predPointCloud
   if (isInter) {
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
-    const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
-
     if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
       int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size));
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
@@ -598,11 +593,6 @@ decodeGeometryOctree(
   node00.hasMotion = 0;
   node00.isCompensated = 0;
 
-  // The number of nodes to wait before updating the planar rate.
-  // This is to match the prior behaviour where planar is updated once
-  // per coded occupancy.
-  int nodesBeforePlanarUpdate = 1;
-
   if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     decoder.clearMap();
     decoder.resetMap();
@@ -616,8 +606,8 @@ decodeGeometryOctree(
     // derive per-level node size related parameters
     auto nodeSizeLog2 = lvlNodeSizeLog2[depth];
     auto childSizeLog2 = lvlNodeSizeLog2[depth + 1];
-    // represents the largest dimension of the current node
-    int nodeMaxDimLog2 = nodeSizeLog2.max();
+    //// represents the largest dimension of the current node
+    //int nodeMaxDimLog2 = nodeSizeLog2.max();
 
     auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
 
@@ -666,9 +656,9 @@ decodeGeometryOctree(
       arithmeticDecoder.flushAndRestart();
     }
 
-    // reset the idcm eligibility mask at the start of each level to
-    // support multiple streams
-    auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
+    //// reset the idcm eligibility mask at the start of each level to
+    //// support multiple streams
+    //auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
 
     rsc.initializeNextDepth();
 
@@ -751,16 +741,7 @@ decodeGeometryOctree(
         if (isInter) {
 
           if (nodeSizeLog2[0] == log2MotionBlockSize) {
-            const Vec3<int32_t> pos = node0.pos << nodeSizeLog2;
-            const int lpuX = pos[0] >> log2MotionBlockSize;
-            const int lpuY = pos[1] >> log2MotionBlockSize;
-            const int lpuZ = pos[2] >> log2MotionBlockSize;
-            const int lpuIdx = (lpuX * LPUnumInAxis + lpuY) * LPUnumInAxis + lpuZ;
-
-            // no local motion if not enough points
-            const bool isLocalEnabled =
-              true;
-            node0.hasMotion = isLocalEnabled;
+            node0.hasMotion = true;
           }
 
           // decode LPU/PU/MV
@@ -812,15 +793,12 @@ decodeGeometryOctree(
           predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
       }
 
-      bool occupancyIsPredictable =
-        predOccupancy && node0.numSiblingsMispredicted <= 5;
+      //bool occupancyIsPredictable =
+      //  predOccupancy && node0.numSiblingsMispredicted <= 5;
       // The predictor may be cleared for the purpose of context
       // selection if the prediction is unlikely to be good.
       // NB: any other tests should use the original prediction.
       int predOccupancyReal = predOccupancy;
-
-      int occupancyIsPredicted = 0;
-      int occupancyPrediction = 0;
 
       if (nodeQpOffsetsPresent) {
         node0.qp = sliceQp;

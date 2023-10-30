@@ -411,7 +411,6 @@ struct RasterScanTrisoupEdges {
 
     // Find up to 12 vertices for this leaf.
     std::vector<Vertex> leafVertices;
-    int nPointsInBlock = 0;
 
     TrisoupNodeEdgeVertex neVertex;
 
@@ -852,7 +851,6 @@ struct RasterScanTrisoupEdges {
     Vec3<int32_t> posNode = nodepos << kTrisoupFpBits;
 
     for (int vtxIndex = 0; vtxIndex < vtxCount; vtxIndex++) {
-      int j0 = vtxIndex;
       int j1 = vtxIndex + 1;
       if (j1 >= vtxCount)
         j1 -= vtxCount;
@@ -958,7 +956,6 @@ struct RasterScanTrisoupEdges {
     lastWedgex = currWedgePos[0];
     int firstVertexToCode = 0;
     int nodeIdxC = 0;
-    int nodeIdxF = 0;
     int firstNodeToRender = 0;
 
     // for edge coding
@@ -1251,32 +1248,6 @@ struct RasterScanTrisoupEdges {
         while (firstNodeToRender < leaves.size()
             && leaves[firstNodeToRender].pos[0] < upperxForRendering) {
           auto leaf = leaves[firstNodeToRender];
-
-          // centroid predictor
-          int8_t colocatedCentroid = 0;
-          bool nodeRefExist = false;
-          auto nodePos = leaf.pos;
-          auto keyCurrent =
-            (int64_t(nodePos[0] + keyshift[0]) << 40)
-            + (int64_t(nodePos[1] + keyshift[1]) << 20)
-            + int64_t(nodePos[2] + keyshift[2]);
-          currentFrameNodeKeys.push_back(keyCurrent);
-          CentroValue.push_back(0);
-
-          if (interSkipEnabled) {
-            while (
-                colocatedNodeIdx
-                < ctxtMemOctree.refFrameNodeKeys.size() - 1
-                && ctxtMemOctree.refFrameNodeKeys[colocatedNodeIdx]
-                < keyCurrent)
-              colocatedNodeIdx++;
-
-            nodeRefExist =
-              ctxtMemOctree.refFrameNodeKeys[colocatedNodeIdx] == keyCurrent;
-            if (nodeRefExist)
-              colocatedCentroid =
-                ctxtMemOctree.refFrameCentroValue[colocatedNodeIdx];
-          }
 
           int nPointsInBlock =
             generateTrianglesInNodeRasterScan(
@@ -2018,8 +1989,6 @@ constructCtxPos2(
   ctxMap2 |= (ctxInfo.patternClose & (0b00011111)) >> 1;
   ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
 
-  bool isGoodRef = isInter && colocatedVertex >= 0 && ((colocatedVertex >> b + 1) == v);
-  bool isInterGood = isInter && ((isGoodRef && ctxInfo.nBadPredRef1 <= 4) || ctxInfo.nBadPredComp2 <= 4);
   ctxInter = 0;
   if (isInter) {
     ctxInter = TriSoupVerticesPred >= 0 ? 1 + ((TriSoupVerticesPred >> b) <= (v << 1)) : 0;

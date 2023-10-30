@@ -910,7 +910,6 @@ uraht_process(
       }
 
       if (enableIntraPrediction) {
-        bool foundNeighbours = false;
         int parentNeighCount = 0;
         if (rahtPredParams.enable_inter_prediction
             || (!(rahtPredParams.prediction_skip1_flag && nodeCnt == 1)
@@ -951,10 +950,8 @@ uraht_process(
         }
       }
 
-      int parentWeight = 0;
       if (inheritDc) {
         numGrandParentNeighIt++;
-        parentWeight = weightsParentIt->weight;
         weightsParentIt->decoded = true;
       }
 

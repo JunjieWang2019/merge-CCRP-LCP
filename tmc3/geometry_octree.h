@@ -485,7 +485,6 @@ public:
 
 private:
   int maxTreeDepth = 0;
-  int minkTree = 0;
 
   //  update kDown
   void decreaseKdown(int idxTree, int kDownTree);
@@ -505,7 +504,6 @@ CtxMapDynamicOBUF::reset(int userBitS1, int userBitS2)
   S2 = 1 << userBitS2;
 
   maxTreeDepth = userBitS1 - kLeafDepth;
-  minkTree = kLeafDepth;
 
   // tree of size (1 << maxTreeDepth) * S2
   const int treeSize = (1 << maxTreeDepth) * S2;

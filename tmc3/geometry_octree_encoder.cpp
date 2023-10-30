@@ -239,9 +239,6 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
       continue;
     }
 
-    int bitPred = (predOcc >> i) & 1;
-    int interCtx = bitPred;
-
     // OBUF contexts
     int ctx1, ctx2;
     bool Sparse;
@@ -738,8 +735,6 @@ encodeGeometryOctree(
   // local motion prediction structure -> LPUs from predPointCloud
   if (isInter) {
     log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
-    const int maxBB = (1 << gbh.maxRootNodeDimLog2) - 1;
-
     if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
       int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size));
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
@@ -795,8 +790,8 @@ encodeGeometryOctree(
   std::vector<int> pointIdxToDmIdx(int(pointCloud.getPointCount()), -1);
   int nextDmIdx = 0;
 
-  // rotating mask used to enable idcm
-  uint32_t idcmEnableMaskInit = /*mkIdcmEnableMask(gps)*/ 0; //NOTE[FT] : set to 0 by construction
+  //// rotating mask used to enable idcm
+  //uint32_t idcmEnableMaskInit = /*mkIdcmEnableMask(gps)*/ 0; //NOTE[FT] : set to 0 by construction
 
   // the minimum node size is ordinarily 2**0, but may be larger due to
   // early termination for trisoup.
@@ -858,11 +853,6 @@ encodeGeometryOctree(
     numLvlsUntilQuantization++;
   }
 
-  // The number of nodes to wait before updating the planar rate.
-  // This is to match the prior behaviour where planar is updated once
-  // per coded occupancy.
-  int nodesBeforePlanarUpdate = 1;
-
   if (gps.octree_point_count_list_present_flag)
     gbh.footer.octree_lvl_num_points_minus1.reserve(maxDepth);
 
@@ -887,8 +877,8 @@ encodeGeometryOctree(
     // derive per-level node size related parameters
     auto nodeSizeLog2 = lvlNodeSizeLog2[depth];
     auto childSizeLog2 = lvlNodeSizeLog2[depth + 1];
-    // represents the largest dimension of the current node
-    int nodeMaxDimLog2 = nodeSizeLog2.max();
+    //// represents the largest dimension of the current node
+    //int nodeMaxDimLog2 = nodeSizeLog2.max();
 
     // if one dimension is not split, atlasShift[k] = 0
     int codedAxesPrevLvl = depth ? gbh.tree_lvl_coded_axis_list[depth - 1] : 7;
@@ -942,9 +932,9 @@ encodeGeometryOctree(
       encoder._arithmeticEncoder = (++arithmeticEncoderIt)->get();
     }
 
-    // reset the idcm eligibility mask at the start of each level to
-    // support multiple streams
-    auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
+    //// reset the idcm eligibility mask at the start of each level to
+    //// support multiple streams
+    //auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
 
     rsc.initializeNextDepth();
 
@@ -1048,20 +1038,11 @@ encodeGeometryOctree(
       if (!tubeIndex && !nodeSliceIndex) {
         //local motion : determine PU tree by motion search and RDO
         if (isInter && nodeSizeLog2[0] == log2MotionBlockSize) {
-          const Vec3<int32_t> pos = node0.pos << nodeSizeLog2;
-          const int lpuX = pos[0] >> log2MotionBlockSize;
-          const int lpuY = pos[1] >> log2MotionBlockSize;
-          const int lpuZ = pos[2] >> log2MotionBlockSize;
-          const int lpuIdx = (lpuX * LPUnumInAxis + lpuY) * LPUnumInAxis + lpuZ;
-
-          // no local motion if not enough points
-          const bool isLocalEnabled =
-            true;
           std::unique_ptr<PUtree> PU_tree(new PUtree);
 
-            node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, gps.motion, nodeSizeLog2[0],
-              encoder._arithmeticEncoder, PU_tree.get());
-            node0.PU_tree = std::move(PU_tree);
+          node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, gps.motion, nodeSizeLog2[0],
+            encoder._arithmeticEncoder, PU_tree.get());
+          node0.PU_tree = std::move(PU_tree);
         }
 
         // code split PU flag. If not split, code  MV and apply MC
@@ -1142,10 +1123,10 @@ encodeGeometryOctree(
         predFailureCount += childOccupiedTmp != childPredicted;
       }
 
-      bool occupancyIsPredictable =
-        predOccupancy && node0.numSiblingsMispredicted <= 5;
+      //bool occupancyIsPredictable =
+      //  predOccupancy && node0.numSiblingsMispredicted <= 5;
 
-      DirectMode mode = DirectMode::kUnavailable;
+      //DirectMode mode = DirectMode::kUnavailable;
       // At the scaling depth, it is possible for a node that has previously
       // been marked as being eligible for idcm to be fully quantised due
       // to the choice of QP.  There is therefore nothing to code with idcm.
