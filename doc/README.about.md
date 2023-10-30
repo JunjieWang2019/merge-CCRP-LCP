@@ -29,9 +29,100 @@ contents. The original implementation started from the experimental model
 being studied in EE13.60, and is based on the `release-v20.0-rc1` of G-PCC
 test model TMC13.
 
- ### `ges-tm-v3.0`
+### `ges-tm-v4.0`
 
--Tag `ges-tm-v3.0` will be released after reported issues are resolved,
+Tag `ges-tm-v4.0` will be released after reported issues are resolved,
+if any.
+
+### `ges-tm-v4.0-rc1`
+
+Tag `ges-tm-v4.0-rc1` includes adoptions made during the meeting in
+Hannover (October 2023), and some additional cleanups.
+
+- `attr/tidy: m58315 - remove unused quantization variable`:  
+    This is same as m58315 adoption, but quantization variables was
+    not used at all in GeS-TM since predlift is not part of GeS-TM.
+
+- `attr/raht: m65386 - fix overflow`:  
+    Use of int64_t instead of int to avoid potential overflow with high
+    bit depth attributes.
+
+- `attr/raht: m65386 - fix attribute QP parameter restriction`:  
+    Increases attributes QP range to match G-PCC specification text.
+
+- `attr/raht: m65387 - update encoding QP table`:  
+    Increases bitdepth resolution for encoding QP. It has been shown
+    on TMC13 that it is far better for high bitdepth attributes, and
+    slightly better for 8 bits attributes.
+
+- `attr/raht: m65387 - extend number of coding contexts`:  
+    Increase the number of contexts for coding attributes. It has
+    been shown on TMC13 that it is much better for high bitdepth
+    attributes, and slightly better for 8 bits attributes.
+
+- `attr/raht: m65089 - Test 4.3, intra_mode_level=4`:  
+    In RAHT, every frame is divided into binary layers for all-intra
+    configuration.
+
+- `attr/tidy: remove unused referencePointCloud`:  
+    AttributeInterPredParams::referencePointCloud is not used anymore.
+    Removes it.
+
+- `geom/tidy: use const references instead of local copies`:  
+    Replaces some local instances/copies by const references in Vec3 and
+    PointType member functions.
+
+- `geom/tidy: motion - remove unneeded copies of LPU window`:  
+    Removes unnecessary local copies of LPU windows.
+
+- `geom/tidy: motion - optimize memory usage`:  
+    Builds indices array of points, before extracting points in well
+    dimentionned arrays, to get more optimal use of the memory.
+
+- `geom/tidy: motion - put non compensated nodes in compensatedPointCloud`:  
+    Parts of refPointCloud that were not compensated are now copied
+    into compensatedPointCloud.
+  
+    refPointCloud can be removed from trisoup (not necessary anymore).
+
+- `geom/refactor: motion - use PCCPointSet3 instead of vectors`:  
+    Uses PCCPointSet3 instead of vectors of coordinates in motion related
+    algorithm (search and compensation) to be able to more easily compensate
+    with attributes.
+
+- `geom/motion: m64918 - octree based motion search`:  
+    Uses an octree based motion search and compensation to remove LPU windows
+    and there constrains.
+    It allows to use wider motion search and compensation without increasing
+    complexity.
+  
+    The motion window size is also removed from the gps as is no more needed
+    for motion compensation in decoder side.
+  
+    Parameters for octree are modified to keep similar complexity
+
+- `geom/trisoup: m65235 - FaceVertex for Trisoup`:  
+    Adds possibility of using vertices on faces in trisoup coding.  
+    Also updates CTCs.
+
+- `geom/tidy: m64911 - remove HLS, dead code and sparse algo`:  
+    Cleaning GeS-TM, as proposed in m64911.
+
+- `geom/trisoup: m64912 - CTC changes and conditions on centroid activation`:  
+    Centroid can now be used with at least 3 points, and it is activated for
+    all rate points. CTCs' thikness parameters are also updated.
+
+- `tidy: removal of unused variables and code`:  
+    Provides attitional code cleanups:  
+    - Removal of unused variables,
+    - Removal of code in trisoup:  
+      The code had been duplicated in a previous loop iterating on the
+      nodes of a slice, for centroid determination with face vertices,
+      and the original loopbecame unnecessary.
+
+### `ges-tm-v3.0`
+
+Tag `ges-tm-v3.0` will be released after reported issues are resolved,
 if any.
 
 ### `ges-tm-v3.0-rc1`
