@@ -82,7 +82,6 @@ void encode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  int numLPUPerLine,
   int log2MotionBlkSize);
 
 void extracPUsubtree(
@@ -103,7 +102,6 @@ void decode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  int numLPUPerLine,
   int log2MotionBlkSize);
 
   //============================================================================

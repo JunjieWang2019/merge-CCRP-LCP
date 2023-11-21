@@ -555,7 +555,6 @@ decodeGeometryOctree(
   // the saved state is restored at the start of each parallel octree level
   std::unique_ptr<GeometryOctreeDecoder> savedState;
 
-  int LPUnumInAxis = 0;
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
@@ -748,7 +747,7 @@ decodeGeometryOctree(
             decode_splitPU_MV_MC(mSOctree,
               &node0, gps.motion, nodeSizeLog2,
               &arithmeticDecoder, &compensatedPointCloud,
-              LPUnumInAxis, log2MotionBlockSize);
+              log2MotionBlockSize);
           }
         }
 

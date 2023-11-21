@@ -471,7 +471,6 @@ encode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  int numLPUPerLine,
   int log2MotionBlkSize)
 {
   const int node_size = 1 << nodeSizeLog2[0];
@@ -508,7 +507,6 @@ decode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  int numLPUPerLine,
   int log2MotionBlkSize)
 {
   int node_size = 1 << nodeSizeLog2[0];

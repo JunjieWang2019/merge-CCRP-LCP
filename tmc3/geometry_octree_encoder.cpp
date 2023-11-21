@@ -728,7 +728,6 @@ encodeGeometryOctree(
 
   // variables for local motion
 
-  int LPUnumInAxis = 0;
   int log2MotionBlockSize = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
@@ -1050,7 +1049,7 @@ encodeGeometryOctree(
           encode_splitPU_MV_MC(mSOctree,
             &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
             encoder._arithmeticEncoder, &compensatedPointCloud,
-            LPUnumInAxis, log2MotionBlockSize);
+            log2MotionBlockSize);
         }
 
         // split the current node into 8 children
