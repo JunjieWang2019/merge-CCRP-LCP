@@ -50,12 +50,6 @@ using VecAttr = std::vector<std::array<pcc::FixedPoint, 8>>;
 
 namespace pcc {
 
-struct MotionVector {
-  Vec3<int32_t> position;
-  int nodeSize;
-  Vec3<int> motionVector;
-};
-
 void computeParentDc(
   const int64_t weights[],
   std::vector<int64_t>::const_iterator dc,

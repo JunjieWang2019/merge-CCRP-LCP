@@ -472,8 +472,7 @@ encode_splitPU_MV_MC(
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
   int numLPUPerLine,
-  int log2MotionBlkSize,
-  std::vector<MotionVector>& motionVectors)
+  int log2MotionBlkSize)
 {
   const int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
@@ -487,7 +486,6 @@ encode_splitPU_MV_MC(
     // encode MV
     point_t MV = local_PU_tree->MVs[0];
     motionEncoder.encodeVector(MV);
-    motionVectors.push_back({node0->pos * node_size, node_size, MV});
 
     point_t MVd = MV;
 
@@ -511,8 +509,7 @@ decode_splitPU_MV_MC(
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
   int numLPUPerLine,
-  int log2MotionBlkSize,
-  std::vector<MotionVector>& motionVectors)
+  int log2MotionBlkSize)
 {
   int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyDecoder motionDecoder(arithmeticDecoder);
@@ -528,8 +525,6 @@ decode_splitPU_MV_MC(
     point_t MVd = 0.;
     motionDecoder.decodeVector(&MV);
     MVd = MV;
-
-    motionVectors.push_back({node0->pos * node_size, node_size, MV});
 
     mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
     node0->isCompensated = true;

@@ -268,7 +268,6 @@ PCCTMC3Decoder3::decompress(
     // Avoid dropping an actual frame
     _suppressOutput = false;
 
-    attrInterPredParams.motionVectors.clear();
     return decodeGeometryBrick(*buf, attrInterPredParams);
 
   case PayloadType::kAttributeBrick:
@@ -505,8 +504,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(
     if (!_params.minGeomNodeSizeLog2) {
       decodeGeometryOctree(
         *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
-        _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud,
-        attrInterPredParams.motionVectors);
+        _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
@@ -515,8 +513,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud,
-      attrInterPredParams.motionVectors);
+      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud);
   }
 
   // At least the first slice's geometry has been decoded
@@ -586,8 +583,6 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     _currentPointCloud[i] += _sliceOrigin;
   for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
     attrInterPredParams.compensatedPointCloud[i] += _sliceOrigin;
-  for (auto& mv : attrInterPredParams.motionVectors)
-    mv.position += _sliceOrigin;
 
   auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
   _attrDecoder->decode(
@@ -599,8 +594,6 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     _currentPointCloud[i] -= _sliceOrigin;
   for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
     attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
-  for (auto& mv : attrInterPredParams.motionVectors)
-    mv.position -= _sliceOrigin;
 
   // Note the current sliceID for loss detection
   _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;

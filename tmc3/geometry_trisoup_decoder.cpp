@@ -68,15 +68,14 @@ decodeGeometryTrisoup(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors)
+  PCCPointSet3& compensatedPointCloud)
 {
   // trisoup uses octree coding until reaching the triangulation level.
   // todo(df): pass trisoup node size rather than 0?
   std::vector<PCCOctree3Node> nodes;
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, &nodes,
-    refFrame, minimum_position, compensatedPointCloud, motionVectors);
+    refFrame, minimum_position, compensatedPointCloud);
 
   std::cout << "\nSize compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
   bool isInter = gbh.interPredictionEnabledFlag;

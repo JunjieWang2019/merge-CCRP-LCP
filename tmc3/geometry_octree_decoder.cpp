@@ -486,8 +486,7 @@ decodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors)
+  PCCPointSet3& compensatedPointCloud)
 {
   const bool isInter = gbh.interPredictionEnabledFlag;
 
@@ -749,7 +748,7 @@ decodeGeometryOctree(
             decode_splitPU_MV_MC(mSOctree,
               &node0, gps.motion, nodeSizeLog2,
               &arithmeticDecoder, &compensatedPointCloud,
-              LPUnumInAxis, log2MotionBlockSize, motionVectors);
+              LPUnumInAxis, log2MotionBlockSize);
           }
         }
 
@@ -1051,13 +1050,12 @@ decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors
+  PCCPointSet3& compensatedPointCloud
 )
 {
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, compensatedPointCloud, motionVectors);
+    refFrame, minimum_position, compensatedPointCloud);
 }
 
 //-------------------------------------------------------------------------
@@ -1075,10 +1073,9 @@ decodeGeometryOctreeScalable(
 {
   std::vector<PCCOctree3Node> nodes;
   PCCPointSet3 compensatedPointCloud;
-  std::vector<MotionVector> motionVectors;
   decodeGeometryOctree(
     gps, gbh, minGeomNodeSizeLog2, pointCloud, ctxtMem, arithmeticDecoder,
-    &nodes, refFrame, { 0, 0, 0 }, compensatedPointCloud, motionVectors);
+    &nodes, refFrame, { 0, 0, 0 }, compensatedPointCloud);
 
   if (minGeomNodeSizeLog2 > 0) {
     size_t size =

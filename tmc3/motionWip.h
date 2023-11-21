@@ -83,8 +83,7 @@ void encode_splitPU_MV_MC(
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
   int numLPUPerLine,
-  int log2MotionBlkSize,
-  std::vector<MotionVector>& motionVectors);
+  int log2MotionBlkSize);
 
 void extracPUsubtree(
   const GeometryParameterSet::Motion& param,
@@ -105,8 +104,7 @@ void decode_splitPU_MV_MC(
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
   int numLPUPerLine,
-  int log2MotionBlkSize,
-  std::vector<MotionVector>& motionVectors);
+  int log2MotionBlkSize);
 
   //============================================================================
 

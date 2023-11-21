@@ -703,8 +703,7 @@ encodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors)
+  PCCPointSet3& compensatedPointCloud)
 {
   // TODO: we don't need to keep points never visible is prediction search window
   PCCPointSet3 predPointCloud(refFrame.cloud);
@@ -1051,7 +1050,7 @@ encodeGeometryOctree(
           encode_splitPU_MV_MC(mSOctree,
             &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
             encoder._arithmeticEncoder, &compensatedPointCloud,
-            LPUnumInAxis, log2MotionBlockSize, motionVectors);
+            LPUnumInAxis, log2MotionBlockSize);
         }
 
         // split the current node into 8 children
@@ -1419,12 +1418,11 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors)
+  PCCPointSet3& compensatedPointCloud)
 {
   encodeGeometryOctree(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
-    sps, compensatedPointCloud, motionVectors);
+    sps, compensatedPointCloud);
 }
 
 //============================================================================

@@ -865,8 +865,7 @@ void encodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors);
+  PCCPointSet3& compensatedPointCloud);
 
 void decodeGeometryOctree(
   const GeometryParameterSet& gps,
@@ -878,8 +877,7 @@ void decodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud,
-  std::vector<MotionVector>& motionVectors);
+  PCCPointSet3& compensatedPointCloud);
 
 //============================================================================
 
