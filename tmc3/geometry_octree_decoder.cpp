@@ -582,7 +582,6 @@ decodeGeometryOctree(
   node00.mSONodeIdx = isInter ? 0 : -1;
   node00.numSiblingsMispredicted = 0;
   node00.numSiblingsPlus1 = 8;
-  node00.siblingOccupancy = 0;
   node00.qp = 0;
   //node00.idcmEligible = 0; NOTE[FT]: idcmEligible is already set to false at construction
   //node00.isDirectMode = false;
@@ -970,7 +969,6 @@ decodeGeometryOctree(
             child.pos[2] = (node0.pos[2] << !!(codedAxesCurLvl & 1)) + z;
 
             child.numSiblingsPlus1 = numOccupied;
-            child.siblingOccupancy = occupancy;
             //child.isDirectMode = false;
 
             child.predStart = node0.predPointsStartIdx;

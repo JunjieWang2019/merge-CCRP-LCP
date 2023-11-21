@@ -770,7 +770,6 @@ encodeGeometryOctree(
   node00.predEnd = isInter ? predPointCloud.getPointCount() : uint32_t(0);
   node00.mSONodeIdx = isInter ? 0 : -1;
   node00.predStart = uint32_t(0);
-  node00.siblingOccupancy = 0;
   //node00.idcmEligible = false;
   //node00.isDirectMode = false;
   node00.numSiblingsPlus1 = 8;
@@ -1287,7 +1286,6 @@ encodeGeometryOctree(
             child.end = childPointsStartIdx;
 
             child.numSiblingsPlus1 = numOccupied;
-            child.siblingOccupancy = node0.childOccupancy;
             //child.isDirectMode = false;
 
             child.predStart = node0.predPointsStartIdx;

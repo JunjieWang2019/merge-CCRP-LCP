@@ -67,7 +67,6 @@ struct PCCOctree3Node {
   , numSiblingsMispredicted(cp.numSiblingsMispredicted)
   , isCompensated(cp.isCompensated)
   , hasMotion(cp.hasMotion)
-  , siblingOccupancy(cp.siblingOccupancy)
   //, idcmEligible(cp.idcmEligible)
   , qp(cp.qp)
   {
@@ -117,9 +116,6 @@ struct PCCOctree3Node {
   //PUtree* PU_tree = nullptr; // Prediction Unit tree (encoder only) attached to node
   bool isCompensated : 1; // prediction ranges refer to compensated reference
   bool hasMotion : 1;
-
-  // The occupancy map used describing the current node and its siblings.
-  uint8_t siblingOccupancy;
 
   // Indicatest hat the current node qualifies for IDCM
   //bool idcmEligible{false}; //NOTE[FT]: FORCING idcmEligible to false at construction
