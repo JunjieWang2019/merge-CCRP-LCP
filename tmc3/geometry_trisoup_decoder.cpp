@@ -141,12 +141,17 @@ bool nodeBoundaryInsideCheck(Vec3<int32_t> bw, Vec3<int32_t> pt)
 
 
 // --------------------------------------------------------------------------
+static const int LUTsqrt[13] = { 0, 256, 362, 443, 512, 572, 627, 677, 724, 768, 810, 849, 887 };
+
 void
 determineCentroidAndDominantAxis(
   Vec3<int32_t> &blockCentroid,
   int &dominantAxis,
   std::vector<Vertex> &leafVertices,
-  Vec3<int32_t> nodew)
+  Vec3<int32_t> nodew,
+  bool &flagCentroOK,
+  int bitDropped,
+  int &scaleQ)
 
 {
   // compute centroid
@@ -175,6 +180,11 @@ determineCentroidAndDominantAxis(
     Wtotal += 2 * weight;
   }
 
+  int64_t a = 7680 * nodew[0] >> bitDropped;    // cst * node size
+  int64_t b = LUTsqrt[triCount] * Wtotal;  // sqrt(#vertices) * triangle area
+  int ratio = divApprox(a << 16, b, 0); // cst * node size / sqrt(#vertices) / triangle area
+  scaleQ = std::max(190, ratio); // precision on 8 bits
+
   Vec3<int64_t> blockCentroid2 = 0;
   for (int j = 0; j < triCount; j++) {
     blockCentroid2 += int64_t(Weigths[j]) * leafVertices[j].pos;
@@ -199,7 +209,8 @@ determineCentroidNormalAndBounds(
   int dominantAxis,
   std::vector<Vertex>& leafVertices,
   int nodewDominant,
-  int blockWidth)
+  int blockWidth,
+  int scaleQ)
 {
   int halfDropped2 = bitDropped2 == 0 ? 0 : 1 << bitDropped2 - 1;
 
@@ -230,10 +241,11 @@ determineCentroidNormalAndBounds(
   int boundH = ((blockWidth - 1) << kTrisoupFpBits) + kTrisoupFpHalf - 1;
   int m = 1;
   int half = 1 << 5 + bitDropped2;
-  int DZ = 2 * half * 341 >> 10; ; // 2 * half / 3
+  int DZ = 682 * half >> 10; ; // 2 * half / 3
   for (; m < nodewDominant; m++) {
     int driftDm = m << bitDropped2 + 6;
     driftDm += DZ - half;
+    driftDm = driftDm * scaleQ  >> 8;
 
     Vec3<int32_t> temp = blockCentroid + (driftDm * normalV >> 6);
     if (temp[0]<boundL || temp[1]<boundL || temp[2]<boundL || temp[0]>boundH || temp[1]>boundH || temp[2]> boundH)
@@ -245,6 +257,7 @@ determineCentroidNormalAndBounds(
   for (; m < nodewDominant; m++) {
     int driftDm = m << bitDropped2 + 6;
     driftDm += DZ - half;
+    driftDm = driftDm * scaleQ >> 8;
 
     Vec3<int32_t> temp = blockCentroid + (-driftDm * normalV >> 6);
     if (temp[0]<boundL || temp[1]<boundL || temp[2]<boundL || temp[0]>boundH || temp[1]>boundH || temp[2]> boundH)
@@ -273,7 +286,8 @@ determineCentroidPredictor(
   int badQualityComp,
   int badQualityRef,
   int driftRef,
-  bool possibleSKIPRef)
+  bool possibleSKIPRef,
+  int scaleQ)
 {
   int driftQPred = -100;
   int driftQComp = -100;
@@ -300,11 +314,11 @@ determineCentroidPredictor(
     }
 
     if (counter) { // drift is shift by kTrisoupFpBits
-      driftPred = divApprox(driftPred >> kTrisoupFpBits - 6, counter, 0); // drift is shift by 6 bits
+      driftPred = divApprox((int64_t(driftPred) << 8) >> kTrisoupFpBits - 6,  counter * scaleQ, 0); // drift is shift by +8 due to scaleQ, then  kTrisoupFpBits - 6 due to precision drift and Q
     }
 
     int half = 1 << 5 + bitDropped2;
-    int DZ = 2 * half * 341 >> 10; //2 * half / 3;
+    int DZ = 682 * half >> 10; //2 * half / 3;
 
     if (abs(driftPred) >= DZ) {
       driftQPred = (abs(driftPred) - DZ + 2 * half) >> 6 + bitDropped2 - 1;
@@ -351,11 +365,13 @@ determineCentroidResidual(
   int start,
   int end,
   int lowBound,
-  int  highBound)
+  int  highBound,
+  int  scaleQ,
+  int &drift)
 {
   // determine quantized drift
   int counter = 0;
-  int drift = 0;
+  drift = 0;
   int maxD = bitDropped2;
 
   // determine quantized drift
@@ -374,11 +390,11 @@ determineCentroidResidual(
   }
 
   if (counter) { // drift is shift by kTrisoupFpBits
-    drift = divApprox(drift >> kTrisoupFpBits - 6, counter, 0); // drift is shift by 6 bits
+    drift = divApprox((int64_t(drift) << 8) >> kTrisoupFpBits - 6, counter * scaleQ, 0); // drift is shift by +8 due to scaleQ, then  kTrisoupFpBits - 6 due to precision drift and Q
   }
 
   int half = 1 << 5 + bitDropped2;
-  int DZ = 2 * half * 341 >> 10; //2 * half / 3;
+  int DZ = 682 * half >> 10; //2 * half / 3;
 
   int driftQ = 0;
   if (abs(drift) >= DZ) {

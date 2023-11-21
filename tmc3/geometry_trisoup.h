@@ -368,7 +368,10 @@ determineCentroidAndDominantAxis(
   Vec3<int32_t>& blockCentroid,
   int& dominantAxis,
   std::vector<Vertex>& leafVertices,
-  Vec3<int32_t> nodew);
+  Vec3<int32_t> nodew,
+  bool &flagCentroOK,
+  int bitDropped,
+  int &scaleQ);
 
 Vec3<int32_t>
 determineCentroidNormalAndBounds(
@@ -384,7 +387,8 @@ determineCentroidNormalAndBounds(
   int dominantAxis,
   std::vector<Vertex>& leafVertices,
   int nodewDominant,
-  int blockWidth);
+  int blockWidth,
+  int scaleQ);
 
 void
 determineCentroidPredictor(
@@ -401,7 +405,8 @@ determineCentroidPredictor(
   int badQualityComp,
   int badQualityRef,
   int driftRef,
-  bool possibleSKIPRef);
+  bool possibleSKIPRef,
+  int scaleQ);
 
 int
 determineCentroidResidual(
@@ -413,7 +418,9 @@ determineCentroidResidual(
   int start,
   int end,
   int lowBound,
-  int  highBound);
+  int  highBound,
+  int scaleQ,
+  int &drift);
 
 bool nodeBoundaryInsideCheck(Vec3<int32_t> bw, Vec3<int32_t> pt);
 
@@ -874,7 +881,6 @@ struct RasterScanTrisoupEdges {
       findDominantAxis(neVertex.vertices, nodew, gCenter);
     eVerts.push_back(neVertex);
 
-
     // Skip leaves that have fewer than 3 vertices.
     if (vtxCount < 3) {
       cVerts.push_back({ false, { 0, 0, 0}, 0, true });
@@ -886,8 +892,11 @@ struct RasterScanTrisoupEdges {
     Vec3<int32_t> blockCentroid;
     int dominantAxis;
     int driftDQ = 0;
+    bool flagCentroOK = isCentroidDriftActivated;
+    int scaleQ = 256; // scaled on 8 bits; 256 is one
     determineCentroidAndDominantAxis(
-      blockCentroid, dominantAxis, leafVertices, nodew);
+      blockCentroid, dominantAxis, leafVertices, nodew, flagCentroOK,
+      bitDropped, scaleQ);
 
     gCenter = blockCentroid;
 
@@ -905,39 +914,58 @@ struct RasterScanTrisoupEdges {
       bool possibleSKIPRef = nodeRefExist && badQualityRef <= 1;
       int driftRef = possibleSKIPRef ? colocatedCentroid : 0;
 
+      int driftQ = 0;
+
+      int half = 1 << 5 + bitDropped2;
+      int DZ = 682 * half >> 10; // 2 * half / 3;
+
       int lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax;
       Vec3<int32_t> normalV =
         determineCentroidNormalAndBounds(
           lowBound, highBound, lowBoundSurface, highBoundSurface, ctxMinMax,
           bitDropped, bitDropped2, vtxCount, blockCentroid, dominantAxis,
-          leafVertices, nodew[dominantAxis], blockWidth);
+          leafVertices, nodew[dominantAxis], blockWidth, scaleQ);
 
-      CentroidInfo centroidInfo;
-      determineCentroidPredictor(
-        centroidInfo, bitDropped2, normalV, blockCentroid, nodepos,
-        compensatedPointCloud, leaf.predStart, leaf.predEnd, lowBound,
-        highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef);
+      flagCentroOK = lowBound != 0 || highBound != 0;
+      if (flagCentroOK || possibleSKIPRef) {
+        CentroidInfo centroidInfo;
+        determineCentroidPredictor(
+          centroidInfo, bitDropped2, normalV, blockCentroid, nodepos,
+          compensatedPointCloud, leaf.predStart, leaf.predEnd, lowBound,
+          highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef, scaleQ);
 
-      int driftQ = 0;
-      if (isEncoder) { // encode centroid residual
-        driftQ =
-          determineCentroidResidual(
+        if (isEncoder) { // encode centroid residual
+
+          int drift = 0;
+          driftQ = determineCentroidResidual(
             bitDropped2, normalV, blockCentroid, nodepos, pointCloud,
-            leaf.start, leaf.end, lowBound, highBound);
-        // naive RDO
-        if (centroidInfo.possibleSKIP
-          && std::abs(driftQ - centroidInfo.driftSKIP) <= 1)
-          driftQ = centroidInfo.driftSKIP;
+            leaf.start, leaf.end, lowBound, highBound, scaleQ, drift);
 
-        encodeCentroidResidual(
-          driftQ, arithmeticEncoder, ctxtMemOctree, centroidInfo, ctxMinMax,
-          lowBoundSurface, highBoundSurface, lowBound, highBound);
-      }
-      else { // decode centroid residual
-        driftQ =
-          decodeCentroidResidual(
-            &arithmeticDecoder, ctxtMemOctree, centroidInfo, ctxMinMax,
+          // naive RDO
+          if (centroidInfo.possibleSKIP) {
+            int driftDQSKip = 0;
+            if (centroidInfo.driftSKIP) {
+              driftDQSKip =
+                std::abs(centroidInfo.driftSKIP) << bitDropped2 + 6;
+              driftDQSKip += DZ - half;
+              if (centroidInfo.driftSKIP < 0)
+                driftDQSKip = -driftDQSKip;
+            }
+
+            if (std::abs(drift - driftDQSKip) <= DZ + half)
+              driftQ = centroidInfo.driftSKIP;
+          }
+
+          encodeCentroidResidual(
+            driftQ, arithmeticEncoder, ctxtMemOctree, centroidInfo, ctxMinMax,
             lowBoundSurface, highBoundSurface, lowBound, highBound);
+        }
+        else { // decode centroid residual
+          driftQ =
+            decodeCentroidResidual(
+              &arithmeticDecoder, ctxtMemOctree, centroidInfo, ctxMinMax,
+              lowBoundSurface, highBoundSurface, lowBound, highBound);
+        }
       }
 
       // store centroid residual for next frame
@@ -946,12 +974,13 @@ struct RasterScanTrisoupEdges {
       // dequantize and apply drift
       if (driftQ) {
         driftDQ = std::abs(driftQ) << bitDropped2 + 6;
-        int half = 1 << 5 + bitDropped2;
-        int DZ = 2 * half * 341 >> 10; // 2 * half / 3;
         driftDQ += DZ - half;
         if (driftQ < 0)
           driftDQ = -driftDQ;
       }
+
+      driftDQ =
+        driftDQ > 0 ? (driftDQ * scaleQ >> 8) : -((-driftDQ) * scaleQ >> 8);
 
       blockCentroid += (driftDQ * normalV) >> 6;
       blockCentroid[0] =
