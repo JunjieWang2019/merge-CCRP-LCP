@@ -62,9 +62,9 @@ struct PCCOctree3Node {
   : PU_tree(cp.PU_tree ? new PUtree(*cp.PU_tree.get()) : nullptr)
   , pos(cp.pos)
   , start(cp.start), end(cp.end)
-  , numSiblingsPlus1(cp.numSiblingsPlus1)
+  //, numSiblingsPlus1(cp.numSiblingsPlus1)
   , predStart(cp.predStart), predEnd(cp.predEnd)
-  , numSiblingsMispredicted(cp.numSiblingsMispredicted)
+  //, numSiblingsMispredicted(cp.numSiblingsMispredicted)
   , isCompensated(cp.isCompensated)
   , hasMotion(cp.hasMotion)
   //, idcmEligible(cp.idcmEligible)
@@ -97,7 +97,7 @@ struct PCCOctree3Node {
 
   // The current node's number of siblings plus one.
   // ie, the number of child nodes present in this node's parent.
-  uint8_t numSiblingsPlus1;
+  //uint8_t numSiblingsPlus1;
 
   // store the the neighborhood pattern for further passes on the node
   uint8_t neighPattern;
@@ -108,7 +108,7 @@ struct PCCOctree3Node {
 
   // The number of mispredictions in determining the occupancy
   // map of the child nodes in this node's parent.
-  int8_t numSiblingsMispredicted;
+  //int8_t numSiblingsMispredicted;
 
   // local motion tracking; encoder only
   std::unique_ptr<PUtree> PU_tree;
@@ -348,6 +348,7 @@ isLeafNode(const Vec3<int>& sizeLog2)
 
 uint32_t mkIdcmEnableMask(const GeometryParameterSet& gps);
 
+/*
 //---------------------------------------------------------------------------
 // Determine if direct coding is permitted.
 // If tool is enabled:
@@ -405,7 +406,7 @@ isDirectModeEligible_Inter(
   return (nodeSizeLog2 >= 2) && (nodeNeighPattern == 0)
     && (child.numSiblingsPlus1 == 1) && (node.numSiblingsPlus1 <= 2);
 }
-
+*/
 //============================================================================
 
 struct CtxModelOctreeOccupancy {
@@ -814,21 +815,17 @@ public:
   int _OBUFleafNumberTrisoup = 0;
 
 protected:
-  AdaptiveBitModel _ctxSingleChild;
-  AdaptiveBitModel _ctxZ[8][7][4];
-
   AdaptiveBitModel _ctxDupPointCntGt0;
   AdaptiveBitModel _ctxDupPointCntGt1;
   AdaptiveBitModel _ctxDupPointCntEgl;
 
-  AdaptiveBitModel _ctxBlockSkipTh;
-  AdaptiveBitModel _ctxNumIdcmPointsGt1;
-  AdaptiveBitModel _ctxSameZ;
+  //AdaptiveBitModel _ctxBlockSkipTh;
+  //AdaptiveBitModel _ctxNumIdcmPointsGt1;
 
   // IDCM unordered
-  AdaptiveBitModel _ctxSameBitHighx[5];
-  AdaptiveBitModel _ctxSameBitHighy[5];
-  AdaptiveBitModel _ctxSameBitHighz[5];
+  //AdaptiveBitModel _ctxSameBitHighx[5];
+  //AdaptiveBitModel _ctxSameBitHighy[5];
+  //AdaptiveBitModel _ctxSameBitHighz[5];
 
   AdaptiveBitModel _ctxQpOffsetAbsGt0;
   AdaptiveBitModel _ctxQpOffsetSign;

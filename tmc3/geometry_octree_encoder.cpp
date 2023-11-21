@@ -92,18 +92,18 @@ public:
     const RasterScanContext::occupancy& contextualOccupancy,
     uint8_t childOccupancy);
 
-  void encodeOrdered2ptPrefix(
-    const point_t points[2], Vec3<bool> directIdcm, Vec3<int>& nodeSizeLog2);
+  /*void encodeOrdered2ptPrefix(
+    const point_t points[2], Vec3<bool> directIdcm, Vec3<int>& nodeSizeLog2);*/
 
-  void encodePointPosition(
-    const Vec3<int>& nodeSizeLog2AfterPlanar, const Vec3<int32_t>& pos);
+  /*void encodePointPosition(
+    const Vec3<int>& nodeSizeLog2AfterPlanar, const Vec3<int32_t>& pos);*/
 
   void encodeNodeQpOffetsPresent(bool);
   void encodeQpOffset(int dqp);
 
-  void encodeIsIdcm(DirectMode mode);
+  //void encodeIsIdcm(DirectMode mode);
 
-  void encodeDirectPosition(
+ /*void encodeDirectPosition(
     bool geom_unique_points_flag,
     bool joint_2pt_idcm_enabled_flag,
     DirectMode mode,
@@ -112,7 +112,7 @@ public:
     int shiftBits,
     const PCCOctree3Node& node,
     const OctreeNodePlanar& planar,
-    PCCPointSet3& pointCloud);
+    PCCPointSet3& pointCloud);*/
 
   const GeometryOctreeContexts& getCtx() const { return *this; }
 
@@ -277,6 +277,7 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
   }
 }
 
+/*
 //-------------------------------------------------------------------------
 // Encode part of the position of two unordred points  point in a given volume.
 void
@@ -337,7 +338,8 @@ GeometryOctreeEncoder::encodeOrdered2ptPrefix(
     }
   }
 }
-
+*/
+/*
 //-------------------------------------------------------------------------
 // Encode a position of a point in a given volume.
 void
@@ -353,7 +355,7 @@ GeometryOctreeEncoder::encodePointPosition(
     }
   }
 }
-
+*/
 //-------------------------------------------------------------------------
 
 void
@@ -567,6 +569,7 @@ checkDuplicatePoints(
   }
 }
 
+/*
 //-------------------------------------------------------------------------
 // Direct coding of position of points in node (early tree termination).
 
@@ -594,7 +597,8 @@ canEncodeDirectPosition(
 
   return DirectMode::kTwoPoints;
 }
-
+*/
+/*
 //-------------------------------------------------------------------------
 
 void
@@ -603,7 +607,8 @@ GeometryOctreeEncoder::encodeIsIdcm(DirectMode mode)
   bool isIdcm = mode != DirectMode::kUnavailable;
   _arithmeticEncoder->encode(isIdcm, _ctxBlockSkipTh);
 }
-
+*/
+/*
 //-------------------------------------------------------------------------
 
 void
@@ -689,7 +694,7 @@ GeometryOctreeEncoder::encodeDirectPosition(
     encodePointPosition(nodeSizeLog2Rem, points[idx]);
   }
 }
-
+*/
 //-------------------------------------------------------------------------
 
 void
@@ -766,13 +771,13 @@ encodeGeometryOctree(
   node00.pos = int32_t(0);
   node00.mSOctreeNodeIdx = uint32_t(0);
 
-  node00.numSiblingsMispredicted = 0;
+  //node00.numSiblingsMispredicted = 0;
   node00.predEnd = isInter ? predPointCloud.getPointCount() : uint32_t(0);
   node00.mSONodeIdx = isInter ? 0 : -1;
   node00.predStart = uint32_t(0);
   //node00.idcmEligible = false;
   //node00.isDirectMode = false;
-  node00.numSiblingsPlus1 = 8;
+  //node00.numSiblingsPlus1 = 8;
   node00.qp = 0;
   //node00.idcmEligible = 0;NOTE[FT]: idcmEligible is set to false at construction
 
@@ -917,7 +922,7 @@ encodeGeometryOctree(
         params.qpMethod, nodeSizeLog2, sliceQp, gps.geom_qp_multiplier_log2,
         fifo.begin(), fifoCurrLvlEnd);
     }
-    /**/
+
     // save context state for parallel coding
     if (depth == maxDepth - 1 - gbh.geom_stream_cnt_minus1)
       if (gbh.geom_stream_cnt_minus1)
@@ -1109,7 +1114,7 @@ encodeGeometryOctree(
 
       int predOccupancy = 0;
       int predOccupancyStrong = 0;
-      int predFailureCount = 0;
+      //int predFailureCount = 0;
 
       // TODO avoid computing it at each pass?
       for (int i = 0; i < 8; i++) {
@@ -1117,7 +1122,7 @@ encodeGeometryOctree(
         bool childPredicted = !!node0.predCounts[i];
         predOccupancy |= (childPredicted) << i;
         predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
-        predFailureCount += childOccupiedTmp != childPredicted;
+        //predFailureCount += childOccupiedTmp != childPredicted;
       }
 
       //bool occupancyIsPredictable =
@@ -1285,13 +1290,13 @@ encodeGeometryOctree(
             childPointsStartIdx += node0.childCounts[childIndex];
             child.end = childPointsStartIdx;
 
-            child.numSiblingsPlus1 = numOccupied;
+            //child.numSiblingsPlus1 = numOccupied;
             //child.isDirectMode = false;
 
             child.predStart = node0.predPointsStartIdx;
             node0.predPointsStartIdx += node0.predCounts[childIndex];
             child.predEnd = node0.predPointsStartIdx;
-            child.numSiblingsMispredicted = predFailureCount;
+            //child.numSiblingsMispredicted = predFailureCount;
             if (node0.mSONodeIdx >= 0) {
               child.mSONodeIdx = mSOctree.nodes[node0.mSONodeIdx].child[childIndex];
             }

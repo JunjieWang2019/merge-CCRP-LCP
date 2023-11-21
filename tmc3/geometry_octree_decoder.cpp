@@ -76,20 +76,20 @@ public:
     bool isInter
   );
 
-  Vec3<int32_t> decodePointPosition(
-    const Vec3<int>& nodeSizeLog2, Vec3<int32_t>& deltaPlanar);
+  /*Vec3<int32_t> decodePointPosition(
+    const Vec3<int>& nodeSizeLog2, Vec3<int32_t>& deltaPlanar);*/
 
-  void decodeOrdered2ptPrefix(
+  /*void decodeOrdered2ptPrefix(
     Vec3<bool> directIdcm,
     Vec3<int>& nodeSizeLog2AfterUnordered,
-    Vec3<int32_t> deltaUnordered[2]);
+    Vec3<int32_t> deltaUnordered[2]);*/
 
   bool decodeNodeQpOffsetsPresent();
   int decodeQpOffset();
 
-  bool decodeIsIdcm();
+  //bool decodeIsIdcm();
 
-  template<class OutputIt>
+  /*template<class OutputIt>
   int decodeDirectPosition(
     bool geom_unique_points_flag,
     bool joint_2pt_idcm_enabled_flag,
@@ -97,7 +97,7 @@ public:
     const Vec3<int>& posQuantBitMasks,
     const PCCOctree3Node& node,
     const OctreeNodePlanar& planar,
-    OutputIt outputPoints);
+    OutputIt outputPoints);*/
 
   const GeometryOctreeContexts& getCtx() const { return *this; }
 
@@ -288,6 +288,7 @@ GeometryOctreeDecoder::decodeQpOffset()
   return dqp_sign ? -dqp : dqp;
 }
 
+/*
 //-------------------------------------------------------------------------
 // Decode a position of a point in a given volume.
 Vec3<int32_t>
@@ -307,7 +308,8 @@ GeometryOctreeDecoder::decodePointPosition(
 
   return delta;
 }
-
+*/
+/*
 //-------------------------------------------------------------------------
 // Decode part of the position of two unordred points  point in a given volume.
 void
@@ -375,7 +377,8 @@ GeometryOctreeDecoder::decodeOrdered2ptPrefix(
     }
   }
 }
-
+*/
+/*
 //-------------------------------------------------------------------------
 
 bool
@@ -383,7 +386,8 @@ GeometryOctreeDecoder::decodeIsIdcm()
 {
   return _arithmeticDecoder->decode(_ctxBlockSkipTh);
 }
-
+*/
+/*
 //-------------------------------------------------------------------------
 // Direct coding of position of points in node (early tree termination).
 // Decoded points are written to @outputPoints
@@ -444,7 +448,7 @@ GeometryOctreeDecoder::decodeDirectPosition(
 
   return numPoints + numDuplicatePoints;
 }
-
+*/
 //-------------------------------------------------------------------------
 // Helper to inverse quantise positions
 
@@ -580,8 +584,8 @@ decodeGeometryOctree(
   node00.predStart = uint32_t(0);
   node00.predEnd = isInter ? predPointCloud.getPointCount() : uint32_t(0);
   node00.mSONodeIdx = isInter ? 0 : -1;
-  node00.numSiblingsMispredicted = 0;
-  node00.numSiblingsPlus1 = 8;
+  //node00.numSiblingsMispredicted = 0;
+  //node00.numSiblingsPlus1 = 8;
   node00.qp = 0;
   //node00.idcmEligible = 0; NOTE[FT]: idcmEligible is already set to false at construction
   //node00.isDirectMode = false;
@@ -795,7 +799,7 @@ decodeGeometryOctree(
       // The predictor may be cleared for the purpose of context
       // selection if the prediction is unlikely to be good.
       // NB: any other tests should use the original prediction.
-      int predOccupancyReal = predOccupancy;
+      //int predOccupancyReal = predOccupancy;
 
       if (nodeQpOffsetsPresent) {
         node0.qp = sliceQp;
@@ -894,7 +898,7 @@ decodeGeometryOctree(
       // population count of occupancy for IDCM
       int numOccupied = popcnt(occupancy);
 
-      int predFailureCount = popcnt(uint8_t(occupancy ^ predOccupancyReal));
+      //int predFailureCount = popcnt(uint8_t(occupancy ^ predOccupancyReal));
       if (tubeIndex && nodeSliceIndex && isLeafNode(effectiveChildSizeLog2)) {
         // nodeSizeLog2 > 1: for each child:
         //  - determine elegibility for IDCM
@@ -968,13 +972,13 @@ decodeGeometryOctree(
             child.pos[1] = (node0.pos[1] << !!(codedAxesCurLvl & 2)) + y;
             child.pos[2] = (node0.pos[2] << !!(codedAxesCurLvl & 1)) + z;
 
-            child.numSiblingsPlus1 = numOccupied;
+            //child.numSiblingsPlus1 = numOccupied;
             //child.isDirectMode = false;
 
             child.predStart = node0.predPointsStartIdx;
             node0.predPointsStartIdx += node0.predCounts[childIndex];
             child.predEnd = node0.predPointsStartIdx;
-            child.numSiblingsMispredicted = predFailureCount;
+            //child.numSiblingsMispredicted = predFailureCount;
             if (node0.mSONodeIdx >= 0) {
               child.mSONodeIdx = mSOctree.nodes[node0.mSONodeIdx].child[childIndex];
             }
