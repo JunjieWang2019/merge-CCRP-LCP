@@ -311,7 +311,6 @@ decodeRaht(
     predDecoder.set(&decoder.arithmeticDecoder);
     const int voxelCount_mc =
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
-    std::cout << "Using inter MC for prediction" << std::endl;
 
     std::vector<int64_t> mortonCode_mc;
     std::vector<int> attributes_mc;

@@ -37,6 +37,7 @@
 
 #include "OctreeNeighMap.h"
 #include "geometry_octree.h"
+#include "geometry_trisoup.h"
 //#include "geometry_intra_pred.h"
 #include "io_hls.h"
 #include "tables.h"
@@ -48,22 +49,24 @@ namespace pcc {
 
 //============================================================================
 
-class GeometryOctreeDecoder : protected GeometryOctreeContexts {
+class GeometryOctreeDecoder {
 public:
+  GeometryOctreeContexts& ctx;
+
   GeometryOctreeDecoder(
     const GeometryParameterSet& gps,
     const GeometryBrickHeader& gbh,
-    const GeometryOctreeContexts& ctxMem,
+    GeometryOctreeContexts& ctxMem,
     EntropyDecoder* arithmeticDecoder);
 
   GeometryOctreeDecoder(const GeometryOctreeDecoder&) = default;
   GeometryOctreeDecoder(GeometryOctreeDecoder&&) = default;
-  GeometryOctreeDecoder& operator=(const GeometryOctreeDecoder&) = default;
-  GeometryOctreeDecoder& operator=(GeometryOctreeDecoder&&) = default;
+  //GeometryOctreeDecoder& operator=(const GeometryOctreeDecoder&) = default;
+  //GeometryOctreeDecoder& operator=(GeometryOctreeDecoder&&) = default;
 
   // dynamic OBUF
-  void resetMap() { GeometryOctreeContexts::resetMap(); }
-  void clearMap() { GeometryOctreeContexts::clearMap(); };
+  void resetMap() { ctx.resetMap(); }
+  void clearMap() { ctx.clearMap(); };
 
   int decodePositionLeafNumPoints();
 
@@ -99,7 +102,7 @@ public:
     const OctreeNodePlanar& planar,
     OutputIt outputPoints);*/
 
-  const GeometryOctreeContexts& getCtx() const { return *this; }
+  const GeometryOctreeContexts& getCtx() const { return ctx; }
 
 public:
   EntropyDecoder* _arithmeticDecoder;
@@ -110,9 +113,9 @@ public:
 GeometryOctreeDecoder::GeometryOctreeDecoder(
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
-  const GeometryOctreeContexts& ctxtMem,
+  GeometryOctreeContexts& ctxtMem,
   EntropyDecoder* arithmeticDecoder)
-  : GeometryOctreeContexts(ctxtMem)
+  : ctx(ctxtMem)
   , _arithmeticDecoder(arithmeticDecoder)
 {
 }
@@ -122,9 +125,9 @@ GeometryOctreeDecoder::GeometryOctreeDecoder(
 int
 GeometryOctreeDecoder::decodePositionLeafNumPoints()
 {
-  int val = _arithmeticDecoder->decode(_ctxDupPointCntGt0);
+  int val = _arithmeticDecoder->decode(ctx._ctxDupPointCntGt0);
   if (val)
-    val += _arithmeticDecoder->decodeExpGolomb(0, _ctxDupPointCntEgl);
+    val += _arithmeticDecoder->decodeExpGolomb(0, ctx._ctxDupPointCntEgl);
 
   return val + 1;
 }
@@ -246,14 +249,14 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgs(
 
     int bit;
     if (Sparse) {
-      bit = _MapOccupancySparse[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, _CtxMapDynamicOBUF[isInter2], ctx2, ctx1,
-        &_OBUFleafNumber, _BufferOBUFleaves);
+      bit = ctx._MapOccupancySparse[isInter2][i].decodeEvolve(
+        _arithmeticDecoder, ctx._CtxMapDynamicOBUF[isInter2], ctx2, ctx1,
+        &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
     }
     else {
-      bit = _MapOccupancy[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, _CtxMapDynamicOBUF[2 + isInter2], ctx2, ctx1,
-        &_OBUFleafNumber, _BufferOBUFleaves);
+      bit = ctx._MapOccupancy[isInter2][i].decodeEvolve(
+        _arithmeticDecoder, ctx._CtxMapDynamicOBUF[2 + isInter2], ctx2, ctx1,
+        &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
     }
 
     // update partial occupancy of current node
@@ -280,11 +283,11 @@ GeometryOctreeDecoder::decodeNodeQpOffsetsPresent()
 int
 GeometryOctreeDecoder::decodeQpOffset()
 {
-  if (!_arithmeticDecoder->decode(_ctxQpOffsetAbsGt0))
+  if (!_arithmeticDecoder->decode(ctx._ctxQpOffsetAbsGt0))
     return 0;
 
-  int dqp = _arithmeticDecoder->decodeExpGolomb(0, _ctxQpOffsetAbsEgl) + 1;
-  int dqp_sign = _arithmeticDecoder->decode(_ctxQpOffsetSign);
+  int dqp = _arithmeticDecoder->decodeExpGolomb(0, ctx._ctxQpOffsetAbsEgl) + 1;
+  int dqp_sign = _arithmeticDecoder->decode(ctx._ctxQpOffsetSign);
   return dqp_sign ? -dqp : dqp;
 }
 
@@ -324,7 +327,7 @@ GeometryOctreeDecoder::decodeOrdered2ptPrefix(
       pointPrefix[1][0] <<= 1;
       nodeSizeLog2[0]--;
 
-      sameBit = _arithmeticDecoder->decode(_ctxSameBitHighx[ctxIdx]);
+      sameBit = _arithmeticDecoder->decode(ctx._ctxSameBitHighx[ctxIdx]);
       ctxIdx = std::min(4, ctxIdx + 1);
       if (sameBit) {
         int bit = _arithmeticDecoder->decode();
@@ -346,7 +349,7 @@ GeometryOctreeDecoder::decodeOrdered2ptPrefix(
       pointPrefix[1][1] <<= 1;
       nodeSizeLog2[1]--;
 
-      sameBit = _arithmeticDecoder->decode(_ctxSameBitHighy[ctxIdx]);
+      sameBit = _arithmeticDecoder->decode(ctx._ctxSameBitHighy[ctxIdx]);
       ctxIdx = std::min(4, ctxIdx + 1);
       int bit = 0;
       if (!(sameX && !sameBit))
@@ -367,7 +370,7 @@ GeometryOctreeDecoder::decodeOrdered2ptPrefix(
       pointPrefix[1][2] <<= 1;
       nodeSizeLog2[2]--;
 
-      sameBit = _arithmeticDecoder->decode(_ctxSameBitHighz[ctxIdx]);
+      sameBit = _arithmeticDecoder->decode(ctx._ctxSameBitHighz[ctxIdx]);
       ctxIdx = std::min(4, ctxIdx + 1);
       int bit = 0;
       if (!(sameXy && !sameBit))
@@ -384,7 +387,7 @@ GeometryOctreeDecoder::decodeOrdered2ptPrefix(
 bool
 GeometryOctreeDecoder::decodeIsIdcm()
 {
-  return _arithmeticDecoder->decode(_ctxBlockSkipTh);
+  return _arithmeticDecoder->decode(ctx._ctxBlockSkipTh);
 }
 */
 /*
@@ -405,17 +408,17 @@ GeometryOctreeDecoder::decodeDirectPosition(
   OutputIt outputPoints)
 {
   int numPoints = 1;
-  bool numPointsGt1 = _arithmeticDecoder->decode(_ctxNumIdcmPointsGt1);
+  bool numPointsGt1 = _arithmeticDecoder->decode(ctx._ctxNumIdcmPointsGt1);
   numPoints += numPointsGt1;
 
   int numDuplicatePoints = 0;
   if (!geom_unique_points_flag && !numPointsGt1) {
-    numDuplicatePoints = _arithmeticDecoder->decode(_ctxDupPointCntGt0);
+    numDuplicatePoints = _arithmeticDecoder->decode(ctx._ctxDupPointCntGt0);
     if (numDuplicatePoints) {
-      numDuplicatePoints += _arithmeticDecoder->decode(_ctxDupPointCntGt1);
+      numDuplicatePoints += _arithmeticDecoder->decode(ctx._ctxDupPointCntGt1);
       if (numDuplicatePoints == 2)
         numDuplicatePoints +=
-          _arithmeticDecoder->decodeExpGolomb(0, _ctxDupPointCntEgl);
+          _arithmeticDecoder->decodeExpGolomb(0, ctx._ctxDupPointCntEgl);
     }
   }
 
@@ -557,7 +560,7 @@ decodeGeometryOctree(
 
   // saved state for use with parallel bistream coding.
   // the saved state is restored at the start of each parallel octree level
-  std::unique_ptr<GeometryOctreeDecoder> savedState;
+  std::unique_ptr<GeometryOctreeContexts> savedState;
 
   int log2MotionBlockSize = 0;
 
@@ -648,12 +651,12 @@ decodeGeometryOctree(
     // save context state for parallel coding
     if (depth == maxDepth - 1 - gbh.geom_stream_cnt_minus1)
       if (gbh.geom_stream_cnt_minus1)
-        savedState.reset(new GeometryOctreeDecoder(decoder));
+        savedState.reset(new GeometryOctreeContexts(decoder.ctx));
 
     // a new entropy stream starts one level after the context state is saved.
     // restore the saved state and flush the arithmetic decoder
     if (depth > maxDepth - 1 - gbh.geom_stream_cnt_minus1) {
-      decoder = *savedState;
+      decoder.ctx = *savedState;
       arithmeticDecoder.flushAndRestart();
     }
 
@@ -1021,7 +1024,7 @@ decodeGeometryOctree(
     decoder.clearMap();
 
   // save the context state for re-use by a future slice if required
-  ctxtMem = decoder.getCtx();
+  //ctxtMem = decoder.getCtx(); // ctxtMem is now directly used
 
   // NB: the point cloud needs to be resized if partially decoded
   // OR: if geometry quantisation has changed the number of points
@@ -1038,6 +1041,305 @@ decodeGeometryOctree(
     *nodesRemaining = std::move(fifo);
     return;
   }
+}
+
+
+//-------------------------------------------------------------------------
+
+void
+decodeGeometryOctreeForTrisoup(
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyDecoder& arithmeticDecoder,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges& rste)
+{
+  const bool isInter = gbh.interPredictionEnabledFlag;
+
+  PCCPointSet3 predPointCloud;
+  MSOctree mSOctree;
+
+  if (isInter) {
+    int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
+    predPointCloud = refFrame->cloud;
+    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(5, log2MinPUSize));
+  }
+
+  // init main fifo
+  int ringBufferSize = gbh.footer.geom_num_points_minus1 + 1;
+  ringBufferSize = std::max(1000, ringBufferSize >> 2 * gbh.trisoupNodeSizeLog2(gps) - 1);
+
+  std::vector<PCCOctree3Node> fifo;
+  std::vector<PCCOctree3Node> fifoNext;
+  fifo.reserve(ringBufferSize);
+  fifoNext.reserve(ringBufferSize);
+
+  RasterScanContext rsc(fifo);
+
+  // generate the list of the node size for each level in the tree
+  //  - starts with the smallest node and works up
+  std::vector<Vec3<int>> lvlNodeSizeLog2{ gbh.trisoupNodeSizeLog2(gps) };
+  for (auto split : inReverse(gbh.tree_lvl_coded_axis_list)) {
+    Vec3<int> splitStv = { !!(split & 4), !!(split & 2), !!(split & 1) };
+    lvlNodeSizeLog2.push_back(lvlNodeSizeLog2.back() + splitStv);
+  }
+  std::reverse(lvlNodeSizeLog2.begin(), lvlNodeSizeLog2.end());
+
+  // Derived parameter used by trisoup.
+  gbh.maxRootNodeDimLog2 = lvlNodeSizeLog2[0].max();
+
+  // the termination depth of the octree phase
+  // NB: minNodeSizeLog2 is only non-zero for partial decoding (not trisoup)
+  int maxDepth = lvlNodeSizeLog2.size() - 1;
+
+  // append a dummy entry to the list so that depth+2 access is always valid
+  lvlNodeSizeLog2.emplace_back(lvlNodeSizeLog2.back());
+
+  // NB: this needs to be after the root node size is determined to
+  //     allocate the planar buffer
+  GeometryOctreeDecoder decoder(gps, gbh, ctxtMem, &arithmeticDecoder);
+
+  // variables for local motion
+  int log2MotionBlockSize = 0;
+
+  // local motion prediction structure -> LPUs from predPointCloud
+  if (isInter) {
+    log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
+    if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
+      int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size));
+      if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
+        log2MotionBlockSize = gbh.maxRootNodeDimLog2;
+    }
+
+    // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
+    point_t BBorig = gbh.geomBoxOrigin;
+  }
+
+  // push the first node
+  fifo.emplace_back();
+  PCCOctree3Node& node00 = fifo.back();
+  node00.start = uint32_t(0);
+  node00.end = uint32_t(0);
+  node00.pos = int32_t(0);
+  node00.predStart = uint32_t(0);
+  node00.predEnd = isInter ? predPointCloud.getPointCount() : uint32_t(0);
+  node00.mSONodeIdx = isInter ? 0 : -1;
+
+  // local motion
+  node00.hasMotion = 0;
+  node00.isCompensated = 0;
+
+  int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
+  for (int depth = 0; depth < maxDepth; depth++) {
+    // setup at the start of each level
+    auto fifoCurrLvlEnd = fifo.end();
+    int numNodesNextLvl = 0;
+
+    // derive per-level node size related parameters
+    auto nodeSizeLog2 = lvlNodeSizeLog2[depth];
+    auto childSizeLog2 = lvlNodeSizeLog2[depth + 1];
+
+    auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
+
+    // if one dimension is not split, atlasShift[k] = 0
+    int codedAxesPrevLvl = depth ? gbh.tree_lvl_coded_axis_list[depth - 1] : 7;
+    int codedAxesCurLvl = gbh.tree_lvl_coded_axis_list[depth];
+
+    rsc.initializeNextDepth();
+
+    // process all nodes within a single level
+    auto fifoCurrNode = fifo.begin();
+    auto fifoSliceFirstNode = fifoCurrNode;
+    auto fifoTubeFirstNode = fifoCurrNode;
+    int tubeIndex = 0;
+    int nodeSliceIndex = 0;
+
+    bool isLastDepth = depth == maxDepth - 1;
+
+    auto goNextNode = [&]() {
+      ++fifoCurrNode;
+      if (
+        fifoCurrNode == fifoCurrLvlEnd
+        && nodeSliceIndex == 1
+        && tubeIndex == 1
+        ) {
+        fifo.resize(0);
+        fifo.swap(fifoNext);
+        tubeIndex = 0;
+        nodeSliceIndex = 0;
+        fifoSliceFirstNode = fifoCurrNode;
+        fifoTubeFirstNode = fifoCurrNode;
+      }
+      else if (
+        fifoCurrNode == fifoCurrLvlEnd
+        || fifoCurrNode->pos[1] != fifoTubeFirstNode->pos[1]
+        || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
+        ) {
+        // End of tube
+        if (tubeIndex == 0) {
+          ++tubeIndex;
+          fifoCurrNode = fifoTubeFirstNode;
+        }
+        else {
+          if (
+            fifoCurrNode == fifoCurrLvlEnd
+            || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
+            ) {
+            // End of slice
+            if (nodeSliceIndex == 0) {
+              ++nodeSliceIndex;
+              fifoCurrNode = fifoSliceFirstNode;
+            }
+            else {
+              // move to next slice is here
+              nodeSliceIndex = 0;
+              fifoSliceFirstNode = fifoCurrNode;
+            }
+          }
+          tubeIndex = 0;
+          fifoTubeFirstNode = fifoCurrNode;
+        }
+      }
+    };
+
+
+    // planar mode as a container for QTBT at depth level
+    OctreeNodePlanar planar;
+    int codedAxesCurNode = codedAxesCurLvl;
+    int planarMask[3] = { 0, 0, 0 };
+    maskPlanar(planar, planarMask, codedAxesCurNode);
+
+    for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
+      PCCOctree3Node& node0 = *fifoCurrNode;
+
+      uint8_t occupancy = 1;
+      if (!tubeIndex && !nodeSliceIndex) {
+        // decode local motion PU tree
+        if (isInter) {
+
+          if (nodeSizeLog2[0] == log2MotionBlockSize) {
+            node0.hasMotion = true;
+          }
+
+          // decode LPU/PU/MV
+          if (node0.hasMotion && !node0.isCompensated) {
+            decode_splitPU_MV_MC(mSOctree,
+              &node0, gps.motion, nodeSizeLog2,
+              &arithmeticDecoder, &compensatedPointCloud,
+              log2MotionBlockSize);
+          }
+        }
+
+        // sort and partition the predictor for local motion
+        if (isInter) {
+          if (node0.isCompensated) {
+            countingSort(
+              PCCPointSet3::iterator(&compensatedPointCloud, node0.predStart),  // Need to update the predStar
+              PCCPointSet3::iterator(&compensatedPointCloud, node0.predEnd),
+              node0.predCounts, [=](const PCCPointSet3::Proxy& proxy) {
+                const auto& point = *proxy;
+                return !!(int(point[2]) & pointSortMask[2])
+                  | (!!(int(point[1]) & pointSortMask[1]) << 1)
+                  | (!!(int(point[0]) & pointSortMask[0]) << 2);
+              });
+          }
+          else {
+            if (depth < mSOctree.depth && node0.mSONodeIdx >= 0) {
+              const auto& msoNode = mSOctree.nodes[node0.mSONodeIdx];
+              for (int i = 0; i < 8; ++i) {
+                uint32_t msoChildIdx = msoNode.child[i];
+                if (msoChildIdx) {
+                  const auto& msoChild = mSOctree.nodes[msoChildIdx];
+                  node0.predCounts[i] = msoChild.end - msoChild.start;
+                }
+              }
+            }
+          }
+        }
+        node0.predPointsStartIdx = node0.predStart;
+
+        // decode occupancy
+        RasterScanContext::occupancy contextualOccupancy;
+        GeometryNeighPattern gnp{};
+        // update contexts
+        rsc.nextNode(&*fifoCurrNode, contextualOccupancy);
+        node0.neighPattern = gnp.neighPattern = contextualOccupancy.neighPattern;
+        gnp.adjNeighOcc[0] = contextualOccupancy.childOccupancyContext[4];
+        gnp.adjNeighOcc[1] = contextualOccupancy.childOccupancyContext[10];
+        gnp.adjNeighOcc[2] = contextualOccupancy.childOccupancyContext[12];
+
+        // inter information
+        int predOccupancy = 0;
+        int predOccupancyStrong = 0;
+        for (int i = 0; i < 8; i++) {
+          predOccupancy |= (node0.predCounts[i] > 0) << i;
+          predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
+        }
+
+        // decode child occupancy map
+        node0.childOccupancy = decoder.decodeOccupancyFullNeihbourgs(
+          contextualOccupancy, planarMask[0], planarMask[1], planarMask[2],
+          predOccupancy | (predOccupancyStrong << 8), isInter);
+      }
+      occupancy = node0.childOccupancy;
+      assert(occupancy > 0);
+
+      // push child nodes to fifo
+      for (int i = 0; i < 2; ++i) {
+        int childIndex = (nodeSliceIndex << 2) + (tubeIndex << 1) + i;
+        uint32_t mask = 1 << childIndex;
+        bool occupiedChild = occupancy & mask;
+        if (!occupiedChild) {
+          // child is empty: skip
+          node0.predPointsStartIdx += node0.predCounts[childIndex];
+        }
+        else {
+          // create & enqueue new child.
+          fifoNext.emplace_back();
+          auto& child = fifoNext.back();
+
+          int x = nodeSliceIndex;
+          int y = tubeIndex;
+          int z = i;
+
+          // only shift position if an occupancy bit was coded for the axis
+          child.pos[0] = (node0.pos[0] << !!(codedAxesCurLvl & 4)) + x;
+          child.pos[1] = (node0.pos[1] << !!(codedAxesCurLvl & 2)) + y;
+          child.pos[2] = (node0.pos[2] << !!(codedAxesCurLvl & 1)) + z;
+
+          child.predStart = node0.predPointsStartIdx;
+          node0.predPointsStartIdx += node0.predCounts[childIndex];
+          child.predEnd = node0.predPointsStartIdx;
+          if (node0.mSONodeIdx >= 0) {
+            child.mSONodeIdx = mSOctree.nodes[node0.mSONodeIdx].child[childIndex];
+          }
+
+          //local motion PU inheritance
+          child.hasMotion = node0.hasMotion;
+          child.isCompensated = node0.isCompensated;
+
+          if (isLastDepth) {
+            nodesRemaining->push_back(child);
+            nodesRemaining->back().pos <<= lvlNodeSizeLog2[maxDepth];
+
+            if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
+              rste.callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
+            lastPos0 = child.pos[0];
+          }
+
+          numNodesNextLvl++;
+        }
+      }
+    }
+  }
+
+  // TriSoup final pass (true)
+  rste.callTriSoupSlice(true);
+  rste.finishSlice();
 }
 
 //-------------------------------------------------------------------------
@@ -1057,6 +1359,26 @@ decodeGeometryOctree(
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
     refFrame, minimum_position, compensatedPointCloud);
+}
+
+//-------------------------------------------------------------------------
+
+void
+decodeGeometryOctreeForTrisoup(
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyDecoder& arithmeticDecoder,
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges& rste
+)
+{
+  decodeGeometryOctreeForTrisoup(
+    gps, gbh, ctxtMem, arithmeticDecoder, nullptr,
+    refFrame, minimum_position, compensatedPointCloud, rste);
 }
 
 //-------------------------------------------------------------------------

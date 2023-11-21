@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <climits>
 #include <cstdint>
 #include <cstring>
 #include "PCCMath.h"
@@ -777,17 +778,21 @@ void maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes);
 
 //============================================================================
 
-class GeometryOctreeContexts {
-public:
+struct GeometryOctreeContexts {
+
   void reset();
 
   // dynamic OBUF
   void resetMap();
   void clearMap();
 
-  AdaptiveBitModel ctxTempV2[144];
+  // ctx and OBUF for TriSoup
   CtxModelDynamicOBUF ctxTriSoup[3][5];
   CtxMapDynamicOBUF MapOBUFTriSoup[5][3];
+  uint8_t _BufferOBUFleavesTrisoup[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
+  int _OBUFleafNumberTrisoup = 0;
+
+  AdaptiveBitModel ctxTempV2[144];
 
   AdaptiveBitModel ctxDriftSKIP[12][2];
   AdaptiveBitModel ctxDrift0[8*8][5];
@@ -795,10 +800,6 @@ public:
   AdaptiveBitModel ctxDriftSign[3][8][8][3];
   AdaptiveBitModel ctxDriftSignSkip[5];
   AdaptiveBitModel ctxDriftMag[4][10];
-
-
-  CtxMapDynamicOBUF _MapOccupancy[2][8];
-  CtxMapDynamicOBUF _MapOccupancySparse[2][8];
 
   // colocated edge
   std::vector<int64_t> refFrameEdgeKeys;
@@ -808,13 +809,13 @@ public:
   std::vector<int64_t> refFrameNodeKeys;
   std::vector<int8_t> refFrameCentroValue;
 
+  // ctx and OBUF for Octree
+  CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
+  CtxMapDynamicOBUF _MapOccupancy[2][8];
+  CtxMapDynamicOBUF _MapOccupancySparse[2][8];
   uint8_t _BufferOBUFleaves[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
   int _OBUFleafNumber = 0;
 
-  uint8_t _BufferOBUFleavesTrisoup[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
-  int _OBUFleafNumberTrisoup = 0;
-
-protected:
   AdaptiveBitModel _ctxDupPointCntGt0;
   AdaptiveBitModel _ctxDupPointCntGt1;
   AdaptiveBitModel _ctxDupPointCntEgl;
@@ -830,10 +831,6 @@ protected:
   AdaptiveBitModel _ctxQpOffsetAbsGt0;
   AdaptiveBitModel _ctxQpOffsetSign;
   AdaptiveBitModel _ctxQpOffsetAbsEgl;
-
-  // OBUF somplified
-  CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
-
 };
 
 //----------------------------------------------------------------------------
@@ -860,6 +857,19 @@ void encodeGeometryOctree(
   const SequenceParameterSet& sps,
   PCCPointSet3& compensatedPointCloud);
 
+void encodeGeometryOctreeForTrisoup(
+  const OctreeEncOpts& opt,
+  const GeometryParameterSet& gps,
+  GeometryBrickHeader& gbh,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyEncoder* arithmeticEncoder,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame& refFrame,
+  const SequenceParameterSet& sps,
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges& rste);
+
 void decodeGeometryOctree(
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
@@ -871,6 +881,17 @@ void decodeGeometryOctree(
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
   PCCPointSet3& compensatedPointCloud);
+
+void decodeGeometryOctreeForTrisoup(
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyDecoder& arithmeticDecoder,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges& rste);
 
 //============================================================================
 

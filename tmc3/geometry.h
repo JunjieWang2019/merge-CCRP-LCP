@@ -51,6 +51,7 @@ namespace pcc {
 
 struct GeometryOctreeContexts;
 struct CloudFrame;
+struct RasterScanTrisoupEdges;
 
 //============================================================================
 
@@ -83,6 +84,30 @@ void decodeGeometryOctreeScalable(
   GeometryOctreeContexts& ctxtMem,
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame);
+
+//----------------------------------------------------------------------------
+
+void encodeGeometryOctreeForTrisoup(
+  const OctreeEncOpts& opt,
+  const GeometryParameterSet& gps,
+  GeometryBrickHeader& gbh,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyEncoder* arithmeticEncoder,
+  const CloudFrame& refFrame,
+  const SequenceParameterSet& sps,
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges& rste);
+
+void decodeGeometryOctreeForTrisoup(
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyDecoder& arithmeticDecoder,
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges& rste);
 
 //----------------------------------------------------------------------------
 

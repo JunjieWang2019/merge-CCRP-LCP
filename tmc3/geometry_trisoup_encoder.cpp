@@ -55,29 +55,16 @@ encodeGeometryTrisoup(
   const SequenceParameterSet& sps,
   PCCPointSet3& compensatedPointCloud)
 {
-  // trisoup uses octree coding until reaching the triangulation level.
-  std::vector<PCCOctree3Node> nodes;
-  encodeGeometryOctree(
-    optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
-    refFrame, sps, compensatedPointCloud);
-
-  std::cout << "\nSize compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
   bool isInter = gbh.interPredictionEnabledFlag;
 
-  // resume encoding with the last encoder
-  pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.back().get();    
-
+  // prepare TriSoup parameters
   int blockWidth = 1 << gbh.trisoupNodeSizeLog2(gps);
-  const int maxVertexPrecisionLog2 = gbh.trisoup_vertex_quantization_bits
-    ? gbh.trisoup_vertex_quantization_bits
-    : gbh.trisoupNodeSizeLog2(gps);
-  const int bitDropped =
-    std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
+  const int maxVertexPrecisionLog2 = gbh.trisoup_vertex_quantization_bits ? gbh.trisoup_vertex_quantization_bits : gbh.trisoupNodeSizeLog2(gps);
+  const int bitDropped = std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
 
-  std::cout << "Number of points for TriSoup = " << pointCloud.getPointCount() << "\n";
-  std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
+  // TriSoup encoder parameters
   int distanceSearchEncoder = 1;
-  if (opt.improvedVertexDetermination) {
+  /*if (opt.improvedVertexDetermination) { // !!!!!!!!!!!!!! impossible in one passe coding !!!!!!
     float estimatedSampling = float(nodes.size());
     estimatedSampling /= pointCloud.getPointCount();
     estimatedSampling = std::sqrt(estimatedSampling);
@@ -89,25 +76,36 @@ encodeGeometryTrisoup(
     distanceSearchEncoder += int(std::round(estimatedSampling + 0.1f));
     distanceSearchEncoder = std::max(1, std::min(8, distanceSearchEncoder));
     std::cout << "distanceSearchEncoder = " << distanceSearchEncoder << "\n";
+  } */
+
+  if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
+    ctxtMemOctree.clearMap();
+    ctxtMemOctree.resetMap();
   }
 
-  // reconstruct points  with some sampling value
-  bool haloFlag = gbh.trisoup_halo_flag;
-  int thickness = gbh.trisoup_thickness;
+  // get first encoder
+  pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.begin()->get();
 
-  // Determine neighbours
+  // trisoup uses octree coding until reaching the triangulation level.
+  std::vector<PCCOctree3Node> nodes;
   EntropyDecoder foo;
-  int nSegments = 0;
-  codeAndRenderTriSoupRasterScan(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder,
-    isInter, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree, nSegments);
+  RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, true, bitDropped, distanceSearchEncoder, isInter, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
+  rste.init();
 
+  // octree
+  encodeGeometryOctreeForTrisoup(
+    optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoder, &nodes,
+    refFrame, sps, compensatedPointCloud, rste);
+
+  std::cout << "Size compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
+  std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
 
-  if (!(gps.interPredictionEnabledFlag
+  /*if (!(isInter
         && gps.gof_geom_entropy_continuation_enabled_flag)
       && !gbh.entropy_continuation_flag) {
     ctxtMemOctree.clearMap();
-  }
+  }*/
 }
 
 //============================================================================

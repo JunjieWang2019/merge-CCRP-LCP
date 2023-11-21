@@ -267,7 +267,6 @@ PCCTMC3Decoder3::decompress(
     _attrDecoder.reset();
     // Avoid dropping an actual frame
     _suppressOutput = false;
-
     return decodeGeometryBrick(*buf, attrInterPredParams);
 
   case PayloadType::kAttributeBrick:
@@ -594,7 +593,6 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     _currentPointCloud[i] -= _sliceOrigin;
   for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
     attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
-
   // Note the current sliceID for loss detection
   _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;
 
