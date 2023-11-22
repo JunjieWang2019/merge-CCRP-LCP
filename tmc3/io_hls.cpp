@@ -661,6 +661,7 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
       bs.writeUe(gps.motion.motion_block_size);
       bs.writeUe(gps.motion.motion_min_pu_size);
+      bs.writeUe(gps.motion.motion_min_pu_size_color);
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
 
@@ -730,6 +731,7 @@ parseGps(const PayloadBuffer& buf)
 
       bs.readUe(&gps.motion.motion_block_size);
       bs.readUe(&gps.motion.motion_min_pu_size);
+      bs.readUe(&gps.motion.motion_min_pu_size_color);
 
       bs.read(&gps.gof_geom_entropy_continuation_enabled_flag);
 
@@ -792,7 +794,7 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   if (aps_extension_flag) {
     bs.write(aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
-      throw std::runtime_error("Attributes inter prediction shall not be enabled");
+      bs.write(aps.dual_motion_field_flag);
     }
 
     if (
@@ -853,10 +855,12 @@ parseAps(const PayloadBuffer& buf)
   bool aps_extension_flag = bs.read();
   aps.rahtPredParams.prediction_skip1_flag = false;
   aps.rahtPredParams.subnode_prediction_enabled_flag = false;
+  aps.attrInterPredictionEnabled = false;
+  aps.dual_motion_field_flag = false;
   if (aps_extension_flag) {
     bs.read(&aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
-      throw std::runtime_error("Attributes inter prediction shall not be enabled");
+      bs.read(&aps.dual_motion_field_flag);
     }
 
     if (
@@ -1235,9 +1239,6 @@ write(
   }
 
   bs.write(abh.disableAttrInterPred);
-  if (!abh.disableAttrInterPred) {
-    throw std::runtime_error("Attributes inter prediction shall be disabled");
-  }
 
   bs.byteAlign();
 }
@@ -1334,9 +1335,6 @@ parseAbh(
   }
 
   bs.read(&abh.disableAttrInterPred);
-  if (!abh.disableAttrInterPred) {
-    throw std::runtime_error("Attributes inter prediction shall be disabled");
-  }
 
   bs.byteAlign();
 

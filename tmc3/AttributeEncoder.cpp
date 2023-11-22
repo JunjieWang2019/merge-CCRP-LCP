@@ -393,13 +393,14 @@ makeAttributeEncoder()
 void
 AttributeEncoder::encode(
   const SequenceParameterSet& sps,
+  const GeometryParameterSet& gps,
   const AttributeDescription& desc,
   const AttributeParameterSet& attr_aps,
   AttributeBrickHeader& abh,
   AttributeContexts& ctxtMem,
   PCCPointSet3& pointCloud,
   PayloadBuffer* payload,
-  const AttributeInterPredParams& attrInterPredParams,
+  AttributeInterPredParams& attrInterPredParams,
   attr::ModeEncoder& predEncoder)
 {
   if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
@@ -432,6 +433,8 @@ AttributeEncoder::encode(
   } else if (desc.attr_num_dimensions_minus1 == 2) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
+      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+        attrInterPredParams.encodeMotionAndBuildCompensated(gps, encoder.arithmeticEncoder);
       encodeColorsTransformRaht(desc, attr_aps, qpSet, pointCloud,
         encoder, predEncoder, attrInterPredParams);
       break;

@@ -208,15 +208,6 @@ struct PCCNeighborInfo {
 
 //---------------------------------------------------------------------------
 
-struct AttributeInterPredParams {
-  PCCPointSet3 compensatedPointCloud;
-  int frameDistance;
-  bool enableAttrInterPred;
-  bool hasLocalMotion() const { return compensatedPointCloud.getPointCount() > 0; }
-};
-
-//---------------------------------------------------------------------------
-
 }  // namespace pcc
 
 #endif /* PCCTMC3Common_h */

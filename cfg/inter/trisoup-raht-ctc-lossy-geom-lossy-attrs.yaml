@@ -51,6 +51,8 @@ categories:
      - convertPlyColourspace: 1
      - transformType: 0
      - rahtInterPredictionEnabled: 1
+     # use dual motion with TriSoup
+     - dualMotionEnabled: 1
 
      ##
      # attribute coding -- colour

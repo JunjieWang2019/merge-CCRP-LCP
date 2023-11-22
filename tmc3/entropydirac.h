@@ -143,6 +143,17 @@ namespace dirac {
     }
 
     //------------------------------------------------------------------------
+
+    size_t getNumBytes() const
+    {
+      if (_cabac_bypass_stream_enabled_flag) {
+        return _chunkStream.size();
+      }
+
+      return _bufWr - _buf;
+    }
+
+    //------------------------------------------------------------------------
     void getProbabilityLUT(uint16_t* out) const
     {
       for (int i = 0; i < 512; i++)

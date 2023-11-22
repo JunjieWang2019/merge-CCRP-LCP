@@ -52,7 +52,8 @@
 #include "pointset_processing.h"
 #include "TMC3.h"
 #include "attr_tools.h"
-#include "motionWip.h"
+#include "AttributeCommon.h"
+
 
 namespace pcc {
 

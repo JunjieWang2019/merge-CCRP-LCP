@@ -65,6 +65,7 @@ public:
   using Base::start;
   using Base::stop;
   using Base::getProbabilityLUT;
+  using Base::getNumBytes;
 
   //--------------------------------------------------------------------------
   // :: encoding / common binarisation methods

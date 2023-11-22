@@ -191,6 +191,7 @@ makeAttributeDecoder()
 void
 AttributeDecoder::decode(
   const SequenceParameterSet& sps,
+  const GeometryParameterSet& gps,
   const AttributeDescription& attr_desc,
   const AttributeParameterSet& attr_aps,
   const AttributeBrickHeader& abh,
@@ -200,7 +201,7 @@ AttributeDecoder::decode(
   size_t payloadLen,
   AttributeContexts& ctxtMem,
   PCCPointSet3& pointCloud,
-  const AttributeInterPredParams& attrInterPredParams,
+  AttributeInterPredParams& attrInterPredParams,
   attr::ModeDecoder& predDecoder)
 {
   if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
@@ -229,6 +230,8 @@ AttributeDecoder::decode(
   } else if (attr_desc.attr_num_dimensions_minus1 == 2) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
+      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+        attrInterPredParams.decodeMotionAndBuildCompensated(gps, decoder.arithmeticDecoder);
       decodeColorsRaht(attr_desc, attr_aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
       break;
 

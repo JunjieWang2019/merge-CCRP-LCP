@@ -493,13 +493,13 @@ decodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud)
 {
   const bool isInter = gbh.interPredictionEnabledFlag;
 
-  PCCPointSet3 predPointCloud;
-  MSOctree mSOctree;
-
+  PCCPointSet3& predPointCloud = refPointCloud;
   if (isInter) {
     int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
     predPointCloud = refFrame->cloud;
@@ -1055,14 +1055,14 @@ decodeGeometryOctreeForTrisoup(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges& rste)
 {
   const bool isInter = gbh.interPredictionEnabledFlag;
 
-  PCCPointSet3 predPointCloud;
-  MSOctree mSOctree;
-
+  PCCPointSet3& predPointCloud = refPointCloud;
   if (isInter) {
     int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
     predPointCloud = refFrame->cloud;
@@ -1353,12 +1353,15 @@ decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud
 )
 {
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, compensatedPointCloud);
+    refFrame, minimum_position, refPointCloud, mSOctree,
+    compensatedPointCloud);
 }
 
 //-------------------------------------------------------------------------
@@ -1372,13 +1375,16 @@ decodeGeometryOctreeForTrisoup(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges& rste
 )
 {
   decodeGeometryOctreeForTrisoup(
     gps, gbh, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, compensatedPointCloud, rste);
+    refFrame, minimum_position, refPointCloud, mSOctree,
+    compensatedPointCloud, rste);
 }
 
 //-------------------------------------------------------------------------
@@ -1396,9 +1402,12 @@ decodeGeometryOctreeScalable(
 {
   std::vector<PCCOctree3Node> nodes;
   PCCPointSet3 compensatedPointCloud;
+  MSOctree mSOctree;
+  PCCPointSet3 refPointCloud;
   decodeGeometryOctree(
     gps, gbh, minGeomNodeSizeLog2, pointCloud, ctxtMem, arithmeticDecoder,
-    &nodes, refFrame, { 0, 0, 0 }, compensatedPointCloud);
+    &nodes, refFrame, { 0, 0, 0 }, refPointCloud, mSOctree,
+    compensatedPointCloud);
 
   if (minGeomNodeSizeLog2 > 0) {
     size_t size =

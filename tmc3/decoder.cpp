@@ -49,6 +49,7 @@
 #include "io_tlv.h"
 #include "pcc_chrono.h"
 #include "osspecific.h"
+#include "PCCTMC3Encoder.h" // for recolouring
 
 namespace pcc {
 
@@ -204,6 +205,7 @@ PCCTMC3Decoder3::decompress(
         for (int k = 0; k < 3; k++)
           _currentPointCloud[i][k] += _sliceOrigin[k];
       _accumCloud.append(_currentPointCloud);
+      _compensatedCloud.clear();
     }
   }
 
@@ -503,7 +505,9 @@ PCCTMC3Decoder3::decodeGeometryBrick(
     if (!_params.minGeomNodeSizeLog2) {
       decodeGeometryOctree(
         *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
-        _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud);
+        _sps->seqBoundingBoxOrigin, attrInterPredParams.referencePointCloud,
+        attrInterPredParams.mSOctreeRef,
+        attrInterPredParams.compensatedPointCloud);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
@@ -512,7 +516,10 @@ PCCTMC3Decoder3::decodeGeometryBrick(
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams.compensatedPointCloud);
+      _refFrame, _sps->seqBoundingBoxOrigin,
+      attrInterPredParams.referencePointCloud,
+      attrInterPredParams.mSOctreeRef,
+      attrInterPredParams.compensatedPointCloud);
   }
 
   // At least the first slice's geometry has been decoded
@@ -576,11 +583,14 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   if (!_attrDecoder)
     _attrDecoder = makeAttributeDecoder();
 
+  if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+    attrInterPredParams.prepareDecodeMotion(*_gps, _gbh, _currentPointCloud);
+
   clock_user.start();
 
   auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
   _attrDecoder->decode(
-    *_sps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
+    *_sps, *_gps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
     _params.minGeomNodeSizeLog2, buf.data() + abhSize, buf.size() - abhSize,
     ctxtMemAttr, _currentPointCloud, attrInterPredParams, predDecoder);
 

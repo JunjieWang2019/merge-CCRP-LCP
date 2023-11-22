@@ -60,13 +60,14 @@ class AttributeEncoder : public AttributeEncoderIntf {
 public:
   void encode(
     const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& attr_aps,
     AttributeBrickHeader& abh,
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     PayloadBuffer* payload,
-    const AttributeInterPredParams &attrInterPredParams,
+    AttributeInterPredParams &attrInterPredParams,
     attr::ModeEncoder& predEncoder
     ) override;
 

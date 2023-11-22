@@ -544,6 +544,7 @@ struct GeometryParameterSet {
     int motion_block_size = 0;
     int motion_window_size = 0;
     int motion_min_pu_size = 0;
+    int motion_min_pu_size_color = 0;
     int motion_max_prefix_bits = 0;
     int motion_max_suffix_bits = 0;
     int Amotion0 = 0;
@@ -675,13 +676,16 @@ struct AttributeParameterSet {
   int aps_chroma_qp_offset;
   bool aps_slice_qp_deltas_present_flag;
 
+  // Wheter dual motion field shall be used or not.
+  bool dual_motion_field_flag;
+
   //--- raht parameters
   RahtPredictionParams rahtPredParams;
 
   // Whether raw attribute are coded as fixed width or variable length.
   bool raw_attr_variable_len_flag;
 
-  bool attrInterPredictionEnabled = false;
+  bool attrInterPredictionEnabled = true;
   int qpShiftStep;
 };
 

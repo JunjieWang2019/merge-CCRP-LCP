@@ -38,9 +38,9 @@
 #include <vector>
 
 #include "PCCPointSet.h"
-#include "PCCTMC3Encoder.h"
 #include "entropy.h"
 #include "hls.h"
+#include "attr_tools.h"
 
 #include <queue>
 #include <tuple>
@@ -166,7 +166,8 @@ struct MSOctree {
     const PCCPointSet3& Block0,
     const point_t& xyz0,
     int local_size,
-    PUtree* local_PU_tree
+    PUtree* local_PU_tree,
+    bool dualMotion = false
   ) const;
 
   void
@@ -178,6 +179,8 @@ struct MSOctree {
     PCCPointSet3* compensatedPointCloud,
     uint32_t depthMax = UINT32_MAX
   ) const;
+  int
+  nodeIdx(point_t nodePos0, uint32_t nodeSizeLog2) const;
 private:
   mutable ringbuf<int> a; // for search
   mutable ringbuf<int> b; // for search
@@ -192,7 +195,8 @@ motionSearchForNode(
   const GeometryParameterSet::Motion& param,
   int nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree);
+  PUtree* local_PU_tree,
+  bool dualMotion=false);
 
 //============================================================================
 

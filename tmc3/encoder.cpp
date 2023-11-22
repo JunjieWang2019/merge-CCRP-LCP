@@ -542,6 +542,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       motion.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
       motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
       motion.motion_min_pu_size = motion.motion_block_size >> MAX_PU_DEPTH;
+      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
 
       // search parameters
       motion.Amotion0 = motion.motion_window_size >> 2;
@@ -554,6 +555,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       motion.motion_block_size = std::max(32, int(std::round(128 * scaleFactor)));
       motion.motion_window_size = std::max(2, int(std::round(8 * scaleFactor)));
       motion.motion_min_pu_size = motion.motion_block_size >> 1;
+      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
 
       // search parameters
       motion.Amotion0 = 1; // std::max(1, int(std::round(2 * scaleFactor)));
@@ -572,6 +574,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       motion.motion_block_size = std::min(256, 16 * TriSoupSize);
       motion.motion_window_size = 10;
       motion.motion_min_pu_size = std::max(TriSoupSize, motion.motion_block_size >> 1);
+      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
 
       // search parameters
       motion.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
@@ -587,6 +590,8 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       motion.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
       motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
       motion.motion_min_pu_size = motion.motion_block_size >> (2 + MAX_PU_DEPTH);
+      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
+
 
       // search parameters
       motion.Amotion0 = motion.motion_window_size >> 2;
@@ -755,12 +760,16 @@ PCCTMC3Encoder3::compressPartition(
     // Number of regions is constrained to at most 1.
     assert(abh.qpRegions.size() <= 1);
 
-    abh.disableAttrInterPred = true;
+    abh.disableAttrInterPred = !_gbh.interPredictionEnabledFlag;
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
+
+    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+      attrInterPredParams.findMotion(params, *_gps, _gbh, pointCloud);
 
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
     attrEncoder->encode(
-      *_sps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud, &payload, attrInterPredParams, predCoder);
+      *_sps, *_gps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud,
+      &payload, attrInterPredParams, predCoder);
 
     clock_user.stop();
 
@@ -892,6 +901,8 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryOctree(
       params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
       arithmeticEncoders, _refFrame, *_sps,
+      attrInterPredParams.referencePointCloud,
+      attrInterPredParams.mSOctreeRef,
       attrInterPredParams.compensatedPointCloud);
   }
   else
@@ -902,7 +913,9 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryTrisoup(
       params->trisoup, params->geom, *_gps, gbh, pointCloud,
       *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
-      *_sps, attrInterPredParams.compensatedPointCloud);
+      *_sps, attrInterPredParams.referencePointCloud,
+      attrInterPredParams.mSOctreeRef,
+      attrInterPredParams.compensatedPointCloud);
   }
 
   // signal the actual number of points coded

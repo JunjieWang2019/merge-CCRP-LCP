@@ -40,6 +40,7 @@
 #include <cfloat>
 #include <climits>
 #include <set>
+#include <map>
 #include <vector>
 #include <unordered_map>
 
@@ -941,7 +942,8 @@ MSOctree::find_motion(
   const PCCPointSet3& Block0,
   const point_t& xyz0,
   int local_size,
-  PUtree* local_PU_tree) const
+  PUtree* local_PU_tree,
+  bool dualMotion) const
 {
   //if (!Window.size())
   //  return DBL_MAX;
@@ -1245,7 +1247,7 @@ MSOctree::find_motion(
 
       uint32_t childNodeIdx = mSOctreeOrig.nodes[mSOctreeOrigNodeIdx].child[t];
 
-      cost_Split += find_motion(param, motionEntropy, mSOctreeOrig, childNodeIdx, Block1, xyz1, local_size1, Split_PU_tree);
+      cost_Split += find_motion(param, motionEntropy, mSOctreeOrig, childNodeIdx, Block1, xyz1, local_size1, Split_PU_tree, dualMotion);
     }
   }
 
@@ -1294,7 +1296,8 @@ motionSearchForNode(
   const GeometryParameterSet::Motion& param,
   int nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree)
+  PUtree* local_PU_tree,
+  bool dualMotion)
 {
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
 
@@ -1311,7 +1314,7 @@ motionSearchForNode(
 
   // MV search
   mSOctree.find_motion(
-    param, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, (1 << nodeSizeLog2), local_PU_tree);
+    param, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, (1 << nodeSizeLog2), local_PU_tree, dualMotion);
 
   return true;
 }
@@ -1405,6 +1408,29 @@ MSOctree::apply_motion(
     predPoint[2] -= MVd[2];
   }
 
+}
+
+//----------------------------------------------------------------------------
+
+int
+MSOctree::nodeIdx(point_t nodePos0, uint32_t nodeSizeLog2) const
+{
+  uint32_t currSizeLog2 = maxDepth;
+  uint32_t currNodeIdx = 0;
+
+  while (currSizeLog2 > nodeSizeLog2) {
+    const auto & node0 = nodes[currNodeIdx];
+    const int childSizeLog2 = (currSizeLog2 - 1);
+    int i
+      = (((nodePos0[0] >> childSizeLog2)& 1) << 2)
+      + (((nodePos0[1] >> childSizeLog2)& 1) << 1)
+      + ((nodePos0[2] >> childSizeLog2)& 1);
+    if (!node0.child[i])
+      return -1;
+    currNodeIdx = node0.child[i];
+    currSizeLog2 = childSizeLog2;
+  }
+  return currNodeIdx;
 }
 
 //----------------------------------------------------------------------------

@@ -47,6 +47,7 @@
 #include "geometry.h"
 #include "hls.h"
 #include "attr_tools.h"
+#include "AttributeCommon.h"
 
 namespace pcc {
 
@@ -139,6 +140,9 @@ private:
 
   // The accumulated decoded slices
   PCCPointSet3 _accumCloud;
+
+  // The compensated slice for interframe prediction
+  PCCPointSet3 _compensatedCloud;
 
   // The current output cloud
   CloudFrame _outCloud;

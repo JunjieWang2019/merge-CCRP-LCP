@@ -40,7 +40,6 @@
 #include "hls.h"
 #include "PayloadBuffer.h"
 #include "PCCPointSet.h"
-#include "PCCTMC3Common.h"
 #include "entropy.h"
 #include "attr_tools.h"
 
@@ -49,6 +48,7 @@ namespace pcc {
 //============================================================================
 
 class AttributeContexts;
+struct AttributeInterPredParams;
 
 //============================================================================
 
@@ -58,6 +58,7 @@ public:
 
   virtual void decode(
     const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const AttributeBrickHeader& abh,
@@ -66,8 +67,8 @@ public:
     const char* payload,
     size_t payloadLen,
     AttributeContexts& ctxtMem,
-    PCCPointSet3& pointCloud, 
-    const AttributeInterPredParams& attrInterPredParams,
+    PCCPointSet3& pointCloud,
+    AttributeInterPredParams& attrInterPredParams,
     attr::ModeDecoder& predDecoder
     ) = 0;
 };
@@ -84,13 +85,14 @@ public:
 
   virtual void encode(
     const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& attr_aps,
     AttributeBrickHeader& abh,
     AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
-    PayloadBuffer* payload, 
-    const AttributeInterPredParams &attrInterPredParams,
+    PayloadBuffer* payload,
+    AttributeInterPredParams &attrInterPredParams,
     attr::ModeEncoder& predEncoder
   ) = 0;
 };

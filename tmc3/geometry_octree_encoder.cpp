@@ -711,12 +711,15 @@ encodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud)
 {
-  // TODO: we don't need to keep points never visible is prediction search window
-  PCCPointSet3 predPointCloud(refFrame.cloud);
+  refPointCloud = refFrame.cloud;
+  PCCPointSet3& predPointCloud = refPointCloud;
 
-  MSOctree mSOctree(&predPointCloud, -gbh.geomBoxOrigin, 2);
+  int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
+  mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   MSOctree mSOctreeCurr;
 
   if (gbh.interPredictionEnabledFlag)
@@ -1421,15 +1424,18 @@ encodeGeometryOctreeForTrisoup(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges& rste)
 {
   bool isInter = gbh.interPredictionEnabledFlag;
 
-  // TODO: we don't need to keep points never visible is prediction search window
-  PCCPointSet3 predPointCloud(refFrame.cloud);
+  refPointCloud = refFrame.cloud;
+  PCCPointSet3& predPointCloud = refPointCloud;
 
-  MSOctree mSOctree(&predPointCloud, -gbh.geomBoxOrigin, 2);
+  int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
+  mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   MSOctree mSOctreeCurr;
 
   if (isInter)
@@ -1793,11 +1799,13 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud)
 {
   encodeGeometryOctree(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
-    sps, compensatedPointCloud);
+    sps, refPointCloud, mSOctree, compensatedPointCloud);
 }
 
 //-------------------------------------------------------------------------
@@ -1812,12 +1820,14 @@ encodeGeometryOctreeForTrisoup(
   EntropyEncoder* arithmeticEncoder,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges& rste)
 {
   encodeGeometryOctreeForTrisoup(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoder, nullptr, refFrame,
-    sps, compensatedPointCloud, rste);
+    sps, refPointCloud, mSOctree, compensatedPointCloud, rste);
 }
 
 //============================================================================

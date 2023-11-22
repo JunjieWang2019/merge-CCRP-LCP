@@ -40,6 +40,7 @@
 #include <cstring>
 #include "PCCMath.h"
 #include "PCCPointSet.h"
+#include "frame.h"
 #include "entropy.h"
 #include "geometry_params.h"
 #include "hls.h"
@@ -56,6 +57,8 @@ namespace pcc {
 const int MAX_NUM_DM_LEAF_POINTS = 2;
 
 //============================================================================
+
+struct RasterScanTrisoupEdges;
 
 struct PCCOctree3Node {
   PCCOctree3Node() = default;
@@ -855,6 +858,8 @@ void encodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud);
 
 void encodeGeometryOctreeForTrisoup(
@@ -867,6 +872,8 @@ void encodeGeometryOctreeForTrisoup(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges& rste);
 
@@ -880,6 +887,8 @@ void decodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud);
 
 void decodeGeometryOctreeForTrisoup(
@@ -890,6 +899,8 @@ void decodeGeometryOctreeForTrisoup(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges& rste);
 

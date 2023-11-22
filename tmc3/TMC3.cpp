@@ -909,6 +909,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "  1: ITU-T BT.709\n"
     "  8: YCgCo")
 
+  ("dualMotionEnabled",
+    params_attr.aps.dual_motion_field_flag, false,
+    "Controls the use of a dual motion field for the attributes")
+
   ("transformType",
     params_attr.aps.attr_encoding, AttributeEncoding::kRAHTransform,
     "Coding method to use for attribute:\n"
@@ -1312,6 +1316,9 @@ sanitizeEncoderOpts(
 
     if (!params.encoder.gps.interPredictionEnabledFlag)
       attr_aps.attrInterPredictionEnabled = false;
+
+    if(!attr_aps.attrInterPredictionEnabled)
+      attr_aps.dual_motion_field_flag = false;
   }
 
   // sanity checks

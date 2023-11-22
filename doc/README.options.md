@@ -593,6 +593,12 @@ $attr \times scale + offset$.
 
 NB: these parameters are only supported for reflectance attributes.
 
+### `--dualMotionEnabled=0|1`
+Controls the use of a dual motion field for the attributes. When this 
+flag is equal to one, a dedicated motion search is performed for the 
+attributes and the corresponding motion field is encoded in the slice 
+attributes data.
+
 ### `--transformType=0|3`
 Coding method to use for the current attribute:
 

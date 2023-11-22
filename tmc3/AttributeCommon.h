@@ -41,6 +41,7 @@
 #include "entropy.h"
 #include "hls.h"
 #include "PCCTMC3Common.h"
+#include "motionWip.h"
 
 namespace pcc {
 
@@ -51,6 +52,48 @@ std::vector<int> sortedPointCloud(
   const PCCPointSet3& pointCloud,
   std::vector<int64_t>& mortonCode,
   std::vector<int>& attributes);
+
+//---------------------------------------------------------------------------
+
+struct MSOctree;
+struct EncoderParams;
+
+struct AttributeInterPredParams {
+  PCCPointSet3 referencePointCloud;
+  MSOctree mSOctreeRef;
+  PCCPointSet3 compensatedPointCloud;
+  int frameDistance;
+  bool enableAttrInterPred;
+  int getPointCount() const { return referencePointCloud.getPointCount(); }
+  void clear() { referencePointCloud.clear(); }
+  bool hasLocalMotion() const { return compensatedPointCloud.getPointCount() > 0; }
+
+  void findMotion(
+    const EncoderParams* params,
+    const GeometryParameterSet& gps,
+    const GeometryBrickHeader& gbh,
+    PCCPointSet3& pointCloud
+  );
+
+  void encodeMotionAndBuildCompensated(
+    const GeometryParameterSet& gps,
+    EntropyEncoder& arithmeticEncoder
+  );
+
+  void prepareDecodeMotion(
+    const GeometryParameterSet& gps,
+    const GeometryBrickHeader& gbh,
+    PCCPointSet3& pointCloud
+  );
+
+  void decodeMotionAndBuildCompensated(
+    const GeometryParameterSet& gps,
+    EntropyDecoder& arithmeticDecoder
+  );
+protected:
+  MSOctree mSOctreeCurr;
+  std::vector<std::pair<PUtree,std::vector<MSOctree::MSONode>::iterator> > motionPUTrees;
+};
 
 //----------------------------------------------------------------------------
 

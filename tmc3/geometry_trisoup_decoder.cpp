@@ -55,6 +55,8 @@ decodeGeometryTrisoup(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
+  PCCPointSet3& refPointCloud,
+  MSOctree& mSOctree,
   PCCPointSet3& compensatedPointCloud)
 {
   bool isInter = gbh.interPredictionEnabledFlag;
@@ -76,8 +78,8 @@ decodeGeometryTrisoup(
 
   // octree
   decodeGeometryOctreeForTrisoup(
-    gps, gbh, ctxtMemOctree, arithmeticDecoder, &nodes,
-    refFrame, minimum_position, compensatedPointCloud, rste);
+    gps, gbh, ctxtMemOctree, arithmeticDecoder, &nodes, refFrame,
+    minimum_position, refPointCloud, mSOctree, compensatedPointCloud, rste);
 
   //std::cout << "\nSize compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
   //std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";

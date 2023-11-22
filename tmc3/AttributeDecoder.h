@@ -57,6 +57,7 @@ class AttributeDecoder : public AttributeDecoderIntf {
 public:
   void decode(
     const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
     const AttributeBrickHeader& abh,
@@ -65,8 +66,8 @@ public:
     const char* payload,
     size_t payloadLen,
     AttributeContexts& ctxtMem,
-    PCCPointSet3& pointCloud, 
-    const AttributeInterPredParams& attrInterPredParams,
+    PCCPointSet3& pointCloud,
+    AttributeInterPredParams& attrInterPredParams,
     attr::ModeDecoder& predDecoder
   ) override;
 
