@@ -433,8 +433,12 @@ AttributeEncoder::encode(
   } else if (desc.attr_num_dimensions_minus1 == 2) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
-      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-        attrInterPredParams.encodeMotionAndBuildCompensated(gps, encoder.arithmeticEncoder);
+      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag
+          && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
+        if (attr_aps.mcap_to_rec_geom_flag)
+          attrInterPredParams.compensatedPointCloud = pointCloud;
+        attrInterPredParams.encodeMotionAndBuildCompensated(gps, encoder.arithmeticEncoder, attr_aps.mcap_to_rec_geom_flag);
+      }
       encodeColorsTransformRaht(desc, attr_aps, qpSet, pointCloud,
         encoder, predEncoder, attrInterPredParams);
       break;

@@ -795,6 +795,8 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     bs.write(aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
       bs.write(aps.dual_motion_field_flag);
+      if (aps.dual_motion_field_flag)
+        bs.write(aps.mcap_to_rec_geom_flag);
     }
 
     if (
@@ -857,10 +859,13 @@ parseAps(const PayloadBuffer& buf)
   aps.rahtPredParams.subnode_prediction_enabled_flag = false;
   aps.attrInterPredictionEnabled = false;
   aps.dual_motion_field_flag = false;
+  aps.mcap_to_rec_geom_flag = false;
   if (aps_extension_flag) {
     bs.read(&aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
       bs.read(&aps.dual_motion_field_flag);
+      if (aps.dual_motion_field_flag)
+        bs.read(&aps.mcap_to_rec_geom_flag);
     }
 
     if (

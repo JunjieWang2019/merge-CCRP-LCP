@@ -679,6 +679,9 @@ struct AttributeParameterSet {
   // Wheter dual motion field shall be used or not.
   bool dual_motion_field_flag;
 
+  // Whether motion compensated attributes proejection shall be used or not.
+  bool mcap_to_rec_geom_flag;
+
   //--- raht parameters
   RahtPredictionParams rahtPredParams;
 

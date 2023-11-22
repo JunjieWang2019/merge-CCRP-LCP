@@ -503,7 +503,8 @@ decodeGeometryOctree(
   if (isInter) {
     int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
     predPointCloud = refFrame->cloud;
-    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(5,log2MinPUSize));
+    // for recoloring, need same depth as in encoder
+    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   }
 
   // init main fifo
@@ -1066,7 +1067,8 @@ decodeGeometryOctreeForTrisoup(
   if (isInter) {
     int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
     predPointCloud = refFrame->cloud;
-    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(5, log2MinPUSize));
+    // for recoloring, need same depth as in encoder
+    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   }
 
   // init main fifo

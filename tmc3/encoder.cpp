@@ -539,7 +539,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       break;
 
     case 1:
-      motion.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
+      motion.motion_block_size = 1 << ilog2(uint32_t(std::max(64, int(std::round(8192 * scaleFactor)))));
       motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
       motion.motion_min_pu_size = motion.motion_block_size >> MAX_PU_DEPTH;
       motion.motion_min_pu_size_color = motion.motion_min_pu_size;
@@ -552,7 +552,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
 
     case 2:
       std::cout << "presetMode  for octree dense \n";
-      motion.motion_block_size = std::max(32, int(std::round(128 * scaleFactor)));
+      motion.motion_block_size = 1 << ilog2(uint32_t(std::max(32, int(std::round(128 * scaleFactor)))));
       motion.motion_window_size = std::max(2, int(std::round(8 * scaleFactor)));
       motion.motion_min_pu_size = motion.motion_block_size >> 1;
       motion.motion_min_pu_size_color = motion.motion_min_pu_size;
@@ -770,6 +770,10 @@ PCCTMC3Encoder3::compressPartition(
     attrEncoder->encode(
       *_sps, *_gps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud,
       &payload, attrInterPredParams, predCoder);
+
+    {
+      attrInterPredParams.referencePointCloud.clear();
+    }
 
     clock_user.stop();
 

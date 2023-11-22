@@ -398,6 +398,7 @@ recolourColour(
   std::vector<std::vector<DistColor>> refinedColorsDists2;
   refinedColorsDists2.resize(pointCountTarget);
 
+  if(num_resultsBwd)
   for (size_t index = 0; index < pointCountSource; ++index) {
     const Vec3<attr_t> color = source.getColor(index);
     resultSetBwd.init(&indicesBwd[0], &sqrDistBwd[0]);

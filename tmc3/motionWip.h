@@ -90,7 +90,8 @@ void encode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize);
+  int log2MotionBlkSize,
+  bool recolor = false);
 
 void extracPUsubtree(
   const GeometryParameterSet::Motion& param,
@@ -110,7 +111,8 @@ void decode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize);
+  int log2MotionBlkSize,
+  bool recolor = false);
 
   //============================================================================
 
@@ -148,6 +150,14 @@ struct MSOctree {
   int
   nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, uint32_t depthMax = UINT32_MAX) const;
 
+  inline
+  int
+  iNearestNeighbour_updateDMax(const point_t& pos, int32_t& d_max, uint32_t depthMax = UINT32_MAX) const;
+
+  inline
+  int
+  iApproxNearestNeighbourAttr(const point_t& pos) const;
+
   std::tuple<int, int, int>
   nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax = UINT32_MAX) const;
 
@@ -179,9 +189,20 @@ struct MSOctree {
     PCCPointSet3* compensatedPointCloud,
     uint32_t depthMax = UINT32_MAX
   ) const;
+
   int
   nodeIdx(point_t nodePos0, uint32_t nodeSizeLog2) const;
-private:
+
+  void
+  apply_recolor_motion(
+    point_t Mvd,
+    PCCOctree3Node* node0,
+    const GeometryParameterSet::Motion& param,
+    int nodeSizeLog2,
+    PCCPointSet3& pointCloud,
+    uint32_t depthMax = UINT32_MAX
+  ) const;
+
   mutable ringbuf<int> a; // for search
   mutable ringbuf<int> b; // for search
 };

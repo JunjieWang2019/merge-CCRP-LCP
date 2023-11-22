@@ -116,29 +116,36 @@ AttributeInterPredParams::findMotion(
       gbh.trisoupNodeSizeLog2(gps)));
   motionPUTrees.clear();
 
-  auto nodeLevelStart = mSOctreeCurr.nodes.begin();
-  while (nodeLevelStart != mSOctreeCurr.nodes.end() && nodeLevelStart->sizeMinus1 != gps.motion.motion_block_size - 1)
-    nodeLevelStart++;
+  auto& fifo = mSOctreeCurr.a;
+  fifo.clear();
+  fifo.push(0);
 
-  auto nodeLevelEnd = nodeLevelStart;
-  while (nodeLevelEnd != mSOctreeCurr.nodes.end() &&  nodeLevelEnd->sizeMinus1 == gps.motion.motion_block_size - 1)
-    nodeLevelEnd++;
+  while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > gps.motion.motion_block_size - 1) {
+    auto& node = mSOctreeCurr.nodes[fifo.front()];
+    for(int i = 0; i < 8; ++i)
+        if (node.child[i])
+          fifo.push_back(node.child[i]);
+    fifo.pop_front();
+  }
 
-  int nodeSizeLog2 = ilog2(uint32_t(gps.motion.motion_block_size));
-
-  motionPUTrees.resize(std::distance(nodeLevelStart, nodeLevelEnd));
-
+  motionPUTrees.resize(fifo.size());
   // build root PU_trees
-  for (auto it = nodeLevelStart; it != nodeLevelEnd; ++it) {
+  const int nodeSizeLog2 = ilog2(uint32_t(gps.motion.motion_block_size));
+  int i = 0;
+  while (!fifo.empty()) {
+    auto& node = mSOctreeCurr.nodes[fifo.front()];
+
     PCCOctree3Node node0;
-    node0.start = it->start;
-    node0.end = it->end;
-    node0.pos = it->pos0 >> nodeSizeLog2;
-    node0.mSOctreeNodeIdx = mSOctreeCurr.nodeIdx(it->pos0, nodeSizeLog2);
-    int i = std::distance(nodeLevelStart, it);
+    node0.start = node.start;
+    node0.end = node.end;
+    node0.pos = node.pos0 >> nodeSizeLog2;
+    node0.mSOctreeNodeIdx = mSOctreeCurr.nodeIdx(node.pos0, nodeSizeLog2);//fifo.front();
     node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, motion, nodeSizeLog2,
         &arithmeticEncoder, &motionPUTrees[i].first, true);
-    motionPUTrees[i].second = it;
+    motionPUTrees[i].second = fifo.front();
+
+    fifo.pop_front();
+    ++i;
   }
 }
 
@@ -147,13 +154,15 @@ AttributeInterPredParams::findMotion(
 void
 AttributeInterPredParams::encodeMotionAndBuildCompensated(
   const GeometryParameterSet& gps,
-  EntropyEncoder& arithmeticEncoder
+  EntropyEncoder& arithmeticEncoder,
+  bool mcap_to_rec_geom_flag
 ) {
   MSOctree& mSOctree = mSOctreeRef;
 
   int log2MotionBlockSize = 0; // unused
 
-  compensatedPointCloud.clear();
+  if (!mcap_to_rec_geom_flag)
+    compensatedPointCloud.clear();
 
   // dirty hack
   auto motion = gps.motion;
@@ -167,19 +176,19 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
     nextLevelPUTrees.reserve(currentPUTrees.size());
     int childSizeLog2 = nodeSizeLog2 - 1;
     for (int i = 0; i < currentPUTrees.size(); ++i) {
-      auto it = currentPUTrees[i].second;
+      auto& node = mSOctreeCurr.nodes[currentPUTrees[i].second];
       PCCOctree3Node node0;
-      node0.start = it->start;
-      node0.end = it->end;
-      node0.pos = it->pos0 >> nodeSizeLog2;
+      node0.start = node.start;
+      node0.end = node.end;
+      node0.pos = node.pos0 >> nodeSizeLog2;
       node0.isCompensated = false;
-      assert((1 << nodeSizeLog2) - 1 == it->sizeMinus1);
+      assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
       auto& local_PU_tree = currentPUTrees[i].first;
 
       encode_splitPU_MV_MC(mSOctree,
         &node0, &local_PU_tree, motion, nodeSizeLog2,
         &arithmeticEncoder, &compensatedPointCloud,
-        log2MotionBlockSize);
+        log2MotionBlockSize, mcap_to_rec_geom_flag);
 
       if (!node0.isCompensated && 1 << childSizeLog2 >= gps.motion.motion_min_pu_size_color) {
         node0.pos_fs = 1;
@@ -192,7 +201,7 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
             assert(1 << childSizeLog2 >= gps.motion.motion_min_pu_size_color);
             // populated
             nextLevelPUTrees.emplace_back(
-              std::make_pair(PUtree(), mSOctreeCurr.nodes.begin() + it->child[j]));
+              std::make_pair(PUtree(), int(node.child[j])));
             extracPUsubtree(
               motion, &local_PU_tree, 1 << childSizeLog2, node0.pos_fs,
               node0.pos_fp, node0.pos_MV, &nextLevelPUTrees.back().first);
@@ -229,64 +238,64 @@ AttributeInterPredParams::prepareDecodeMotion(
 void
 AttributeInterPredParams::decodeMotionAndBuildCompensated(
   const GeometryParameterSet& gps,
-  EntropyDecoder& arithmeticDecoder
+  EntropyDecoder& arithmeticDecoder,
+  bool mcap_to_rec_geom_flag
 ) {
   MSOctree& mSOctree = mSOctreeRef;
 
   int log2MotionBlockSize = 0; // unused
 
-  compensatedPointCloud.clear();
+  if (!mcap_to_rec_geom_flag)
+    compensatedPointCloud.clear();
 
   // dirty hack
   auto motion = gps.motion;
   motion.motion_min_pu_size = motion.motion_min_pu_size_color;
 
-  auto nodeLevelStart = mSOctreeCurr.nodes.begin();
-  while (nodeLevelStart != mSOctreeCurr.nodes.end() && nodeLevelStart->sizeMinus1 != gps.motion.motion_block_size - 1)
-    nodeLevelStart++;
+  auto& fifo = mSOctreeCurr.a;
+  auto& fifo_next = mSOctreeCurr.b;
+  fifo.clear();
+  fifo.push(0);
 
-  auto nodeLevelEnd = nodeLevelStart;
-  while (nodeLevelEnd != mSOctreeCurr.nodes.end() &&  nodeLevelEnd->sizeMinus1 == gps.motion.motion_block_size - 1)
-    nodeLevelEnd++;
+  while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > gps.motion.motion_block_size - 1) {
+    auto& node = mSOctreeCurr.nodes[fifo.front()];
+    for(int i = 0; i < 8; ++i)
+        if (node.child[i])
+          fifo.push_back(node.child[i]);
+    fifo.pop_front();
+  }
 
   int nodeSizeLog2 = ilog2(uint32_t(gps.motion.motion_block_size));
 
-  std::vector<decltype(nodeLevelStart)> currentPUTrees(std::distance(nodeLevelStart, nodeLevelEnd));
-  // build root PU_trees
-  for (auto it = nodeLevelStart; it != nodeLevelEnd; ++it) {
-    int i = std::distance(nodeLevelStart, it);
-    currentPUTrees[i] = it;
-  }
+  while(1 << nodeSizeLog2 >= gps.motion.motion_min_pu_size_color) {
+    fifo_next.clear();
+    while (!fifo.empty()) {
+      // coding (in morton order for simpler test)
+      auto& node = mSOctreeCurr.nodes[fifo.front()];
 
-  while (currentPUTrees.size()) {
-    // coding (in morton order for simpler test)
-    decltype(currentPUTrees) nextLevelPUTrees;
-    nextLevelPUTrees.reserve(currentPUTrees.size());
-    for (int i = 0; i < currentPUTrees.size(); ++i) {
-      auto it = currentPUTrees[i];
       PCCOctree3Node node0;
-      node0.start = it->start;
-      node0.end = it->end;
-      node0.pos = it->pos0 >> nodeSizeLog2;
+      node0.start = node.start;
+      node0.end = node.end;
+      node0.pos = node.pos0 >> nodeSizeLog2;
       node0.isCompensated = false;
-      assert((1 << nodeSizeLog2) - 1 == it->sizeMinus1);
+      assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
 
       decode_splitPU_MV_MC(mSOctree,
         &node0, motion, nodeSizeLog2,
         &arithmeticDecoder, &compensatedPointCloud,
-        log2MotionBlockSize);
+        log2MotionBlockSize, mcap_to_rec_geom_flag);
 
       if (!node0.isCompensated && 1 << (nodeSizeLog2-1) >= gps.motion.motion_min_pu_size_color) {
-        for (int j = 0; j < 8; ++j) {
-          if (it->child[j]) {
+        for (int i = 0; i < 8; ++i) {
+          if (node.child[i]) {
             // populated
-            nextLevelPUTrees.emplace_back(mSOctreeCurr.nodes.begin() + it->child[j]);
+            fifo_next.push_back(node.child[i]);
           }
         }
       }
+      fifo.pop_front();
     }
-    currentPUTrees.clear();
-    std::swap(currentPUTrees, nextLevelPUTrees);
+    std::swap(fifo, fifo_next);
     nodeSizeLog2--;
   }
 }

@@ -74,6 +74,13 @@ public:
 
   //-------------------------------------------------------------------------
 
+  ring_iterator(ring_iterator&&) = default;
+  ring_iterator(const ring_iterator&) = default;
+  ring_iterator() = default;
+  ring_iterator& operator =(ring_iterator&&) = default;
+
+  //-------------------------------------------------------------------------
+
   explicit ring_iterator(T* base, size_t max, const iterator* start)
     : base_(base), max_(max), idx_(), start_(start)
   {}

@@ -64,8 +64,10 @@ struct AttributeInterPredParams {
   PCCPointSet3 compensatedPointCloud;
   int frameDistance;
   bool enableAttrInterPred;
+#if 0
   int getPointCount() const { return referencePointCloud.getPointCount(); }
   void clear() { referencePointCloud.clear(); }
+#endif
   bool hasLocalMotion() const { return compensatedPointCloud.getPointCount() > 0; }
 
   void findMotion(
@@ -77,7 +79,8 @@ struct AttributeInterPredParams {
 
   void encodeMotionAndBuildCompensated(
     const GeometryParameterSet& gps,
-    EntropyEncoder& arithmeticEncoder
+    EntropyEncoder& arithmeticEncoder,
+    bool mcap_to_rec_geom_flag
   );
 
   void prepareDecodeMotion(
@@ -88,11 +91,12 @@ struct AttributeInterPredParams {
 
   void decodeMotionAndBuildCompensated(
     const GeometryParameterSet& gps,
-    EntropyDecoder& arithmeticDecoder
+    EntropyDecoder& arithmeticDecoder,
+    bool mcap_to_rec_geom_flag
   );
 protected:
   MSOctree mSOctreeCurr;
-  std::vector<std::pair<PUtree,std::vector<MSOctree::MSONode>::iterator> > motionPUTrees;
+  std::vector<std::pair<PUtree, int> > motionPUTrees;
 };
 
 //----------------------------------------------------------------------------

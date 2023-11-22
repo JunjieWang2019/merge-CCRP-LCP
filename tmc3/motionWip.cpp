@@ -472,7 +472,8 @@ encode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize)
+  int log2MotionBlkSize,
+  bool recolor)
 {
   const int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
@@ -489,7 +490,11 @@ encode_splitPU_MV_MC(
 
     point_t MVd = MV;
 
-    mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+    if (!recolor) {
+      mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+    } else {
+      mSOctree.apply_recolor_motion(MVd, node0, param, nodeSizeLog2[0], *compensatedPointCloud, mSOctree.depth);
+    }
     node0->isCompensated = true;
     return;
   }
@@ -508,7 +513,8 @@ decode_splitPU_MV_MC(
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize)
+  int log2MotionBlkSize,
+  bool recolor)
 {
   int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyDecoder motionDecoder(arithmeticDecoder);
@@ -525,7 +531,12 @@ decode_splitPU_MV_MC(
     motionDecoder.decodeVector(&MV);
     MVd = MV;
 
-    mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+    if (!recolor) {
+      mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+    } else {
+      mSOctree.apply_recolor_motion(MVd, node0, param, nodeSizeLog2[0], *compensatedPointCloud, mSOctree.depth);
+    }
+
     node0->isCompensated = true;
     return;
   }
@@ -534,6 +545,13 @@ decode_splitPU_MV_MC(
 }
 
 //============================================================================
+
+struct MSOctreeStackElt {
+  MSOctreeStackElt(int32_t nodeIdx, int32_t childIdx)
+    : nodeIdx(nodeIdx), childIdx(childIdx) {}
+  int32_t nodeIdx;
+  int32_t childIdx;
+};
 
 MSOctree::MSOctree(
     PCCPointSet3* predPointCloud,
@@ -564,18 +582,25 @@ MSOctree::MSOctree(
   node00.start = uint32_t(0);
   node00.end = uint32_t(pointCloud.getPointCount());
   node00.pos0 = point_t{0} + offsetOrigin;
+  node00.parent = 0;
   node00.sizeMinus1 = int32_t((1 << maxDepth) - 1);
 
-  uint32_t nodesCurrNode = 0;
-  for (int currDepth = 0; currDepth < depth; ++currDepth) {
-    const uint32_t nodesCurrLvlEnd = nodes.size();
+  // constructing depth first might be better for memory
+  std::vector<MSOctreeStackElt> stack;
+  stack.reserve(32);
+
+  stack.push_back(MSOctreeStackElt(0,-1));
+
+  while (!stack.empty()) {
+    auto& curr = stack.back();
+
+    const int currDepth = stack.size() - 1;
     const int childSizeLog2 = maxDepth - currDepth - 1;
     const int pointSortMask = 1 << childSizeLog2;
     const int childSizeMinus1 = pointSortMask - 1;
 
-    for (; nodesCurrNode != nodesCurrLvlEnd; ++nodesCurrNode) {
-      MSONode& node0 = nodes[nodesCurrNode];
-
+    if (curr.childIdx == -1) {
+      MSONode& node0 = nodes[curr.nodeIdx]; // adress may be invalidated after emplace_back....
       std::array<int32_t, 8> childCounts = {};
 
       countingSort(
@@ -588,26 +613,48 @@ MSOctree::MSOctree(
             | (!!(int(point[0]) & pointSortMask) << 2);
         });
 
+      int32_t childNodeIdx = nodes.size();
+      for (int i = 0; i < 8; ++i) {
+        if (childCounts[i]) {
+          node0.child[i] = childNodeIdx++;
+        }
+      }
+      // create child nodes
       uint32_t childStart = node0.start;
       auto pos0 = node0.pos0;
       for (int i = 0; i < 8; ++i) {
         if (childCounts[i]) {
-          node0.child[i] = nodesCurrLvlEnd + nodesNext.size();
-          nodesNext.emplace_back();
-          MSONode& child0 = nodesNext.back();
+          nodes.emplace_back(); // node0 may be invalidated after that
+          MSONode& child0 = nodes.back();
           uint32_t childEnd = childStart + childCounts[i];
           child0.start = childStart;
           child0.end = childEnd;
           childStart = childEnd;
           child0.pos0 = pos0 + (Vec3<int32_t>{i >> 2, (i >> 1) & 1, i & 1} << childSizeLog2);
           child0.sizeMinus1 = childSizeMinus1;
-          child0.parent = nodesCurrNode;
+          child0.parent = curr.nodeIdx;
         }
       }
+
+      if (currDepth == depth-1) {
+        stack.pop_back();
+        continue;
+      }
+      curr.childIdx = 0;
     }
-    nodes.insert(
-      nodes.end(), nodesNext.begin(), nodesNext.end());
-    nodesNext.clear();
+
+    MSONode& node0 = nodes[curr.nodeIdx];
+
+    while (curr.childIdx < 8 && !node0.child[curr.childIdx])
+      curr.childIdx++;
+
+    if (curr.childIdx < 8) {
+      stack.push_back(MSOctreeStackElt(node0.child[curr.childIdx], -1));
+      curr.childIdx++;
+    }
+    else {
+      stack.pop_back();
+    }
   }
 
   // now everything is built, we can offset the points
@@ -623,6 +670,14 @@ MSOctree::MSOctree(
 
 int
 MSOctree::nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, uint32_t depthMax) const {
+  return iNearestNeighbour_updateDMax(pos, d_max, depthMax);
+}
+
+//----------------------------------------------------------------------------
+
+inline
+int
+MSOctree::iNearestNeighbour_updateDMax(const point_t& pos, int32_t& d_max, uint32_t depthMax) const {
   depthMax = std::min(depth, depthMax);
 
   const MSONode* node = &nodes[0];
@@ -674,6 +729,77 @@ MSOctree::nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, uint32_t dept
 
   if (local_d_max < d_max)
     d_max = local_d_max;
+
+  return nearestIdx;
+}
+
+//----------------------------------------------------------------------------
+
+inline
+int
+MSOctree::iApproxNearestNeighbourAttr(const point_t& pos) const {
+  const int depthMax = depth;
+  int32_t nodeIdx = 0;
+  const MSONode* node = &nodes[nodeIdx];
+  int currDepth = 0;
+  int pointChildMask = 1 << maxDepth - 1;
+  const point_t posOf = pos - offsetOrigin;
+  for (; currDepth < depthMax; ++currDepth) {
+    const int childIdx
+      = (!!((posOf[2]) & pointChildMask))
+      | (!!((posOf[1]) & pointChildMask) << 1)
+      | (!!((posOf[0]) & pointChildMask) << 2);
+
+    if (!node->child[childIdx])
+      break;
+
+    nodeIdx = node->child[childIdx];
+    node = &nodes[nodeIdx];
+    pointChildMask >>= 1;
+  }
+
+  for (; currDepth < depthMax; ++currDepth) {
+    int d_min = INT32_MAX;
+    int i_min;
+    for(int i = 0; i < 8; ++i)
+      if (node->child[i]) {
+        const MSONode& child = nodes[node->child[i]];
+
+        const auto dPos0 = child.pos0 - pos;
+        const auto dPos1 = child.sizeMinus1 + dPos0;
+        int local_d_min
+          = (dPos0[0] > 0 ? dPos0[0] : 0)
+          + (dPos0[1] > 0 ? dPos0[1] : 0)
+          + (dPos0[2] > 0 ? dPos0[2] : 0)
+          - (dPos1[0] < 0 ? dPos1[0] : 0)
+          - (dPos1[1] < 0 ? dPos1[1] : 0)
+          - (dPos1[2] < 0 ? dPos1[2] : 0);
+
+        if (local_d_min < d_min) {
+          d_min = local_d_min;
+          i_min = i;
+        }
+      }
+    const int childNodeIdx = node->child[i_min];
+    nodeIdx = childNodeIdx;
+    node = &nodes[childNodeIdx];
+  }
+
+  int32_t d_max = INT32_MAX;
+
+  int nearestIdx = node->start;
+
+  for (int i = node->start; i < node->end; ++i) {
+    auto dPoint = pos - (*pointCloud)[i];
+    int32_t d
+      = std::abs(dPoint[0])
+      + std::abs(dPoint[1])
+      + std::abs(dPoint[2]);
+    if (d < d_max) {
+      d_max = d;
+      nearestIdx = i;
+    }
+  }
 
   return nearestIdx;
 }
@@ -1407,7 +1533,22 @@ MSOctree::apply_motion(
     predPoint[1] -= MVd[1];
     predPoint[2] -= MVd[2];
   }
+}
 
+void
+MSOctree::apply_recolor_motion(
+  point_t Mvd,
+  PCCOctree3Node* node0,
+  const GeometryParameterSet::Motion& param,
+  int nodeSizeLog2,
+  PCCPointSet3& pointCloud,
+  uint32_t depthMax) const
+{
+  for (int i = node0->start; i < node0->end; ++i) {
+    auto p = pointCloud[i];
+    int nearestPointIdx = iApproxNearestNeighbourAttr(p + Mvd);
+    pointCloud.setColor(i, this->pointCloud->getColor(nearestPointIdx));
+ }
 }
 
 //----------------------------------------------------------------------------
