@@ -543,6 +543,9 @@ MSOctree::MSOctree(
   , offsetOrigin(offsetOrigin)
 {
   PCCPointSet3& pointCloud(*this->pointCloud);
+  if (!pointCloud.size())
+    return;
+
   std::vector<MSONode> nodesNext;
   nodes.reserve(pointCloud.size());
   nodesNext.reserve(pointCloud.size());
@@ -610,26 +613,31 @@ MSOctree::MSOctree(
   for (int i=0; i < pointCloud.size(); ++i) {
     pointCloud[i] += offsetOrigin;
   }
+
+  a = ringbuf<int>(nodes.size());
+  b = ringbuf<int>(nodes.size());
 }
 
 //----------------------------------------------------------------------------
 
-int32_t
-MSOctree::nearestNeighbour_estimateDMax(point_t pos, int32_t d_max, uint32_t depthMax) const {
+int
+MSOctree::nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, uint32_t depthMax) const {
   depthMax = std::min(depth, depthMax);
 
   const MSONode* node = &nodes[0];
-  for (int currDepth = 0; currDepth < depthMax; ++currDepth) {
+  const point_t posOf = pos - offsetOrigin;
+  int currDepth = 0;
+  //TODO: Shall we check posOf is within the root node? (positive and lower than 1<<maxDepth)
+  for (; currDepth < depthMax; ++currDepth) {
     const int childSizeLog2 = maxDepth - currDepth - 1;
     const int pointChildMask = 1 << childSizeLog2;
     const int childIdx
-      = (!!((pos[2]+offsetOrigin[2]) & pointChildMask))
-      | (!!((pos[1]+offsetOrigin[1]) & pointChildMask) << 1)
-      | (!!((pos[0]+offsetOrigin[0]) & pointChildMask) << 2);
+      = (!!((posOf[2]) & pointChildMask))
+      | (!!((posOf[1]) & pointChildMask) << 1)
+      | (!!((posOf[0]) & pointChildMask) << 2);
 
     if (!node->child[childIdx])
       break;
-
     node = &nodes[node->child[childIdx]];
   }
 
@@ -640,17 +648,45 @@ MSOctree::nearestNeighbour_estimateDMax(point_t pos, int32_t d_max, uint32_t dep
     + std::max(std::abs(dPos0[1]), std::abs(dPos1[1]))
     + std::max(std::abs(dPos0[2]), std::abs(dPos1[2]));
 
+  int nearestIdx = -1;
+
+  if (currDepth >= depthMax) {
+    const int local_d_min = std::min(std::min(
+      std::min(std::abs(dPos0[0]), std::abs(dPos1[0])),
+      std::min(std::abs(dPos0[1]), std::abs(dPos1[1]))),
+      std::min(std::abs(dPos0[2]), std::abs(dPos1[2])));
+    int d_max_min = local_d_min;
+    for (int i = node->start; i < node->end; ++i) {
+      auto dPoint = pos - (*pointCloud)[i];
+      int32_t d
+        = std::abs(dPoint[0])
+        + std::abs(dPoint[1])
+        + std::abs(dPoint[2]);
+      if (d < local_d_max)
+        local_d_max = d;
+      if (d < d_max_min) {
+        d_max_min = d;
+        nearestIdx = i;
+      }
+    }
+  }
+
   if (local_d_max < d_max)
     d_max = local_d_max;
 
-  return d_max;
+  return nearestIdx;
 }
 
 //----------------------------------------------------------------------------
 
 std::tuple<int, int, int>
 MSOctree::nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax) const {
+  auto &fifo = a;
+  auto& fifo_d_min = b;
+  fifo.clear();
+  fifo_d_min.clear();
   fifo.push(0);
+  fifo_d_min.push(0);
   int32_t d_min = d_max;
   int32_t local_d_max;
   int nearest_node_idx = -1;
@@ -661,15 +697,7 @@ MSOctree::nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax) const 
   while (!fifo.empty() && nodes[fifo.front()].sizeMinus1 != minSizeMinus1) {
     const MSONode& node = nodes[fifo.front()];
 
-    const auto dPos0 = node.pos0 - pos;
-    const auto dPos1 = node.sizeMinus1 + dPos0;
-    d_min
-      = (dPos0[0] > 0 ? dPos0[0] : 0)
-      + (dPos0[1] > 0 ? dPos0[1] : 0)
-      + (dPos0[2] > 0 ? dPos0[2] : 0)
-      - (dPos1[0] < 0 ? dPos1[0] : 0)
-      - (dPos1[1] < 0 ? dPos1[1] : 0)
-      - (dPos1[2] < 0 ? dPos1[2] : 0);
+    d_min = fifo_d_min.front();
 
     if (d_min <= d_max) {
       /*if (d_min) {
@@ -699,37 +727,59 @@ MSOctree::nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax) const 
             fifo.push(node.child[i]);
       }
       else*/
+
       for(int i = 0; i < 8; ++i)
-        if (node.child[i])
-          fifo.push(node.child[i]);
+        if (node.child[i]) {
+          const MSONode& child = nodes[node.child[i]];
 
-      local_d_max
-        = std::max(std::abs(dPos0[0]), std::abs(dPos1[0]))
-        + std::max(std::abs(dPos0[1]), std::abs(dPos1[1]))
-        + std::max(std::abs(dPos0[2]), std::abs(dPos1[2]));
+          const auto dPos0 = child.pos0 - pos;
+          const auto dPos1 = child.sizeMinus1 + dPos0;
+          d_min
+            = (dPos0[0] > 0 ? dPos0[0] : 0)
+            + (dPos0[1] > 0 ? dPos0[1] : 0)
+            + (dPos0[2] > 0 ? dPos0[2] : 0)
+            - (dPos1[0] < 0 ? dPos1[0] : 0)
+            - (dPos1[1] < 0 ? dPos1[1] : 0)
+            - (dPos1[2] < 0 ? dPos1[2] : 0);
 
-      d_max = local_d_max < d_max ? local_d_max : d_max;
+          if (d_min <= d_max) {
+            fifo.push(node.child[i]);
+            fifo_d_min.push(d_min);
+
+            local_d_max
+              = std::max(std::abs(dPos0[0]), std::abs(dPos1[0]))
+              + std::max(std::abs(dPos0[1]), std::abs(dPos1[1]))
+              + std::max(std::abs(dPos0[2]), std::abs(dPos1[2]));
+
+            d_max = local_d_max < d_max ? local_d_max : d_max;
+          }
+        }
     }
 
     fifo.pop();
+    fifo_d_min.pop();
   }
   local_d_max = d_max + 1; // to get point if d_max = min(d)
   while(!fifo.empty()) {
     const MSONode& node = nodes[fifo.front()];
+    d_min = fifo_d_min.front();
 
-    for (int i = node.start; i < node.end; ++i) {
-      auto dPoint = pos - (*pointCloud)[i];
-      int32_t d
-        = std::abs(dPoint[0])
-        + std::abs(dPoint[1])
-        + std::abs(dPoint[2]);
-      if (d < local_d_max) {
-        local_d_max = d;
-        nearest_node_idx = fifo.front();
-        nearest_point_idx = i;
+    if (d_min < local_d_max) {
+      for (int i = node.start; i < node.end; ++i) {
+        auto dPoint = pos - (*pointCloud)[i];
+        int32_t d
+          = std::abs(dPoint[0])
+          + std::abs(dPoint[1])
+          + std::abs(dPoint[2]);
+        if (d < local_d_max) {
+          local_d_max = d;
+          nearest_node_idx = fifo.front();
+          nearest_point_idx = i;
+        }
       }
     }
     fifo.pop();
+    fifo_d_min.pop();
   }
   if (local_d_max < d_max)
     d_max = local_d_max;
@@ -740,6 +790,8 @@ MSOctree::nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax) const 
 
 std::tuple<std::queue<uint32_t>, int>
 MSOctree::nearestNodes(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2) const {
+  auto& fifo = a;
+  fifo.clear();
   fifo.push(0);
   int32_t d_min = d_max;
   int32_t local_d_max;
@@ -816,6 +868,8 @@ MSOctree::nearestNodes(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2)
 
 std::tuple<uint32_t, int>
 MSOctree::nearestNode(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2) const {
+  auto& fifo = a;
+  fifo.clear();
   fifo.push(0);
   int32_t d_min = d_max;
   uint32_t nearest_node_idx = 0;
@@ -926,16 +980,19 @@ MSOctree::find_motion(
   for (int Nb = 0, idx = 0; Nb < Block0.size(); Nb += jumpBlock, ++idx) {
     int32_t d_max = INT32_MAX;
     auto p = Block0[Nb];
-    if(idx > 0) {
-      auto offset = Block0[Nb] - Block0[Nb - jumpBlock];
-      d_max = min_d0[idx - 1] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]);
+    int nearestNodeIdx, nearestPointIdx = -1, min_d;
+    d_max = INT32_MAX;
+    nearestPointIdx = nearestNeighbour_updateDMax(p + V0, d_max);
+    if(nearestPointIdx < 0) {
+      if(idx > 0) {
+        auto offset = Block0[Nb] - Block0[Nb - jumpBlock];
+        d_max = std::min(d_max, min_d0[idx - 1] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]));
+      }
+      std::tie(nearestNodeIdx, nearestPointIdx, min_d) = nearestNeighbour(p + V0, d_max, depth);
+      assert(nearestNodeIdx >= 0 && nearestPointIdx >= 0);
+    } else {
+      min_d = d_max;
     }
-    else {
-      d_max = nearestNeighbour_estimateDMax(p + V0, d_max);
-    }
-    int nearestNodeIdx, nearestPointIdx, min_d;
-    std::tie(nearestNodeIdx, nearestPointIdx, min_d) = nearestNeighbour(p + V0, d_max, depth);
-    assert(nearestNodeIdx >= 0 && nearestPointIdx >= 0);
 
     int dColor_forMinD = 0;
     if (Block0.hasColors()) {
@@ -984,16 +1041,18 @@ MSOctree::find_motion(
       auto p = Block0[Nb];
       auto offset = V0 - VPrev;
       d_max = min_dTmp[idx] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]);
-      if(idx > 0) {
-        auto offset = Block0[Nb] - Block0[Nb - jumpBlock];
-        d_max = std::min(d_max, min_dTmp[idx - 1] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]));
+      int nearestNodeIdx, nearestPointIdx = -1, min_d;
+      nearestPointIdx = nearestNeighbour_updateDMax(p + V0, d_max);
+      if (nearestPointIdx < 0) {
+        if(idx > 0) {
+          auto offset = Block0[Nb] - Block0[Nb - jumpBlock];
+          d_max = std::min(d_max, min_dTmp[idx - 1] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]));
+        }
+        std::tie(nearestNodeIdx, nearestPointIdx, min_d) = nearestNeighbour(p + V0, d_max, depth);
+        assert(nearestNodeIdx >= 0 && nearestPointIdx >= 0);
+      } else {
+        min_d = d_max;
       }
-      else {
-        d_max = std::min(d_max, nearestNeighbour_estimateDMax(p + V0, d_max));
-      }
-      int nearestNodeIdx, nearestPointIdx, min_d;
-      std::tie(nearestNodeIdx, nearestPointIdx, min_d) = nearestNeighbour(p + V0, d_max, depth);
-      assert(nearestNodeIdx >= 0 && nearestPointIdx >= 0);
 
       int dColor_forMinD = 0;
       if (Block0.hasColors()) {
@@ -1066,16 +1125,18 @@ MSOctree::find_motion(
         auto p = Block0[Nb];
         auto offset = V;
         d_max = min_start[idx] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]);
-        if(idx > 0) {
-          auto offset = Block0[Nb] - Block0[Nb - jumpBlock];
-          d_max = std::min(d_max, min_dK[idx - 1] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]));
+        int nearestNodeIdx, nearestPointIdx = -1, min_d;
+        nearestPointIdx = nearestNeighbour_updateDMax(p + V0, d_max);
+        if (nearestPointIdx < 0) {
+          if(idx > 0) {
+            auto offset = Block0[Nb] - Block0[Nb - jumpBlock];
+            d_max = std::min(d_max, min_dK[idx - 1] + std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]));
+          }
+          std::tie(nearestNodeIdx, nearestPointIdx, min_d) = nearestNeighbour(p + V0, d_max, depth);
+          assert(nearestNodeIdx >= 0 && nearestPointIdx >= 0);
+        } else {
+          min_d = d_max;
         }
-        else {
-          d_max = std::min(d_max, nearestNeighbour_estimateDMax(p + V0, d_max));
-        }
-        int nearestNodeIdx, nearestPointIdx, min_d;
-        std::tie(nearestNodeIdx, nearestPointIdx, min_d) = nearestNeighbour(p + V0, d_max, depth);
-        assert(nearestNodeIdx >= 0 && nearestPointIdx >= 0);
 
         int dColor_forMinD = 0;
         if (Block0.hasColors()) {
@@ -1264,15 +1325,18 @@ MSOctree::apply_motion(
   PCCPointSet3* compensatedPointCloud,
   uint32_t depthMax) const
 {
+  auto &fifo = a;
   assert(fifo.empty());
-
+  fifo.clear();
   depthMax = std::min(depthMax, depth);
   const int32_t node0SizeMinus1 = (1 << nodeSizeLog2) - 1;
   const auto node0Pos0 = (node0->pos << nodeSizeLog2) + MVd;
   const auto node0Pos1 = node0Pos0 + node0SizeMinus1;
   const auto minNodeSizeMinus1 = (1 << maxDepth - depthMax) - 1;
 
-  std::queue<int> local;
+  auto &local = b;
+  assert(local.empty());
+  local.clear();
   int addedPointCount = 0;
 
   fifo.push(0);

@@ -45,6 +45,14 @@
 #include <queue>
 #include <tuple>
 
+#include <queue>
+#include <tuple>
+
+#include <queue>
+#include <tuple>
+
+#include "ringbuf.h"
+
 namespace pcc {
 
 //============================================================================
@@ -137,8 +145,8 @@ struct MSOctree {
   PCCPointSet3* pointCloud;
   std::vector<MSONode> nodes;
 
-  int32_t
-  nearestNeighbour_estimateDMax(point_t pos, int32_t d_max, uint32_t depthMax = UINT32_MAX) const;
+  int
+  nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, uint32_t depthMax = UINT32_MAX) const;
 
   std::tuple<int, int, int>
   nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax = UINT32_MAX) const;
@@ -171,7 +179,8 @@ struct MSOctree {
     uint32_t depthMax = UINT32_MAX
   ) const;
 private:
-  mutable std::queue<int> fifo; // for search
+  mutable ringbuf<int> a; // for search
+  mutable ringbuf<int> b; // for search
 };
 
 //----------------------------------------------------------------------------

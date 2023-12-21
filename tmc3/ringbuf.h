@@ -101,7 +101,7 @@ public:
   bool operator==(const iterator& other) const { return idx_ == other.idx_; }
   bool operator!=(const iterator& other) const { return !(*this == other); }
 
-  pointer operator->() const { return &base_[idx_]; }
+  //pointer operator->() const { return &base_[idx_]; }
 
   iterator operator++(int)
   {
@@ -331,10 +331,12 @@ public:
 
   //--------------------------------------------------------------------------
 
+  void push(const value_type& val) { emplace_back(val); }
   void push_back(const value_type& val) { emplace_back(val); }
 
   //--------------------------------------------------------------------------
 
+  void push(value_type&& val) { emplace_back(std::move(val)); }
   void push_back(value_type&& val) { emplace_back(std::move(val)); }
 
   //--------------------------------------------------------------------------
@@ -351,16 +353,17 @@ public:
   void pop_back()
   {
     --wr_it_;
-    wr_it_->~T();
+    (*wr_it_).~T();
   }
 
   //--------------------------------------------------------------------------
 
   void pop_front()
   {
-    rd_it_->~T();
+    (*rd_it_).~T();
     ++rd_it_;
   }
+  void pop() { pop_front(); }
 
   //--------------------------------------------------------------------------
 
@@ -385,9 +388,8 @@ public:
 
   void clear()
   {
-    while (!empty()) {
-      pop_front();
-    }
+    rd_it_ = iterator(buf_.get(), capacity_, &rd_it_);
+    wr_it_ = iterator(buf_.get(), capacity_, &rd_it_);
   }
 
   //--------------------------------------------------------------------------
