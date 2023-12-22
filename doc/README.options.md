@@ -358,6 +358,10 @@ a coding dependency on the previous slice.
 Controls the coding of bypass bins without any probability update; this 
 enables to reduce some complexity in coding the bypass bins. 
 
+### `--fasterMotionSearch=0|1`
+Controls the enabling of approximate nearest neighbor for faster motion
+search.
+
 Geometry coding
 ---------------
 

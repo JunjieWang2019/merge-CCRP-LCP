@@ -542,9 +542,11 @@ struct GeometryParameterSet {
   // inter
   struct Motion {
     int motion_block_size = 0;
-    int motion_window_size = 0;
     int motion_min_pu_size = 0;
     int motion_min_pu_size_color = 0;
+    // encoding parameters
+    // todo: move outside of GPS
+    int motion_window_size = 0;
     int motion_max_prefix_bits = 0;
     int motion_max_suffix_bits = 0;
     int Amotion0 = 0;
@@ -552,6 +554,7 @@ struct GeometryParameterSet {
     double lambda = 0.;
     double dgeom_color_factor = 0.;
     int decimate = 0;
+    bool approximate_nn = false;
   } motion;
 };
 

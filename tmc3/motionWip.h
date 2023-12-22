@@ -148,24 +148,19 @@ struct MSOctree {
   std::vector<MSONode> nodes;
 
   int
-  nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, uint32_t depthMax = UINT32_MAX) const;
+  nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, bool approximate = false) const;
 
   inline
   int
-  iNearestNeighbour_updateDMax(const point_t& pos, int32_t& d_max, uint32_t depthMax = UINT32_MAX) const;
+  iNearestNeighbour_updateDMax(const point_t& pos, int32_t& d_max) const;
+
+  inline
+  int
+  iApproximateNearestNeighbour_updateDMax(const point_t& pos, int32_t& d_max) const;
 
   inline
   int
   iApproxNearestNeighbourAttr(const point_t& pos) const;
-
-  std::tuple<int, int, int>
-  nearestNeighbour(point_t pos, int32_t d_max, uint32_t depthMax = UINT32_MAX) const;
-
-  std::tuple<std::queue<uint32_t>, int>
-  nearestNodes(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2) const;
-
-  std::tuple<uint32_t, int>
-  nearestNode(point_t node0Pos0, int32_t d_max, uint32_t node0SizeLog2) const;
 
   double
   find_motion(
