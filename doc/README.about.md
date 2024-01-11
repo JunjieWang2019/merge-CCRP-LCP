@@ -536,5 +536,5 @@ inter-frame coding in `mpeg-pcc-em13`.
 Bug reporting
 -------------
 Bugs should be reported on the issue tracker set up at
-<http://mpegx.int-evry.fr/software/MPEG/PCC/TM/mpeg-pcc-ges-tm/issues>.
+<https://git.mpeg.expert/MPEG/3dgh/g-pcc/software/tm/mpeg-pcc-ges-tm/-/issues>.
 
