@@ -805,6 +805,13 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
       && aps.rahtPredParams.prediction_enabled_flag) {
       bs.write(aps.rahtPredParams.prediction_skip1_flag);
       bs.write(aps.rahtPredParams.subnode_prediction_enabled_flag);
+      if (aps.rahtPredParams.enable_inter_prediction) {
+        bs.write(aps.rahtPredParams.enable_average_prediction);
+        if (aps.rahtPredParams.enable_average_prediction) {
+          bs.writeUe(aps.rahtPredParams.upper_mode_level_for_average_prediction);
+          bs.writeUe(aps.rahtPredParams.lower_mode_level_for_average_prediction);
+        }
+      }
       if (aps.rahtPredParams.subnode_prediction_enabled_flag) 
         for (int i = 0; i < 5; i++) 
           bs.writeUe(aps.rahtPredParams.prediction_weights[i]);
@@ -863,6 +870,10 @@ parseAps(const PayloadBuffer& buf)
   aps.attrInterPredictionEnabled = false;
   aps.dual_motion_field_flag = false;
   aps.mcap_to_rec_geom_flag = false;
+  aps.rahtPredParams.enable_average_prediction = false;
+  aps.rahtPredParams.upper_mode_level_for_average_prediction = 0;
+  aps.rahtPredParams.lower_mode_level_for_average_prediction = 0;
+
   if (aps_extension_flag) {
     bs.read(&aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
@@ -876,6 +887,13 @@ parseAps(const PayloadBuffer& buf)
       && aps.rahtPredParams.prediction_enabled_flag) {
       bs.read(&aps.rahtPredParams.prediction_skip1_flag);
       bs.read(&aps.rahtPredParams.subnode_prediction_enabled_flag);
+      if (aps.rahtPredParams.enable_inter_prediction) {
+        bs.read(&aps.rahtPredParams.enable_average_prediction);
+        if (aps.rahtPredParams.enable_average_prediction) {
+          bs.readUe(&aps.rahtPredParams.upper_mode_level_for_average_prediction);
+          bs.readUe(&aps.rahtPredParams.lower_mode_level_for_average_prediction);
+        }
+      }
       if (aps.rahtPredParams.subnode_prediction_enabled_flag) {
         aps.rahtPredParams.prediction_weights.resize(5);
         for (int i = 0; i < 5; i++)

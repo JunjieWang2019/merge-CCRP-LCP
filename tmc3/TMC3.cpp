@@ -971,6 +971,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
      params_attr.aps.rahtPredParams.raht_enable_inter_intra_layer_RDO, true,
      "Controls the use of RDO and signaling for layer inter mode selection")
 
+   ("rahtAveragePredictionEnabled",
+    params_attr.aps.rahtPredParams.enable_average_prediction, true,
+    "Controls the use of transform-domain average prediction")
+
   ("rahtModeLevel",
     params_attr.aps.rahtPredParams.mode_level, 2,
     "Level to start using the prediction mode")
@@ -978,6 +982,16 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("rahtUpperModeLevel",
     params_attr.aps.rahtPredParams.upper_mode_level, 4,
     "Upper level to start signaling the prediction mode")
+
+  ("rahtUpperModeLevelAverage",
+    params_attr.aps.rahtPredParams.upper_mode_level_for_average_prediction, 1,
+    "Upper level to enabling average prediction, "
+    "relative to rahtModeLevel (added)")
+
+  ("rahtLowerModeLevelAverage",
+    params_attr.aps.rahtPredParams.lower_mode_level_for_average_prediction, 1,
+    "Lower level to enabling average prediction, "
+    "relative to rahtModelLevel (subtracted)")
 
   ("qp",
     // NB: this is adjusted with minus 4 after the arguments are parsed

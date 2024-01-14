@@ -44,8 +44,10 @@ namespace pcc {
 class FixedPoint {
 public:
   // Number of fractional bits in fixed point representation
-  static const int kFracBits = 15;
-  static const int kOneHalf = 1 << (kFracBits - 1);
+  static constexpr int kFracBits = 15;
+  static constexpr int kOneHalf = 1 << (kFracBits - 1);
+  static constexpr int kDecMask = ((1 << kFracBits) - 1);
+  static constexpr int kIntMask = ~kDecMask;
 
   // Fixed point value
   int64_t val;

@@ -656,11 +656,24 @@ from motion compensated reference frame.
 Controls the use of RDO and signaling for layer inter mode selection
 for RAHT.
 
+### `--rahtAveragePredictionEnabled=0|1`
+Controls the use of transform-domain average prediction with RAHT.
+
 ### `--rahtModeLevel=INT-VALUE`
 Controls the RAHT level from which the prediction mode is used.
 
 ### `--rahtUpperModeLevel=INT-VALUE`
 Controls the RAHT upper level from which the prediction mode is signaled.
+
+### `--rahtUpperModeLevelAverage=INT-VALUE`
+Controls the RAHT upper level to which the prediction is using
+average prediction. It is relative to `rahtModeLevel` and is added
+to it.
+
+### `--rahtLowerModeLevelAverage=INT-VALUE`
+Controls the RAHT lower level from which the prediction is using
+average prediction. It is relative to `rahtModeLevel` and is subtracted
+from it.
 
 ### `--qp=INT-VALUE`
 Attribute's luma quantization parameter.

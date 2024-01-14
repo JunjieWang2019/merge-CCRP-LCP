@@ -159,12 +159,21 @@ translateLayer(
 
 namespace attr {
   Mode getNeighborsMode(
+    const bool& isEncoder,
     const int parentNeighIdx[19],
-    const std::vector<UrahtNode>& weightsParent)
+    const std::vector<UrahtNode>& weightsParent,
+    int16_t& voteInterWeight,
+    int16_t& voteIntraWeight,
+    int16_t& voteInterLayerWeight,
+    int16_t& voteIntraLayerWeight)
   {
     int voteNull = 0;
     int voteIntra = 0;
     int voteInter = 0;
+
+    int voteNullLayer = 0;
+    int voteIntraLayer = 0;
+    int voteInterLayer = 0;
 
     for (int i = 1; i < 19; i++) {
       if (parentNeighIdx[i] == -1)
@@ -179,6 +188,15 @@ namespace attr {
       else if (isInter(uncle->mode))
         voteInter += 1;
 
+      if (isEncoder) {
+        if (isNull(uncle->mode))
+          voteNullLayer += 1;
+        else if (isIntra(uncle->mode))
+          voteIntraLayer += 1;
+        else if (isInter(uncle->mode))
+          voteInterLayer += 1;
+      }
+
       if (uncle->decoded) {
         for (auto cousin = uncle->firstChild; cousin < uncle->lastChild;
              cousin++) {
@@ -188,8 +206,24 @@ namespace attr {
             voteIntra += 3;
           else if (isInter(cousin->mode))
             voteInter += 3;
+
+          if (isEncoder) {
+            if (isNull(cousin->_mode))
+              voteNullLayer += 3;
+            else if (isIntra(cousin->_mode))
+              voteIntraLayer += 3;
+            else if (isInter(cousin->_mode))
+              voteInterLayer += 3;
+          }
         }
       }
+    }
+
+    voteInterWeight = voteInter * 2 + voteNull;
+    voteIntraWeight = voteIntra * 2 + voteNull;
+    if (isEncoder) {
+      voteInterLayerWeight = voteInterLayer * 2 + voteNullLayer;
+      voteIntraLayerWeight = voteIntraLayer * 2 + voteNullLayer;
     }
 
     if (voteNull > voteIntra && voteNull > voteInter)

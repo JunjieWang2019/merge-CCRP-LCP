@@ -440,9 +440,13 @@ struct SequenceParameterSet {
 struct RahtPredictionParams {
   int intra_mode_level;
   bool enable_inter_prediction;
+  bool enable_average_prediction;
+
   bool raht_enable_inter_intra_layer_RDO;
   int mode_level;
   int upper_mode_level;
+  int upper_mode_level_for_average_prediction;
+  int lower_mode_level_for_average_prediction;
 
   bool integer_haar_enable_flag;
   bool prediction_enabled_flag;

@@ -78,6 +78,7 @@ struct UrahtNode {
   bool decoded;
   int64_t offset;
   attr::Mode mode;
+  attr::Mode _mode;
   attr::Mode mc;
 
   uint8_t occupancy;
@@ -177,8 +178,13 @@ operator+(const ParentIndex& a, const T& b)
 
 namespace attr {
   Mode getNeighborsMode(
+    const bool& isEncoder,
     const int parentNeighIdx[19],
-    const std::vector<UrahtNode>& weightsParent);
+    const std::vector<UrahtNode>& weightsParent,
+    int16_t& voteInterWeight,
+    int16_t& voteIntraWeight,
+    int16_t& voteInterLayerWeight,
+    int16_t& voteIntraLayerWeight);
 
   Mode getInferredMode(
     int& ctxMode,
