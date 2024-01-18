@@ -77,6 +77,7 @@ protected:
   void encodeReflectancesTransformRaht(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
+    AttributeBrickHeader& abh,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
     PCCResidualsEncoder& encoder,
@@ -86,6 +87,7 @@ protected:
   void encodeColorsTransformRaht(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
+    AttributeBrickHeader& abh,
     const QpSet& qpSet,
     PCCPointSet3& pointCloud,
     PCCResidualsEncoder& encoder,

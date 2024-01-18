@@ -652,6 +652,10 @@ domain prediction of RAHT coefficients when subnode prediction is enabled.
 Controls the use of transform domain prediction of RAHT coefficients
 from motion compensated reference frame.
 
+### `--rahtLayerInterModeSelectionEnabled=0|1`
+Controls the use of RDO and signaling for layer inter mode selection
+for RAHT.
+
 ### `--rahtModeLevel=INT-VALUE`
 Controls the RAHT level from which the prediction mode is used.
 

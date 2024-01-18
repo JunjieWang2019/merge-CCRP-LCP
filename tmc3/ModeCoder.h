@@ -83,20 +83,71 @@ public:
 
   void setInterEnabled(bool flag) { enableInter = flag; }
   bool isInterEnabled() { return enableInter; }
+
+  // N.B. interface for RDO, not implemented in base class nor in decoder
+  void restoreStates()  {throw std::runtime_error("not implemented");}
+  void reloadPrevStates() {throw std::runtime_error("not implemented");}
+  void resetModeBits() {throw std::runtime_error("not implemented");}
+  double getModeBits()  {throw std::runtime_error("not implemented");}
+};
+
+struct coderStates
+{
+  typedef decltype(AdaptiveBitModel::probability) probaType;
+
+  std::deque<uint16_t> _buffer;
+  std::array<probaType, NUMBER_OF_CONTEXT_MODE> _rdoModeIsNull;
+  std::array<probaType, NUMBER_OF_CONTEXT_MODE> _rdoModeIsIntra;
+  double _meanDist;
+  double _meanRate;
+  double _learnRate;
 };
 
 class ModeEncoder : public ModeCoder {
+  typedef decltype(AdaptiveBitModel::probability) probaType;
+
   EntropyEncoder* arith;
   std::deque<uint16_t> buffer;
-  std::array<decltype(AdaptiveBitModel::probability), NUMBER_OF_CONTEXT_MODE> rdoModeIsNull;
-  std::array<decltype(AdaptiveBitModel::probability), NUMBER_OF_CONTEXT_MODE> rdoModeIsIntra;
+  std::array<probaType, NUMBER_OF_CONTEXT_MODE> rdoModeIsNull;
+  std::array<probaType, NUMBER_OF_CONTEXT_MODE> rdoModeIsIntra;
   std::array<uint16_t, 512> lut;
   double meanDist;
   double meanRate;
   double learnRate;
-
+  double _modeBits;
+  coderStates _states;
 public:
   std::array<double, Mode::size> entropy;
+
+  void resetModeBits() {
+    _modeBits = 0.;
+  }
+
+  double getModeBits() {
+    return _modeBits;
+  }
+
+  void restoreStates() {
+    _states._buffer = buffer;
+    for (int i = 0; i < NUMBER_OF_CONTEXT_MODE; i++) {
+      _states._rdoModeIsNull[i] = rdoModeIsNull[i];
+      _states._rdoModeIsIntra[i] = rdoModeIsIntra[i];
+    }
+    _states._meanDist = meanDist;
+    _states._meanRate = meanRate;
+    _states._learnRate = learnRate;
+  }
+
+  void reloadPrevStates() {
+    buffer = _states._buffer;
+    for (int i = 0; i < NUMBER_OF_CONTEXT_MODE; i++) {
+      rdoModeIsNull[i] = _states._rdoModeIsNull[i];
+      rdoModeIsIntra[i] = _states._rdoModeIsIntra[i];
+    }
+    meanDist = _states._meanDist;
+    meanRate = _states._meanRate;
+    learnRate = _states._learnRate;
+  }
 
   ModeEncoder()
     : ModeCoder()
@@ -130,6 +181,9 @@ public:
   void encode(int ctxMode, int ctxLevel, Mode real)
   {
     _encode<false>(ctxMode, ctxLevel, real);
+  }
+  void updateModeBits(int mode) {
+    _modeBits += entropy[mode];
   }
 
   void flush()

@@ -967,6 +967,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.rahtPredParams.enable_inter_prediction, false,
     "Controls the use of transform-domain prediction")
 
+  ("rahtLayerInterModeSelectionEnabled",
+     params_attr.aps.rahtPredParams.raht_enable_inter_intra_layer_RDO, true,
+     "Controls the use of RDO and signaling for layer inter mode selection")
+
   ("rahtModeLevel",
     params_attr.aps.rahtPredParams.mode_level, 2,
     "Level to start using the prediction mode")

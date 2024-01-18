@@ -68,6 +68,7 @@ public:
   int stop();
 
   void encodeRunLength(int runLength);
+  void encodeInterPredMode(const int& predMode);
   void encodeSymbol(uint32_t value, int k1, int k2, int k3);
   void encode(int32_t value0, int32_t value1, int32_t value2);
   void encode(int32_t value);
@@ -148,6 +149,15 @@ PCCResidualsEncoder::resStatUpdateRefl(int32_t value)
   if (value)
     probResGt1[0] += abs(value) > 1 ? (scaleRes - probResGt1[0]) >> windowLog2
                                     : -(probResGt1[0] >> windowLog2);
+}
+
+//----------------------------------------------------------------------------
+
+void PCCResidualsEncoder::encodeInterPredMode(const int& predMode) {
+  const bool& isLayerMode = predMode >= 1;
+  arithmeticEncoder.encode(isLayerMode, ctxLayerPred);
+  if (isLayerMode)
+    arithmeticEncoder.encode(predMode == 1, ctxInterLayerPred);
 }
 
 //----------------------------------------------------------------------------
@@ -415,12 +425,12 @@ AttributeEncoder::encode(
 
   PCCResidualsEncoder encoder(attr_aps, abh, ctxtMem);
   encoder.start(sps, int(pointCloud.getPointCount()));
-
+  abh.attr_layer_code_mode.clear();
   if (desc.attr_num_dimensions_minus1 == 0) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
       encodeReflectancesTransformRaht(
-        desc, attr_aps, qpSet, pointCloud, encoder, predEncoder,
+        desc, attr_aps, abh, qpSet, pointCloud, encoder, predEncoder,
         attrInterPredParams);
       break;
 
@@ -439,7 +449,7 @@ AttributeEncoder::encode(
           attrInterPredParams.compensatedPointCloud = pointCloud;
         attrInterPredParams.encodeMotionAndBuildCompensated(gps, encoder.arithmeticEncoder, attr_aps.mcap_to_rec_geom_flag);
       }
-      encodeColorsTransformRaht(desc, attr_aps, qpSet, pointCloud,
+      encodeColorsTransformRaht(desc, attr_aps, abh, qpSet, pointCloud,
         encoder, predEncoder, attrInterPredParams);
       break;
 
@@ -476,6 +486,7 @@ inline void
 encodeRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
   const QpSet& qpSet,
   PCCPointSet3& pointCloud,
   PCCResidualsEncoder& encoder,
@@ -509,10 +520,14 @@ encodeRaht(
     sortedPointCloud(
       attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
       attributes_mc);
-
+    uint64_t maxMortonCode = mortonCode.back();
+    uint64_t minMortonCode = mortonCode[0];
+    int log2Value = roundlog2(maxMortonCode - minMortonCode);
+    int depth = log2Value / 3;
+    abh.attr_layer_code_mode.resize(depth, 0);
     // Transform.
     regionAdaptiveHierarchicalTransform(
-      aps.rahtPredParams, qpSet, pointQpOffsets.data(), attribCount,
+      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
       voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
       mortonCode_mc.data(), attributes_mc.data(), coefficients.data(),
       predEncoder);
@@ -522,7 +537,7 @@ encodeRaht(
 
     // Transform.
     regionAdaptiveHierarchicalTransform(
-      aps.rahtPredParams, qpSet, pointQpOffsets.data(), attribCount,
+      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
       voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
       coefficients.data(), predEncoder);
   }
@@ -557,6 +572,15 @@ encodeRaht(
   }
   if (zeroRun)
     encoder.encodeRunLength(zeroRun);
+
+  if (aps.rahtPredParams.raht_enable_inter_intra_layer_RDO) {
+    int codeModeSize = abh.attr_layer_code_mode.size();
+    for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
+      int predMode = abh.attr_layer_code_mode[layerIdx];
+      encoder.encodeInterPredMode(predMode);
+    }
+  }
+
   predEncoder.flush();
 
   int clipMax = (1 << desc.bitdepth) - 1;
@@ -580,6 +604,7 @@ void
 AttributeEncoder::encodeReflectancesTransformRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
   const QpSet& qpSet,
   PCCPointSet3& pointCloud,
   PCCResidualsEncoder& encoder,
@@ -587,13 +612,14 @@ AttributeEncoder::encodeReflectancesTransformRaht(
   const AttributeInterPredParams& attrInterPredParams)
 {
   encodeRaht<1>(
-    desc, aps, qpSet, pointCloud, encoder, predEncoder, attrInterPredParams);
+    desc, aps,abh, qpSet, pointCloud, encoder, predEncoder, attrInterPredParams);
 }
 
 void
 AttributeEncoder::encodeColorsTransformRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
   const QpSet& qpSet,
   PCCPointSet3& pointCloud,
   PCCResidualsEncoder& encoder,
@@ -601,7 +627,7 @@ AttributeEncoder::encodeColorsTransformRaht(
   const AttributeInterPredParams& attrInterPredParams)
 {
   encodeRaht<3>(
-    desc, aps, qpSet, pointCloud, encoder, predEncoder, attrInterPredParams);
+    desc, aps, abh, qpSet, pointCloud, encoder, predEncoder, attrInterPredParams);
 }
 
 //============================================================================

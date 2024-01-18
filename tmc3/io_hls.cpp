@@ -774,6 +774,7 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
       bs.writeUe(aps.rahtPredParams.prediction_threshold0);
       bs.writeUe(aps.rahtPredParams.prediction_threshold1);
       bs.write(aps.rahtPredParams.enable_inter_prediction);
+      bs.write(aps.rahtPredParams.raht_enable_inter_intra_layer_RDO);
       if(aps.rahtPredParams.enable_inter_prediction) {
         bs.writeUe(aps.rahtPredParams.mode_level);
         bs.writeUe(aps.rahtPredParams.upper_mode_level);
@@ -832,6 +833,7 @@ parseAps(const PayloadBuffer& buf)
   bs.readSe(&aps.aps_chroma_qp_offset);
   bs.read(&aps.aps_slice_qp_deltas_present_flag);
 
+  aps.rahtPredParams.raht_enable_inter_intra_layer_RDO = false;
   if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
     aps.rahtPredParams.intra_mode_level = 0;
     aps.rahtPredParams.mode_level = 0;
@@ -841,6 +843,7 @@ parseAps(const PayloadBuffer& buf)
       bs.readUe(&aps.rahtPredParams.prediction_threshold0);
       bs.readUe(&aps.rahtPredParams.prediction_threshold1);
       bs.read(&aps.rahtPredParams.enable_inter_prediction);
+      bs.read(&aps.rahtPredParams.raht_enable_inter_intra_layer_RDO);
       if(aps.rahtPredParams.enable_inter_prediction) {
         bs.readUe(&aps.rahtPredParams.mode_level);
         bs.readUe(&aps.rahtPredParams.upper_mode_level);

@@ -61,7 +61,7 @@ public:
     const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
-    const AttributeBrickHeader& abh,
+    AttributeBrickHeader& abh,
     int geom_num_points_minus1,
     int minGeomNodeSizeLog2,
     const char* payload,

@@ -60,7 +60,7 @@ public:
     const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
-    const AttributeBrickHeader& abh,
+    AttributeBrickHeader& abh,
     int geom_num_points_minus1,
     int minGeomNodeSizeLog2,
     const char* payload,
@@ -77,6 +77,7 @@ protected:
   void decodeReflectancesRaht(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
+    AttributeBrickHeader& abh,
     const QpSet& qpSet,
     PCCResidualsDecoder& decoder,
     PCCPointSet3& pointCloud,
@@ -86,6 +87,7 @@ protected:
   void decodeColorsRaht(
     const AttributeDescription& desc,
     const AttributeParameterSet& aps,
+    AttributeBrickHeader& abh,
     const QpSet& qpSet,
     PCCResidualsDecoder& decoder,
     PCCPointSet3& pointCloud,

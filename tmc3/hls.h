@@ -440,6 +440,7 @@ struct SequenceParameterSet {
 struct RahtPredictionParams {
   int intra_mode_level;
   bool enable_inter_prediction;
+  bool raht_enable_inter_intra_layer_RDO;
   int mode_level;
   int upper_mode_level;
 
@@ -734,6 +735,7 @@ struct AttributeBrickHeader {
   int attr_region_bits_minus1;
 
   bool disableAttrInterPred = true;
+  std::vector<int> attr_layer_code_mode;
 };
 
 //============================================================================

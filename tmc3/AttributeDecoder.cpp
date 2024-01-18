@@ -62,6 +62,7 @@ public:
   void stop();
 
   int decodeRunLength();
+  int decodeInterPredMode();
   int decodeSymbol(int k1, int k2, int k3);
   void decode(int32_t values[3]);
   int32_t decode();
@@ -92,6 +93,19 @@ void
 PCCResidualsDecoder::stop()
 {
   arithmeticDecoder.stop();
+}
+
+//----------------------------------------------------------------------------
+
+int PCCResidualsDecoder::decodeInterPredMode() {
+  bool isLayerMode;
+  isLayerMode = arithmeticDecoder.decode(ctxLayerPred);
+  if (!isLayerMode)
+    return 0;
+  bool isInterLayerMode = arithmeticDecoder.decode(ctxInterLayerPred);
+  if (isInterLayerMode)
+    return 1;
+  return 2;
 }
 
 //----------------------------------------------------------------------------
@@ -194,7 +208,7 @@ AttributeDecoder::decode(
   const GeometryParameterSet& gps,
   const AttributeDescription& attr_desc,
   const AttributeParameterSet& attr_aps,
-  const AttributeBrickHeader& abh,
+  AttributeBrickHeader& abh,
   int geom_num_points_minus1,
   int minGeomNodeSizeLog2,
   const char* payload,
@@ -219,7 +233,7 @@ AttributeDecoder::decode(
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
       decodeReflectancesRaht(
-        attr_desc, attr_aps, qpSet, decoder, pointCloud, predDecoder,
+        attr_desc, attr_aps, abh, qpSet, decoder, pointCloud, predDecoder,
         attrInterPredParams);
       break;
 
@@ -236,7 +250,7 @@ AttributeDecoder::decode(
           attrInterPredParams.compensatedPointCloud = pointCloud;
         attrInterPredParams.decodeMotionAndBuildCompensated(gps, decoder.arithmeticDecoder, attr_aps.mcap_to_rec_geom_flag);
       }
-      decodeColorsRaht(attr_desc, attr_aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
+      decodeColorsRaht(attr_desc, attr_aps, abh, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
       break;
 
     case AttributeEncoding::kRaw:
@@ -262,6 +276,7 @@ inline void
 decodeRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
   const QpSet& qpSet,
   PCCResidualsDecoder& decoder,
   PCCPointSet3& pointCloud,
@@ -285,6 +300,7 @@ decodeRaht(
   for (auto index : indexOrd) {
     pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
   }
+  abh.attr_layer_code_mode.clear();
 
   // Decode coefficients
   if (attribCount == 3) {
@@ -318,6 +334,16 @@ decodeRaht(
     predDecoder.set(&decoder.arithmeticDecoder);
     const int voxelCount_mc =
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
+    uint64_t maxMortonCode = mortonCode.back();
+    uint64_t minMortonCode = mortonCode[0];
+    int log2Value = roundlog2(maxMortonCode - minMortonCode);
+    int depth = log2Value / 3;
+    abh.attr_layer_code_mode.resize(depth, 0);
+    int codeModeSize = abh.attr_layer_code_mode.size();
+    for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
+      int& predMode = abh.attr_layer_code_mode[layerIdx];
+      predMode = decoder.decodeInterPredMode();
+    }
 
     std::vector<int64_t> mortonCode_mc;
     std::vector<int> attributes_mc;
@@ -326,7 +352,7 @@ decodeRaht(
       attributes_mc);
 
     regionAdaptiveHierarchicalInverseTransform(
-      aps.rahtPredParams, qpSet, pointQpOffsets.data(), attribCount,
+      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
       voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
       mortonCode_mc.data(), attributes_mc.data(), coefficients.data(),
       predDecoder);
@@ -335,7 +361,7 @@ decodeRaht(
     predDecoder.set(&decoder.arithmeticDecoder);
 
     regionAdaptiveHierarchicalInverseTransform(
-      aps.rahtPredParams, qpSet, pointQpOffsets.data(), attribCount,
+      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
       voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
       coefficients.data(), predDecoder);
   }
@@ -361,6 +387,7 @@ void
 AttributeDecoder::decodeReflectancesRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
   const QpSet& qpSet,
   PCCResidualsDecoder& decoder,
   PCCPointSet3& pointCloud,
@@ -368,13 +395,14 @@ AttributeDecoder::decodeReflectancesRaht(
   const AttributeInterPredParams& attrInterPredParams)
 {
   decodeRaht<1>(
-    desc, aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
+    desc, aps, abh, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
 }
 
 void
 AttributeDecoder::decodeColorsRaht(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
   const QpSet& qpSet,
   PCCResidualsDecoder& decoder,
   PCCPointSet3& pointCloud,
@@ -382,7 +410,7 @@ AttributeDecoder::decodeColorsRaht(
   const AttributeInterPredParams& attrInterPredParams)
 {
   decodeRaht<3>(
-    desc, aps, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
+    desc, aps, abh,qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
 }
 
 //============================================================================

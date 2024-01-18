@@ -107,6 +107,8 @@ public:
 
 protected:
   AdaptiveBitModel ctxRunLen[5];
+  AdaptiveBitModel ctxLayerPred;
+  AdaptiveBitModel ctxInterLayerPred;
   AdaptiveBitModel ctxCoeffGtN[2][7];
   AdaptiveBitModel ctxCoeffRemPrefix[2][12];
   AdaptiveBitModel ctxCoeffRemSuffix[2][12];
