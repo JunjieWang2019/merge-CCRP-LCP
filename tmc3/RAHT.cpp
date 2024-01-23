@@ -2298,7 +2298,7 @@ regionAdaptiveHierarchicalTransform(
       bool enableIntraPrediction, bool enableInterPrediction, Mode parentMode,
       Mode neighborsMode, int numAttrs, int64_t weights[],
       std::vector<int64_t>::const_iterator attrRecParent,
-      VecAttr& transformBuf, std::vector<Mode>& modes, const int qpLayer,
+      VecAttr& transformBuf, std::vector<Mode> modes, const int qpLayer,
       const Qps* nodeQp, bool upperInferMode) {
       if (nodeCnt > 1) {
         if (upperInferMode) {
@@ -2315,10 +2315,19 @@ regionAdaptiveHierarchicalTransform(
           enableInterPrediction, nodeCnt, parentMode, neighborsMode, numAttrs,
           weights, attrRecParent);
 
-        if (inferredPredMode == Mode::Null)
-          return Mode::Null;
         if (predCtxLevel < 0)
           return inferredPredMode;
+
+        if (encoder.isInterEnabled()) {
+          if (!enableIntraPrediction && enableInterPrediction) {
+            modes.resize(2);
+          }
+          else if (!enableIntraPrediction && !enableInterPrediction)
+            return Mode::Null;
+        } else {
+          if (!enableIntraPrediction)
+            return Mode::Null;
+        }
 
         encoder.getEntropy(predCtxMode, predCtxLevel);
         Mode predMode;
@@ -2398,10 +2407,18 @@ regionAdaptiveHierarchicalInverseTransform(
           enableInterPrediction, nodeCnt, parentMode, neighborsMode, numAttrs,
           weights, attrRecParent);
 
-        if (inferredPredMode == Mode::Null)
-          return Mode::Null;
         if (predCtxLevel < 0)
           return inferredPredMode;
+
+        if (decoder.isInterEnabled()) {
+          if (!enableInterPrediction && !enableIntraPrediction)
+            return Mode::Null;
+        }
+        else {
+          if (!enableIntraPrediction)
+            return Mode::Null;
+        }
+
         return decoder.decode(predCtxMode, predCtxLevel);
       }
       return Mode::Null;
