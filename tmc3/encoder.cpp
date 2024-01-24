@@ -757,21 +757,9 @@ PCCTMC3Encoder3::compressPartition(
     abh.disableAttrInterPred = true;
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
 
-    for (auto i = 0; i < pointCloud.getPointCount(); i++)
-      pointCloud[i] += _sliceOrigin;
-    for (auto i = 0;
-         i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
-      attrInterPredParams.compensatedPointCloud[i] += _sliceOrigin;
-
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
     attrEncoder->encode(
       *_sps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud, &payload, attrInterPredParams, predCoder);
-
-    for (auto i = 0; i < pointCloud.getPointCount(); i++)
-      pointCloud[i] -= _sliceOrigin;
-    for (auto i = 0;
-         i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
-      attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
 
     clock_user.stop();
 

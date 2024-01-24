@@ -578,21 +578,12 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 
   clock_user.start();
 
-  for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
-    _currentPointCloud[i] += _sliceOrigin;
-  for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
-    attrInterPredParams.compensatedPointCloud[i] += _sliceOrigin;
-
   auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
   _attrDecoder->decode(
     *_sps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
     _params.minGeomNodeSizeLog2, buf.data() + abhSize, buf.size() - abhSize,
     ctxtMemAttr, _currentPointCloud, attrInterPredParams, predDecoder);
 
-  for (auto i = 0; i < _currentPointCloud.getPointCount(); i++)
-    _currentPointCloud[i] -= _sliceOrigin;
-  for (auto i = 0; i < attrInterPredParams.compensatedPointCloud.getPointCount(); i++)
-    attrInterPredParams.compensatedPointCloud[i] -= _sliceOrigin;
   // Note the current sliceID for loss detection
   _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;
 
