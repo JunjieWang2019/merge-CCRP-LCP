@@ -1190,7 +1190,10 @@ uraht_process(
             && *numGrandParentNeighIt < rahtPredParams.prediction_threshold0) {
           enableIntraPrediction = false;
           enableIntraLayerPrediction = false;
-        }else {
+        } else if (parentNeighCount < rahtPredParams.prediction_threshold1) {
+            enableIntraPrediction = false;
+            enableIntraLayerPrediction = false;
+        } else {
           if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
             intraDcPred(typeid(ModeCoder) == typeid(attr::ModeEncoder),
               numAttrs, parentNeighIdx, childNeighIdx, occupancy,
