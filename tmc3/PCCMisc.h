@@ -152,14 +152,7 @@ ilog2(uint32_t x)
   x = ceilpow2(x + 1) - 1;
   return popcnt(x) - 1;
 }
-//--------------------------------------------------
-inline int
-roundlog2(uint64_t x)
-{
-  int _log2 = ilog2(x);
-  int add = x % 2 == 1 ? 1 : 0;
-  return _log2 + add;
-}
+
 //---------------------------------------------------------------------------
 // Compute \left\floor \text{log}_2(x) \right\floor.
 // NB: ilog2(0) = -1.

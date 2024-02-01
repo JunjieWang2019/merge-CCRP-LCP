@@ -521,9 +521,7 @@ encodeRaht(
       attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
       attributes_mc);
     uint64_t maxMortonCode = mortonCode.back();
-    uint64_t minMortonCode = mortonCode[0];
-    int log2Value = roundlog2(maxMortonCode - minMortonCode);
-    int depth = log2Value / 3;
+    int depth = (ilog2(maxMortonCode|7) + 2) / 3;
     abh.attr_layer_code_mode.resize(depth, 0);
     // Transform.
     regionAdaptiveHierarchicalTransform(

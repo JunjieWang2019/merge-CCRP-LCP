@@ -335,9 +335,7 @@ decodeRaht(
     const int voxelCount_mc =
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
     uint64_t maxMortonCode = mortonCode.back();
-    uint64_t minMortonCode = mortonCode[0];
-    int log2Value = roundlog2(maxMortonCode - minMortonCode);
-    int depth = log2Value / 3;
+    int depth = (ilog2(maxMortonCode|7) + 2) / 3;
     abh.attr_layer_code_mode.resize(depth, 0);
     int codeModeSize = abh.attr_layer_code_mode.size();
     for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
