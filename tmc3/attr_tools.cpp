@@ -346,6 +346,7 @@ namespace attr {
   {
     auto coefReal = transformBuf.begin();
     auto coefPred = coefReal + numAttrs;
+    bool lossless = typeid(Kernel) == typeid(HaarKernel);
 
     VecAttr reconsBuf(numAttrs * (modes.size() + 1));
     auto recReal = reconsBuf.begin();
@@ -354,6 +355,8 @@ namespace attr {
     // Estimate rate
     std::vector<int> rate;
     rate.resize(modes.size(), 0);
+    std::vector<double> error;
+    error.resize(modes.size(), 0.0);
 
     for (int k = 0; k < numAttrs; k++) {
       std::copy(coefReal[k].begin(), coefReal[k].end(), recReal[k].begin());
@@ -379,16 +382,18 @@ namespace attr {
             rec = coefPred[numAttrs * (mode - 1) + k][i];
             attr -= rec;
           }
-          rate[mode] += rdoReconstruct(attr, rec, q);
+          if(lossless){
+            rate[mode] += rdoReconstruct(attr, rec, q);
+          }
+          else{
+            rec = 0;
+            rate[mode] += rdoReconstruct(attr, rec, q);
+            double diff = static_cast<double>(attr.round() - rec.round());
+            error[mode] += diff * diff;
+          }
         }
       }
     }
-
-    // Estimate distortion
-    std::vector<double> error;
-    error.resize(modes.size(), 0.0);
-
-    invTransformBlock222<Kernel>(reconsBuf.size(), reconsBuf.begin(), weights);
 
     w = weights;
     int64_t sum_weight = 0;
@@ -399,15 +404,6 @@ namespace attr {
 
       sum_weight += w[i];
       childCount++;
-
-      for (int k = 0; k < numAttrs; k++) {
-        auto real = reconsBuf[k][i].round();
-        for (int mode = 0; mode < modes.size(); mode++) {
-          double diff = static_cast<double>(
-            recPred[numAttrs * mode + k][i].round() - real);
-          error[mode] += diff * diff;
-        }
-      }
     }
 
     assert(sum_weight > 1);
