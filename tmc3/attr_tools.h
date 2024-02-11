@@ -334,7 +334,7 @@ fwdTransformBlock222(
 template<class Kernel>
 void
 invTransformBlock222(
-  const int numBufs, VecAttr::iterator buf, const int64_t weights[])
+  const int numBufs, VecAttr::iterator buf, const int64_t weights[], bool computekernel=false)
 {
   static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
   static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
@@ -357,7 +357,7 @@ invTransformBlock222(
     }
 
     // actual transform
-    Kernel kernel(w0, w1, true);
+    Kernel kernel(w0, w1, !computekernel);
     for (int k = 0; k < numBufs; k++) {
       kernel.invTransform(buf[k][i0], buf[k][i1]);
     }
