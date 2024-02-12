@@ -72,7 +72,18 @@ public:
   void operator*=(const FixedPoint& that);
   void operator/=(const FixedPoint& that);
 
+  FixedPoint operator+(const FixedPoint& that) const;
+  FixedPoint operator-(const FixedPoint& that) const;
+  FixedPoint operator*(const FixedPoint& that) const;
+  FixedPoint operator/(const FixedPoint& that) const;
+
   void fixAfterMultiplication();
+
+  static inline FixedPoint fromVal(int64_t val) {
+    FixedPoint res;
+    res.val = val;
+    return res;
+  }
 };
 
 //============================================================================
@@ -120,6 +131,48 @@ FixedPoint::operator*=(const FixedPoint& that)
   this->val *= that.val;
   fixAfterMultiplication();
 }
+
+//----------------------------------------------------------------------------
+
+inline FixedPoint
+FixedPoint::operator+(const FixedPoint& that) const
+{
+  FixedPoint res(*this);
+  res += that;
+  return res;
+}
+
+//----------------------------------------------------------------------------
+
+inline FixedPoint
+FixedPoint::operator-(const FixedPoint& that) const
+{
+  FixedPoint res(*this);
+  res -= that;
+  return res;
+}
+
+//----------------------------------------------------------------------------
+
+inline FixedPoint
+FixedPoint::operator*(const FixedPoint& that) const
+{
+  FixedPoint res(*this);
+  res *= that;
+  return res;
+}
+
+//----------------------------------------------------------------------------
+
+inline FixedPoint
+FixedPoint::operator/(const FixedPoint& that) const
+{
+  FixedPoint res(*this);
+  res /= that;
+  return res;
+}
+
+//----------------------------------------------------------------------------
 
 inline void
 FixedPoint::fixAfterMultiplication()
