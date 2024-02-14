@@ -226,6 +226,28 @@ namespace attr {
       voteIntraLayerWeight = voteIntraLayer * 2 + voteNullLayer;
     }
 
+    if (1) {
+      auto parent = std::next(weightsParent.begin(), parentNeighIdx[0]);
+
+      if (isNull(parent->mode)) {
+        voteIntraWeight += 1;
+        voteInterWeight += 1;
+      } else if (isIntra(parent->mode))
+        voteIntraWeight += 2;
+      else if (isInter(parent->mode))
+        voteInterWeight += 2;
+
+      if (isEncoder) {
+        if (isNull(parent->mode)) {
+          voteIntraLayerWeight += 1;
+          voteInterLayerWeight += 1;
+        } else if (isIntra(parent->mode))
+          voteIntraLayerWeight += 2;
+        else if (isInter(parent->mode))
+          voteInterLayerWeight += 2;
+      }
+    }
+
     if (voteNull > voteIntra && voteNull > voteInter)
       return Mode::Null;
     if (voteIntra > voteInter)
