@@ -29,6 +29,121 @@ contents. The original implementation started from the experimental model
 being studied in EE13.60, and is based on the `release-v20.0-rc1` of G-PCC
 test model TMC13.
 
+### `ges-tm-v5.0`
+
+Tag `ges-tm-v5.0` will be released after reported issues are resolved,
+if any.
+
+### `ges-tm-v5.0-rc1`
+
+Tag `ges-tm-v5.0-rc1` includes adoptions made during the meeting #14 of the
+WG7 held online (January 2024), and some additional fixes and cleanups.
+
+- `tidy: motion - remove unused AttributeInterPredParams::motionVector`:  
+    Removes `AttributeInterPredParams::motionVector` and
+    `tmc3/attr_tools.h:MotionVector` which are not used.
+
+- `geom/tidy: motion - remove unused variables and parameters`:  
+    Removes `LPUnumInAxis` variables and `numLPUPerLine` parameter which are not
+    used.
+
+- `geom/tidy: octree - remove unused PCCOctree3Node::siblingOccupancy`:  
+    Removes `PCCOctree3Node::siblingOccupancy` which is not used.
+
+- `geom/tidy: octree - disable remaining IDCM code`:  
+    - Comments out some IDCM related coding/decoding functions
+    - Comments out `PCCOctree3Node::numSiblingsPlus1` and
+      `PCCOctree3Node::numSiblingsMispredicted` which are only used by IDCM
+    - Comments out IDCM coding contexts
+    - Removes remaining angular mode related coding contexts
+
+- `geom/trisoup: m65829 - Single pass geometry coding`:  
+    - two octrees
+    - one pass geo for octree-trisoup
+    - context class modified to handle interleaved octree and TriSoup
+      geometry coding
+
+- `geom/trisoup: m65831 - centroid residual quantization`:  
+    Improves centroid residual quantization.
+
+- `attr/fix: m66895 - point cloud should not be offset`:  
+    Point cloud and compensated point cloud should not be offset
+    before and after attributes coding with current design of GeS-TM.
+
+- `opti: m66238 - preliminary optimizations of NN search`:  
+    This commit optimizes the nearest neighbour search used for motion
+    search. It has been used as preliminary improvements in m66238 for
+    EE13.60 Test 1.
+
+- `attr: m66238 - dual motion field for color`:  
+    - add dual motion field for color
+    - add encoder options and hls flags for dual motion
+    - update cfg files for CTCs (active with TriSoup)
+
+- `attr: m66238 - motion compensated attributes projection`:  
+    - add motion compensated attributes projection from reference frame to
+      reconstructed geometry, to replace inter-frame attributes predictor,
+    - use depth first approximate NN for motion compensated attributes
+      projection,
+    - add encoder options and hls flags for motion compensated attributes
+      projection and enable it by default when dual motion is active (CTCs),
+    - use depth first constructed MSOctree.
+
+- `geom: m66238 - accelerated motion search`:  
+    - add depth first NN search for motion search,
+    - add depth first approximate NN search to further accelerate encoding,
+      at the cost of a decrease in geometry coding performances,
+    - add encoder option to enable approximate NN search for motion search.
+
+- `raht: m66286 - RDO for inter mode selection`:  
+    This is adopted EE13.60 - Test6, providing rate distorsion optimization
+    of inter mode selection for RAHT (also adds signaling of the selected
+    mode).
+
+- `raht: fix - use safer approximation of tree depth`:  
+    Method used for estimating raht tree depth in m66238 does not
+    look safe: the distance between the first an last point in morton
+    order is not representative of the actual boundaries of the point
+    cloud. Also the function roundLog2 does not look correct.
+
+    This is fixed by only considering the last point in morton order.
+
+- `raht: fix - intra behavior shall not be changed`:  
+    Complexity reduction introduced by prediction_threshold1 should be kept
+    as it was not discussed to change the behavior of intra frame coding with
+    m66286.
+
+- `raht: m66274 - weighted average prediction`:  
+    This is adopted EE13.60 - Test 5, after being merged with Test 6. It
+    provides a prediction of raht coefficient made by a weighted average
+    between inter and intra predictions.
+
+- `raht: fix - out of bound votesum in divisionPredictionVotesLUT`:  
+    `votesum` could be 12, when `getNeighborsMode()` is called and the parent
+    node has no neighbors.
+
+    This is solved by also considering the mode of the parent node itself
+    when computing the values for vote(Inter/Intra[Layer])Weight.
+
+- `misc: add helper functions to FixedPoint`:  
+    - Add `+`, `-`, `*` and `/` operators to `FixedPoint`.
+    - Add `static FixedPoint::fromVal(int64_t)` to build a `FixedPoint` value
+      from its internal `int64_t` representation.
+
+- `raht: m66152 - sample domain prediction`:  
+    This is adopted EE13.60 - Test 2, after being merged with Test 5 and
+    Test 6. It uses sample domain prediction within a raht layer to avoid
+    computing a forward transform in decoding process.
+
+- `raht/enc: m66308 - transform domain distorsion estimation`:  
+    Compute distorsion estimation in transform domain to avoid an extra
+    inverse transform.
+
+- `raht: m66373 - fix prediction mode determination`:  
+    This commit aligns the software with the text description of m62583
+    which introduced inter RAHT in GeS-TM. It changes the prediction mode
+    determination for RAHT.
+
 ### `ges-tm-v4.0`
 
 Tag `ges-tm-v4.0` will be released after reported issues are resolved,
