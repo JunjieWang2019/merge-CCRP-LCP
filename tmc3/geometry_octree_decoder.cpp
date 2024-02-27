@@ -573,9 +573,6 @@ decodeGeometryOctree(
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }
-
-    // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
-    point_t BBorig = gbh.geomBoxOrigin;
   }
 
 
@@ -1040,7 +1037,6 @@ decodeGeometryOctree(
       node.pos = invQuantPosition(node.qp, posQuantBitMasks, node.pos);
     }
     *nodesRemaining = std::move(fifo);
-    return;
   }
 }
 
@@ -1116,9 +1112,6 @@ decodeGeometryOctreeForTrisoup(
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }
-
-    // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
-    point_t BBorig = gbh.geomBoxOrigin;
   }
 
   // push the first node

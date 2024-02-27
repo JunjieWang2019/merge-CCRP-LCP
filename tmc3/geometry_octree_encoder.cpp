@@ -749,9 +749,6 @@ encodeGeometryOctree(
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }
-
-    // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
-    point_t BBorig = gbh.geomBoxOrigin;
   }
 
   // init main fifo
@@ -1457,9 +1454,6 @@ encodeGeometryOctreeForTrisoup(
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }
-
-    // N.B. after this, predPointCloud need to be in same slice boundaries as current slice
-    point_t BBorig = gbh.geomBoxOrigin;
   }
 
   // init main fifo
