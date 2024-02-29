@@ -66,20 +66,15 @@ decodeGeometryTrisoup(
   const int maxVertexPrecisionLog2 = gbh.trisoup_vertex_quantization_bits ? gbh.trisoup_vertex_quantization_bits : gbh.trisoupNodeSizeLog2(gps);
   const int bitDropped = std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
 
-  if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
-    ctxtMemOctree.clearMap();
-    ctxtMemOctree.resetMap();
-  }
-
   // trisoup uses octree coding until reaching the triangulation level.
   std::vector<PCCOctree3Node> nodes;
   RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, false, bitDropped, 1 /*distanceSearchEncoder*/, isInter, compensatedPointCloud, gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
   rste.init();
 
   // octree
-  decodeGeometryOctreeForTrisoup(
-    gps, gbh, ctxtMemOctree, arithmeticDecoder, &nodes, refFrame,
-    minimum_position, refPointCloud, mSOctree, compensatedPointCloud, rste);
+  decodeGeometryOctree(
+    gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, &nodes, refFrame,
+    minimum_position, refPointCloud, mSOctree, compensatedPointCloud, &rste);
 
   //std::cout << "\nSize compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
   //std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";

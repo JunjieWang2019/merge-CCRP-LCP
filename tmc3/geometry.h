@@ -67,7 +67,8 @@ void encodeGeometryOctree(
   const SequenceParameterSet& sps,
   PCCPointSet3& refPointCloud,
   MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud);
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges* rste = nullptr);
 
 void decodeGeometryOctree(
   const GeometryParameterSet& gps,
@@ -79,7 +80,8 @@ void decodeGeometryOctree(
   const Vec3<int> minimum_position,
   PCCPointSet3& refPointCloud,
   MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud);
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges* rste = nullptr);
 
 void decodeGeometryOctreeScalable(
   const GeometryParameterSet& gps,
@@ -89,30 +91,6 @@ void decodeGeometryOctreeScalable(
   GeometryOctreeContexts& ctxtMem,
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame);
-
-//----------------------------------------------------------------------------
-
-void encodeGeometryOctreeForTrisoup(
-  const OctreeEncOpts& opt,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  GeometryOctreeContexts& ctxtMem,
-  EntropyEncoder* arithmeticEncoder,
-  const CloudFrame& refFrame,
-  const SequenceParameterSet& sps,
-  PCCPointSet3& compensatedPointCloud,
-  RasterScanTrisoupEdges& rste);
-
-void decodeGeometryOctreeForTrisoup(
-  const GeometryParameterSet& gps,
-  const GeometryBrickHeader& gbh,
-  GeometryOctreeContexts& ctxtMem,
-  EntropyDecoder& arithmeticDecoder,
-  const CloudFrame* refFrame,
-  const Vec3<int> minimum_position,
-  PCCPointSet3& compensatedPointCloud,
-  RasterScanTrisoupEdges& rste);
 
 //----------------------------------------------------------------------------
 

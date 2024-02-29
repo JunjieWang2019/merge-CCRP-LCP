@@ -713,8 +713,15 @@ encodeGeometryOctree(
   const SequenceParameterSet& sps,
   PCCPointSet3& refPointCloud,
   MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud)
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges* rste)
 {
+  if (rste) {
+    assert(nodesRemaining);
+  }
+
+  const bool isInter = gbh.interPredictionEnabledFlag;
+
   refPointCloud = refFrame.cloud;
   PCCPointSet3& predPointCloud = refPointCloud;
 
@@ -722,7 +729,7 @@ encodeGeometryOctree(
   mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   MSOctree mSOctreeCurr;
 
-  if (gbh.interPredictionEnabledFlag)
+  if (isInter)
     mSOctreeCurr = MSOctree(&pointCloud, {}, gbh.trisoupNodeSizeLog2(gps));
 
   auto arithmeticEncoderIt = arithmeticEncoders.begin();
@@ -731,8 +738,6 @@ encodeGeometryOctree(
   // saved state for use with parallel bistream coding.
   // the saved state is restored at the start of each parallel octree level
   std::unique_ptr<GeometryOctreeContexts> savedState;
-
-  bool isInter = gbh.interPredictionEnabledFlag;
 
   // generate the list of the node size for each level in the tree
   auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
@@ -863,6 +868,8 @@ encodeGeometryOctree(
     encoder.resetMap();
   }
 
+  int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
+
   for (int depth = 0; depth < maxDepth; depth++) {
     // The tree terminated early (eg, due to IDCM or quantisation)
     // Delete any unused arithmetic coders
@@ -990,6 +997,7 @@ encodeGeometryOctree(
       }
     };
 
+    bool isLastDepth = depth == maxDepth - 1;
 
     // planar mode as a container for QTBT at depth level
     OctreeNodePlanar planar;
@@ -1068,10 +1076,9 @@ encodeGeometryOctree(
               | (!!(int(point[0]) & pointSortMask[0]) << 2);
           });
 
-        /// sort and partition the predictor...
-        node0.predCounts = {};
-
-        // ...for local motion
+        /// sort and partition the predictor for local motion
+        // TODO: check we can remove
+        //node0.predCounts = {};
         if (isInter) {
           if (node0.isCompensated) {
             countingSort(
@@ -1111,15 +1118,15 @@ encodeGeometryOctree(
         node0.pos_MV = 0;
       }
 
+      // inter information
       int predOccupancy = 0;
       int predOccupancyStrong = 0;
       //int predFailureCount = 0;
 
       // TODO avoid computing it at each pass?
       for (int i = 0; i < 8; i++) {
-        bool childOccupiedTmp = !!node0.childCounts[i];
-        bool childPredicted = !!node0.predCounts[i];
-        predOccupancy |= (childPredicted) << i;
+        //bool childOccupiedTmp = !!node0.childCounts[i];
+        predOccupancy |= (node0.predCounts[i] > 0) << i;
         predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
         //predFailureCount += childOccupiedTmp != childPredicted;
       }
@@ -1251,6 +1258,7 @@ encodeGeometryOctree(
       }
 
       if (!isLeafNode(effectiveChildSizeLog2)) {
+        // push child nodes to fifo
         for (int i = 0; i < 2; ++i) {
           if (node0.hasMotion && !node0.isCompensated)
             node0.pos_fp++;  // pop occupancy flag from PU_tree
@@ -1312,7 +1320,6 @@ encodeGeometryOctree(
                 node0.pos_fp, node0.pos_MV, child_PU_tree.get());
 
               child.PU_tree = std::move(child_PU_tree);
-
             }
 
             if (isInter) {
@@ -1336,6 +1343,15 @@ encodeGeometryOctree(
             //  idcmEnableMask = rotateRight(idcmEnableMask, 1);
             //}
 #endif
+
+            if (rste && isLastDepth) {
+              nodesRemaining->push_back(child);
+              nodesRemaining->back().pos <<= lvlNodeSizeLog2[maxDepth];
+
+              if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
+                rste->callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
+              lastPos0 = child.pos[0];
+            }
 
             numNodesNextLvl++;
           }
@@ -1364,17 +1380,23 @@ encodeGeometryOctree(
   // save the context state for re-use by a future slice if required
   //ctxtMem = encoder.getCtx(); // ctxtMem is now directly used
 
-  // return partial coding result
-  //  - add missing levels to node positions
-  //  - inverse quantise the point cloud
-  // todo(df): this does not yet support inverse quantisation of node.pos
   if (nodesRemaining) {
-    auto nodeSizeLog2 = lvlNodeSizeLog2[maxDepth];
-    for (auto& node : fifo) {
-      node.pos <<= nodeSizeLog2;
-      geometryScale(pointCloud, node, quantNodeSizeLog2);
+    if (rste) {
+      // TriSoup final pass (true)
+      rste->callTriSoupSlice(true);
+      rste->finishSlice();
+    } else {
+      // return partial coding result
+      //  - add missing levels to node positions
+      //  - inverse quantise the point cloud
+      // todo(df): this does not yet support inverse quantisation of node.pos
+      auto nodeSizeLog2 = lvlNodeSizeLog2[maxDepth];
+      for (auto& node : fifo) {
+        node.pos <<= nodeSizeLog2;
+        geometryScale(pointCloud, node, quantNodeSizeLog2);
+      }
+      *nodesRemaining = std::move(fifo);
     }
-    *nodesRemaining = std::move(fifo);
     return;
   }
 
@@ -1408,379 +1430,6 @@ encodeGeometryOctree(
   swap(pointCloud, pointCloud2);
 }
 
-//-------------------------------------------------------------------------
-
-void
-encodeGeometryOctreeForTrisoup(
-  const OctreeEncOpts& params,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  GeometryOctreeContexts& ctxtMem,
-  EntropyEncoder* arithmeticEncoder,
-  std::vector<PCCOctree3Node>* nodesRemaining,
-  const CloudFrame& refFrame,
-  const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
-  RasterScanTrisoupEdges& rste)
-{
-  bool isInter = gbh.interPredictionEnabledFlag;
-
-  refPointCloud = refFrame.cloud;
-  PCCPointSet3& predPointCloud = refPointCloud;
-
-  int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
-  mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
-  MSOctree mSOctreeCurr;
-
-  if (isInter)
-    mSOctreeCurr = MSOctree(&pointCloud, {}, gbh.trisoupNodeSizeLog2(gps));
-
-  GeometryOctreeEncoder encoder(gps, gbh, ctxtMem, arithmeticEncoder);
-
-  // generate the list of the node size for each level in the tree
-  auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
-
-  // variables for local motion
-  int log2MotionBlockSize = 0;
-
-  // local motion prediction structure -> LPUs from predPointCloud
-  if (isInter) {
-    log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
-    if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
-      int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size));
-      if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
-        log2MotionBlockSize = gbh.maxRootNodeDimLog2;
-    }
-  }
-
-  // init main fifo
-  int reservedBufferSize = pointCloud.getPointCount();
-  reservedBufferSize = std::max(1000, reservedBufferSize >> 2 * gbh.trisoupNodeSizeLog2(gps) - 1);
-
-  std::vector<PCCOctree3Node> fifo;
-  std::vector<PCCOctree3Node> fifoNext;
-  fifo.reserve(reservedBufferSize);
-  fifoNext.reserve(reservedBufferSize);
-
-  // push the first node
-  fifo.emplace_back();
-  PCCOctree3Node& node00 = fifo.back();
-  node00.start = uint32_t(0);
-  node00.end = uint32_t(pointCloud.getPointCount());
-  node00.pos = int32_t(0);
-  node00.mSOctreeNodeIdx = uint32_t(0);
-
-  node00.predEnd = isInter ? predPointCloud.getPointCount() : uint32_t(0);
-  node00.mSONodeIdx = isInter ? 0 : -1;
-  node00.predStart = uint32_t(0);
-
-  // local motion
-  node00.hasMotion = 0;
-  node00.isCompensated = 0;
-
-  RasterScanContext rsc(fifo);
-
-  // the minimum node size for early termination in trisoup.
-  int minNodeSizeLog2 = gbh.trisoupNodeSizeLog2(gps);
-
-  // prune anything smaller than the minimum node size (these won't be coded)
-  // NB: this must result in a cubic node at the end of the list
-  // NB: precondition: root node size >= minNodeSizeLog2.
-  lvlNodeSizeLog2.erase(
-    std::remove_if(
-      lvlNodeSizeLog2.begin(), lvlNodeSizeLog2.end(),
-      [&](Vec3<int>& size) { return size < minNodeSizeLog2; }),
-    lvlNodeSizeLog2.end());
-  assert(lvlNodeSizeLog2.back() == minNodeSizeLog2);
-
-  // append a dummy entry to the list so that depth+2 access is always valid
-  lvlNodeSizeLog2.emplace_back(lvlNodeSizeLog2.back());
-
-  // the termination depth of the octree phase
-  // NB: the tree depth may be greater than the maxNodeSizeLog2 due to
-  //     perverse qtbt splitting.
-  // NB: by definition, the last two elements are minNodeSizeLog2
-  int maxDepth = lvlNodeSizeLog2.size() - 2;
-
-  // generate the qtbt splitting list
-  //  - start at the leaf, and work up
-  std::vector<int8_t> tree_lvl_partition_list;
-  for (int lvl = 0; lvl < maxDepth; lvl++) {
-    gbh.tree_lvl_coded_axis_list.push_back(
-      ~nonSplitQtBtAxes(lvlNodeSizeLog2[lvl], lvlNodeSizeLog2[lvl + 1]));
-
-    // Conformance: at least one axis must attempt to be coded at each level
-    assert(gbh.tree_lvl_coded_axis_list.back() != 0);
-  }
-
-  if (gps.octree_point_count_list_present_flag)
-    gbh.footer.octree_lvl_num_points_minus1.reserve(maxDepth);
-
-  int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
-  for (int depth = 0; depth < maxDepth; depth++) {
-    // setup at the start of each level
-    auto fifoCurrLvlEnd = fifo.end();
-    int numNodesNextLvl = 0;
-
-    // derive per-level node size related parameters
-    auto nodeSizeLog2 = lvlNodeSizeLog2[depth];
-    auto childSizeLog2 = lvlNodeSizeLog2[depth + 1];
-
-    auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
-
-    // if one dimension is not split, atlasShift[k] = 0
-    int codedAxesPrevLvl = depth ? gbh.tree_lvl_coded_axis_list[depth - 1] : 7;
-    int codedAxesCurLvl = gbh.tree_lvl_coded_axis_list[depth];
-
-    rsc.initializeNextDepth();
-
-    // process all nodes within a single level
-    auto fifoCurrNode = fifo.begin();
-    auto fifoSliceFirstNode = fifoCurrNode;
-    auto fifoTubeFirstNode = fifoCurrNode;
-    int tubeIndex = 0;
-    int nodeSliceIndex = 0;
-
-    bool isLastDepth = depth == maxDepth - 1;
-
-    auto goNextNode = [&]() {
-      ++fifoCurrNode;
-      if (
-        fifoCurrNode == fifoCurrLvlEnd
-        && nodeSliceIndex == 1
-        && tubeIndex == 1
-        ) {
-        fifo.resize(0);
-        fifo.swap(fifoNext);
-        tubeIndex = 0;
-        nodeSliceIndex = 0;
-        fifoSliceFirstNode = fifoCurrNode;
-        fifoTubeFirstNode = fifoCurrNode;
-      }
-      else if (
-        fifoCurrNode == fifoCurrLvlEnd
-        || fifoCurrNode->pos[1] != fifoTubeFirstNode->pos[1]
-        || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
-        ) {
-        // End of tube
-        if (tubeIndex == 0) {
-          ++tubeIndex;
-          fifoCurrNode = fifoTubeFirstNode;
-        }
-        else {
-          if (
-            fifoCurrNode == fifoCurrLvlEnd
-            || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
-            ) {
-            // End of slice
-            if (nodeSliceIndex == 0) {
-              ++nodeSliceIndex;
-              fifoCurrNode = fifoSliceFirstNode;
-            }
-            else {
-              nodeSliceIndex = 0;
-              fifoSliceFirstNode = fifoCurrNode;
-            }
-          }
-          tubeIndex = 0;
-          fifoTubeFirstNode = fifoCurrNode;
-        }
-      }
-    };
-
-    // planar mode as a container for QTBT at depth level
-    OctreeNodePlanar planar;
-    int codedAxesCurNode = codedAxesCurLvl;
-    int planarMask[3] = { 0, 0, 0 };
-    maskPlanar(planar, planarMask, codedAxesCurNode);
-
-    for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
-      PCCOctree3Node& node0 = *fifoCurrNode;
-
-      if (!tubeIndex && !nodeSliceIndex) {
-        //local motion : determine PU tree by motion search and RDO
-        if (isInter && nodeSizeLog2[0] == log2MotionBlockSize) {
-          std::unique_ptr<PUtree> PU_tree(new PUtree);
-
-          node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, gps.motion, nodeSizeLog2[0],
-            encoder._arithmeticEncoder, PU_tree.get());
-          node0.PU_tree = std::move(PU_tree);
-        }
-
-        // code split PU flag. If not split, code  MV and apply MC
-        // results of MC are stacked in compensatedPointCloud that starts empty
-        if (node0.PU_tree != nullptr) {
-          encode_splitPU_MV_MC(mSOctree,
-            &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
-            encoder._arithmeticEncoder, &compensatedPointCloud,
-            log2MotionBlockSize);
-        }
-
-        // split the current node into 8 children
-        //  - perform an 8-way counting sort of the current node's points
-        //  - (later) map to child nodes
-        countingSort(
-          PCCPointSet3::iterator(&pointCloud, node0.start),
-          PCCPointSet3::iterator(&pointCloud, node0.end), node0.childCounts,
-          [=](const PCCPointSet3::Proxy& proxy) {
-            const auto& point = *proxy;
-            return !!(int(point[2]) & pointSortMask[2])
-              | (!!(int(point[1]) & pointSortMask[1]) << 1)
-              | (!!(int(point[0]) & pointSortMask[0]) << 2);
-          });
-
-        // sort and partition the predictor for local motion
-        if (isInter) {
-          if (node0.isCompensated) {
-            countingSort(
-              PCCPointSet3::iterator(&compensatedPointCloud, node0.predStart),  // Need to update the predStar
-              PCCPointSet3::iterator(&compensatedPointCloud, node0.predEnd),
-              node0.predCounts, [=](const PCCPointSet3::Proxy& proxy) {
-                const auto& point = *proxy;
-                return !!(int(point[2]) & pointSortMask[2])
-                  | (!!(int(point[1]) & pointSortMask[1]) << 1)
-                  | (!!(int(point[0]) & pointSortMask[0]) << 2);
-              });
-          }
-          else {
-            if (depth < mSOctree.depth && node0.mSONodeIdx >= 0) {
-              const auto& msoNode = mSOctree.nodes[node0.mSONodeIdx];
-              for (int i = 0; i < 8; ++i) {
-                uint32_t msoChildIdx = msoNode.child[i];
-                if (msoChildIdx) {
-                  const auto& msoChild = mSOctree.nodes[msoChildIdx];
-                  node0.predCounts[i] = msoChild.end - msoChild.start;
-                }
-              }
-            }
-          }
-        }
-
-        // generate the bitmap of child occupancy and count
-        // the number of occupied children in node0.
-        int occupancy = 0;
-        for (int i = 0; i < 8; i++) {
-          occupancy |= (node0.childCounts[i] > 0) << i;
-        }
-        node0.childOccupancy = occupancy;
-        node0.predPointsStartIdx = node0.predStart;
-        node0.pos_fs = 1;  // first split falg is popped
-        node0.pos_fp = 0;
-        node0.pos_MV = 0;
-
-        // encode occupancy
-        RasterScanContext::occupancy contextualOccupancy;
-        GeometryNeighPattern gnp{};
-        // update contexts
-        rsc.nextNode(&*fifoCurrNode, contextualOccupancy);
-        node0.neighPattern = gnp.neighPattern = contextualOccupancy.neighPattern;
-        gnp.adjNeighOcc[0] = contextualOccupancy.childOccupancyContext[4];
-        gnp.adjNeighOcc[1] = contextualOccupancy.childOccupancyContext[10];
-        gnp.adjNeighOcc[2] = contextualOccupancy.childOccupancyContext[12];
-
-        // inter information
-        int predOccupancy = 0;
-        int predOccupancyStrong = 0;
-        for (int i = 0; i < 8; i++) {
-          predOccupancy |= (node0.predCounts[i] > 0) << i;
-          predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
-        }
-
-        // encode child occupancy map
-        assert(node0.childOccupancy > 0);
-        encoder.encodeOccupancyFullNeihbourgs(
-          contextualOccupancy, node0.childOccupancy, planarMask[0], planarMask[1],
-          planarMask[2],
-          predOccupancy | (predOccupancyStrong << 8), isInter);
-
-      }
-
-
-      // push child nodes to fifo
-      for (int i = 0; i < 2; ++i) {
-        if (node0.hasMotion && !node0.isCompensated)
-          node0.pos_fp++;  // pop occupancy flag from PU_tree
-
-        int childIndex = (nodeSliceIndex << 2) + (tubeIndex << 1) + i;
-        bool occupiedChild = node0.childCounts[childIndex] > 0;
-        if (!occupiedChild) {
-          // child is empty: skip
-          node0.predPointsStartIdx += node0.predCounts[childIndex];
-        }
-        else {
-          // create new child
-          fifoNext.emplace_back();
-          auto& child = fifoNext.back();
-
-          int x = nodeSliceIndex;
-          int y = tubeIndex;
-          int z = i;
-
-          // only shift position if an occupancy bit was coded for the axis
-          child.pos[0] = (node0.pos[0] << !!(codedAxesCurLvl & 4)) + x;
-          child.pos[1] = (node0.pos[1] << !!(codedAxesCurLvl & 2)) + y;
-          child.pos[2] = (node0.pos[2] << !!(codedAxesCurLvl & 1)) + z;
-
-          // insert split children into fifo while updating neighbour state
-          int childPointsStartIdx = node0.start;
-
-          for (int j = 0; j < childIndex; ++j)
-            childPointsStartIdx += node0.childCounts[j];
-
-          child.start = childPointsStartIdx;
-          childPointsStartIdx += node0.childCounts[childIndex];
-          child.end = childPointsStartIdx;
-
-          child.predStart = node0.predPointsStartIdx;
-          node0.predPointsStartIdx += node0.predCounts[childIndex];
-          child.predEnd = node0.predPointsStartIdx;
-          if (node0.mSONodeIdx >= 0) {
-            child.mSONodeIdx = mSOctree.nodes[node0.mSONodeIdx].child[childIndex];
-          }
-
-          //local motion PU inheritance
-          child.hasMotion = node0.hasMotion;
-          child.isCompensated = node0.isCompensated;
-
-          if (node0.hasMotion && !node0.isCompensated) {
-            std::unique_ptr<PUtree> child_PU_tree(new PUtree);
-
-            extracPUsubtree(
-              gps.motion, node0.PU_tree.get(), 1 << childSizeLog2[0], node0.pos_fs,
-              node0.pos_fp, node0.pos_MV, child_PU_tree.get());
-
-            child.PU_tree = std::move(child_PU_tree);
-          }
-
-          if (isInter) {
-            child.mSOctreeNodeIdx = mSOctreeCurr.nodes[node0.mSOctreeNodeIdx].child[childIndex];
-            assert(child.mSOctreeNodeIdx); // if not, missmatch between octrees
-          }
-
-          if (isLastDepth) {
-            nodesRemaining->push_back(child);
-            nodesRemaining->back().pos <<= lvlNodeSizeLog2[maxDepth];
-
-            if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
-              rste.callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
-            lastPos0 = child.pos[0];
-          }
-          numNodesNextLvl++;
-        }
-      }
-
-    }
-  }
-
-  // TriSoup final pass (true)
-  rste.callTriSoupSlice(true);
-  rste.finishSlice();
-}
-
-
 //============================================================================
 
 void
@@ -1795,34 +1444,15 @@ encodeGeometryOctree(
   const SequenceParameterSet& sps,
   PCCPointSet3& refPointCloud,
   MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud)
+  PCCPointSet3& compensatedPointCloud,
+  RasterScanTrisoupEdges* rste)
 {
   encodeGeometryOctree(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
-    sps, refPointCloud, mSOctree, compensatedPointCloud);
+    sps, refPointCloud, mSOctree, compensatedPointCloud, rste);
 }
 
 //-------------------------------------------------------------------------
-
-void
-encodeGeometryOctreeForTrisoup(
-  const OctreeEncOpts& opt,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  GeometryOctreeContexts& ctxtMem,
-  EntropyEncoder* arithmeticEncoder,
-  const CloudFrame& refFrame,
-  const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
-  RasterScanTrisoupEdges& rste)
-{
-  encodeGeometryOctreeForTrisoup(
-    opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoder, nullptr, refFrame,
-    sps, refPointCloud, mSOctree, compensatedPointCloud, rste);
-}
 
 //============================================================================
 }  // namespace pcc

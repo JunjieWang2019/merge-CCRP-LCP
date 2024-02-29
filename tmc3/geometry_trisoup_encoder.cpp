@@ -80,11 +80,6 @@ encodeGeometryTrisoup(
     std::cout << "distanceSearchEncoder = " << distanceSearchEncoder << "\n";
   } */
 
-  if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
-    ctxtMemOctree.clearMap();
-    ctxtMemOctree.resetMap();
-  }
-
   // get first encoder
   pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.begin()->get();
 
@@ -95,9 +90,9 @@ encodeGeometryTrisoup(
   rste.init();
 
   // octree
-  encodeGeometryOctreeForTrisoup(
-    optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoder, &nodes,
-    refFrame, sps, refPointCloud, mSOctree, compensatedPointCloud, rste);
+  encodeGeometryOctree(
+    optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
+    refFrame, sps, refPointCloud, mSOctree, compensatedPointCloud, &rste);
 
   std::cout << "Size compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
