@@ -46,7 +46,7 @@ namespace pcc {
 struct PayloadBuffer : public std::vector<char> {
   PayloadType type;
 
-  PayloadBuffer() = default;
+  PayloadBuffer() : type(PayloadType::kNotSet) {}
 
   PayloadBuffer(PayloadType payload_type) : type(payload_type)
   {

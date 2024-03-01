@@ -95,6 +95,8 @@ public:
 private:
   void activateParameterSets(const AttributeParamInventoryHdr& gbh);
   void activateParameterSets(const GeometryBrickHeader& gbh);
+
+  void decodeCurrentBrick();
   int decodeGeometryBrick(const PayloadBuffer& buf, AttributeInterPredParams& attrInterPredParams);
   void decodeAttributeBrick(const PayloadBuffer& buf);
   void decodeConstantAttribute(const PayloadBuffer& buf);
@@ -128,6 +130,24 @@ private:
 
   // Identifies the previous slice in bistream order
   int _prevSliceId;
+
+  // Payload buffers stored for single pass decoding
+  struct {
+    // Payload for geometry brick
+    PayloadBuffer geometry;
+
+    // Payloads for attribute bricks
+    std::vector<PayloadBuffer> attributes;
+
+    void clear() {
+      geometry = PayloadBuffer();
+      attributes.clear();
+    }
+
+    bool available() {
+      return geometry.type == PayloadType::kGeometryBrick;
+    }
+  } _payloadsBrick;
 
   // Cumulative frame counter
   FrameCtr _frameCtr;

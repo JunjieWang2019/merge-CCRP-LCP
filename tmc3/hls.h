@@ -48,6 +48,7 @@ namespace pcc {
 
 enum class PayloadType
 {
+  kNotSet = -1,
   kSequenceParameterSet = 0,
   kGeometryParameterSet = 1,
   kGeometryBrick = 2,
