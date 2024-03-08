@@ -590,7 +590,7 @@ PCCTMC3Decoder3::decodeCurrentBrick()
       _attrDecoder = makeAttributeDecoder();
 
     if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-      attrInterPredParams.prepareDecodeMotion(*_gps, _gbh, _currentPointCloud);
+      attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, _currentPointCloud);
 
     clock_user.start();
 
@@ -828,7 +828,7 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
     _attrDecoder = makeAttributeDecoder();
 
   if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-    attrInterPredParams.prepareDecodeMotion(*_gps, _gbh, _currentPointCloud);
+    attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, _currentPointCloud);
 
   clock_user.start();
 

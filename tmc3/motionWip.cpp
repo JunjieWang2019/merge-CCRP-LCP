@@ -48,6 +48,7 @@
 #include "PCCPointSet.h"
 #include "entropy.h"
 #include "geometry_octree.h"
+#include "PCCTMC3Encoder.h"
 
 namespace pcc {
 
@@ -369,10 +370,10 @@ roundIntegerHalfInf(const double x)
 //============================================================================
 
 int
-deriveMotionMaxPrefixBits(const GeometryParameterSet::Motion& param)
+deriveMotionMaxPrefixBits(int window_size)
 {
   int max_MV =
-    std::max(0, param.motion_window_size - 1);
+    std::max(0, window_size - 1);
   if (max_MV >= 256)
     return 31;
 
@@ -393,11 +394,11 @@ deriveMotionMaxPrefixBits(const GeometryParameterSet::Motion& param)
 }
 
 int
-deriveMotionMaxSuffixBits(const GeometryParameterSet::Motion& param)
+deriveMotionMaxSuffixBits(int window_size)
 {
 
   int max_MV =
-    std::max(0, param.motion_window_size  - 1);
+    std::max(0, window_size  - 1);
   if (max_MV >= 256)
     return 31;
 
@@ -420,7 +421,7 @@ deriveMotionMaxSuffixBits(const GeometryParameterSet::Motion& param)
 //----------------------------------------------------------------------------
 void
 extracPUsubtree(
-  const GeometryParameterSet::Motion& param,
+  const ParameterSetMotion& param,
   PUtree* local_PU_tree,
   int block_size,
   int& pos_fs,
@@ -468,7 +469,7 @@ encode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   PUtree* local_PU_tree,
-  const GeometryParameterSet::Motion& param,
+  const ParameterSetMotion& param,
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
@@ -491,9 +492,9 @@ encode_splitPU_MV_MC(
     point_t MVd = MV;
 
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_motion(MVd, node0, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
     } else {
-      mSOctree.apply_recolor_motion(MVd, node0, param, nodeSizeLog2[0], *compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
     node0->isCompensated = true;
     return;
@@ -509,7 +510,7 @@ void
 decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
+  const ParameterSetMotion& param,
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
@@ -532,9 +533,9 @@ decode_splitPU_MV_MC(
     MVd = MV;
 
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, param, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_motion(MVd, node0, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
     } else {
-      mSOctree.apply_recolor_motion(MVd, node0, param, nodeSizeLog2[0], *compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
 
     node0->isCompensated = true;
@@ -977,15 +978,15 @@ MSOctree::iApproxNearestNeighbourAttr(const point_t& pos) const {
 
 double
 MSOctree::find_motion(
-  const GeometryParameterSet::Motion& param,
+  const EncodeMotionSearchParams& param,
+  const ParameterSetMotion& mvPS,
   const MotionEntropyEstimate& motionEntropy,
   const MSOctree& mSOctreeOrig,
   uint32_t mSOctreeOrigNodeIdx,
   const PCCPointSet3& Block0,
   const point_t& xyz0,
   int local_size,
-  PUtree* local_PU_tree,
-  bool dualMotion) const
+  PUtree* local_PU_tree) const
 {
   //if (!Window.size())
   //  return DBL_MAX;
@@ -993,7 +994,7 @@ MSOctree::find_motion(
   // ---------------------------- test no split --------------------
   // test V=0 and  dynamic planing at Block0-Window +/- window_size
   double cost_NoSplit = DBL_MAX;
-  //int wSize = param.motion_window_size;
+  //int wSize = param.window_size;
 
   const point_t V00 = 0;
 
@@ -1203,7 +1204,7 @@ MSOctree::find_motion(
   double cost_Split = DBL_MAX;
   PUtree* Split_PU_tree = new PUtree;  // local split tree
 
-  if (local_size > param.motion_min_pu_size && Block0.size() >= 8) {
+  if (local_size > mvPS.motion_min_pu_size && Block0.size() >= 8) {
     // condition on number of points for search acceleration
     int local_size1 = local_size >> 1;
 
@@ -1253,20 +1254,20 @@ MSOctree::find_motion(
 
       uint32_t childNodeIdx = mSOctreeOrig.nodes[mSOctreeOrigNodeIdx].child[t];
 
-      cost_Split += find_motion(param, motionEntropy, mSOctreeOrig, childNodeIdx, Block1, xyz1, local_size1, Split_PU_tree, dualMotion);
+      cost_Split += find_motion(param, mvPS, motionEntropy, mSOctreeOrig, childNodeIdx, Block1, xyz1, local_size1, Split_PU_tree);
     }
   }
 
   // ---------------------------- choose split vs no split --------------------
-  if (local_size > param.motion_min_pu_size) {
+  if (local_size > mvPS.motion_min_pu_size) {
     cost_NoSplit +=
       param.lambda * motionEntropy.hSplitPu[0];  // cost no split flag
   }
   cost_Split += param.lambda * motionEntropy.hSplitPu[1];  // cost split flag
 
-  if (local_size <= param.motion_min_pu_size|| cost_NoSplit <= cost_Split) {  // no split
+  if (local_size <= mvPS.motion_min_pu_size|| cost_NoSplit <= cost_Split) {  // no split
     // push non split flag, only if size>size_min
-    if (local_size > param.motion_min_pu_size) {
+    if (local_size > mvPS.motion_min_pu_size) {
       local_PU_tree->split_flags.push_back(0);
     }
     // push MV
@@ -1299,11 +1300,11 @@ motionSearchForNode(
   const MSOctree& mSOctreeOrig,
   const MSOctree& mSOctree,
   const PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
+  const EncodeMotionSearchParams& param,
+  const ParameterSetMotion& mvPS,
   int nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree,
-  bool dualMotion)
+  PUtree* local_PU_tree)
 {
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
 
@@ -1311,8 +1312,8 @@ motionSearchForNode(
   Block0.appendPartition(*mSOctreeOrig.pointCloud, node0->start, node0->end);
 
   // entropy estimates
-  int wSize = param.motion_window_size;
-  MotionEntropyEstimate mcEstimate(motionEncoder, wSize, param.motion_max_prefix_bits, param.motion_max_suffix_bits);
+  int wSize = param.window_size;
+  MotionEntropyEstimate mcEstimate(motionEncoder, wSize, param.max_prefix_bits, param.max_suffix_bits);
 
   // motion search
   Vec3<int32_t> pos = node0->pos << nodeSizeLog2;
@@ -1320,7 +1321,7 @@ motionSearchForNode(
 
   // MV search
   mSOctree.find_motion(
-    param, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, (1 << nodeSizeLog2), local_PU_tree, dualMotion);
+    param, mvPS, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, (1 << nodeSizeLog2), local_PU_tree);
 
   return true;
 }
@@ -1329,7 +1330,6 @@ void
 MSOctree::apply_motion(
   point_t MVd,
   PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
   int nodeSizeLog2,
   PCCPointSet3* compensatedPointCloud,
   uint32_t depthMax) const
@@ -1419,10 +1419,7 @@ void
 MSOctree::apply_recolor_motion(
   point_t Mvd,
   PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
-  int nodeSizeLog2,
-  PCCPointSet3& pointCloud,
-  uint32_t depthMax) const
+  PCCPointSet3& pointCloud) const
 {
   for (int i = node0->start; i < node0->end; ++i) {
     auto p = pointCloud[i];

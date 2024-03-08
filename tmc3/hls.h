@@ -479,6 +479,14 @@ struct RahtPredictionParams {
 
 //============================================================================
 
+// for Geometry and attributes parameter sets
+struct ParameterSetMotion {
+  int motion_block_size = 0;
+  int motion_min_pu_size = 0;
+};
+
+//============================================================================
+
 struct GeometryParameterSet {
   int gps_geom_parameter_set_id;
   int gps_seq_parameter_set_id;
@@ -545,23 +553,8 @@ struct GeometryParameterSet {
   //Permits entropy continuation enabled in GoF for inter frame coding
   bool gof_geom_entropy_continuation_enabled_flag;
 
-  // inter
-  struct Motion {
-    int motion_block_size = 0;
-    int motion_min_pu_size = 0;
-    int motion_min_pu_size_color = 0;
-    // encoding parameters
-    // todo: move outside of GPS
-    int motion_window_size = 0;
-    int motion_max_prefix_bits = 0;
-    int motion_max_suffix_bits = 0;
-    int Amotion0 = 0;
-    int K = 1;
-    double lambda = 0.;
-    double dgeom_color_factor = 0.;
-    int decimate = 0;
-    bool approximate_nn = false;
-  } motion;
+  // motion parameters
+  ParameterSetMotion motion;
 };
 
 //============================================================================
@@ -699,6 +692,9 @@ struct AttributeParameterSet {
 
   bool attrInterPredictionEnabled = true;
   int qpShiftStep;
+
+  // motion parameters
+  ParameterSetMotion motion;
 };
 
 //============================================================================

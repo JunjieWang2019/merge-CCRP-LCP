@@ -43,6 +43,7 @@
 #include "tables.h"
 #include "quantization.h"
 #include "TMC3.h"
+#include "PCCTMC3Encoder.h"
 #include "motionWip.h"
 #include <unordered_map>
 #include <set>
@@ -702,7 +703,7 @@ GeometryOctreeEncoder::encodeDirectPosition(
 
 void
 encodeGeometryOctree(
-  const OctreeEncOpts& params,
+  const EncoderParams& encParams,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud,
@@ -716,6 +717,8 @@ encodeGeometryOctree(
   PCCPointSet3& compensatedPointCloud,
   RasterScanTrisoupEdges* rste)
 {
+  const OctreeEncOpts& params = encParams.geom;
+
   if (rste) {
     assert(nodesRemaining);
   }
@@ -1049,8 +1052,10 @@ encodeGeometryOctree(
         if (isInter && nodeSizeLog2[0] == log2MotionBlockSize) {
           std::unique_ptr<PUtree> PU_tree(new PUtree);
 
-          node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, gps.motion, nodeSizeLog2[0],
-            encoder._arithmeticEncoder, PU_tree.get());
+          node0.hasMotion = motionSearchForNode(
+            mSOctreeCurr, mSOctree,&node0, encParams.motion,
+            encParams.gps.motion, nodeSizeLog2[0], encoder._arithmeticEncoder,
+            PU_tree.get());
           node0.PU_tree = std::move(PU_tree);
         }
 
@@ -1434,7 +1439,7 @@ encodeGeometryOctree(
 
 void
 encodeGeometryOctree(
-  const OctreeEncOpts& opt,
+  const EncoderParams& opt,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud,

@@ -728,7 +728,7 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Abort if level limits exceeded")
 
    ("fasterMotionSearch",
-    params.encoder.gps.motion.approximate_nn, false,
+    params.encoder.motion.approximate_nn, false,
     "Enable approximate nearest neighbor for faster motion search")
 
   (po::Section("Geometry"))

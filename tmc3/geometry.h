@@ -53,11 +53,13 @@ struct GeometryOctreeContexts;
 struct CloudFrame;
 struct RasterScanTrisoupEdges;
 struct MSOctree;
+struct EncoderParams;
+
 
 //============================================================================
 
 void encodeGeometryOctree(
-  const OctreeEncOpts& opt,
+  const EncoderParams& opt,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud,
@@ -95,8 +97,7 @@ void decodeGeometryOctreeScalable(
 //----------------------------------------------------------------------------
 
 void encodeGeometryTrisoup(
-  const TrisoupEncOpts& opt,
-  const OctreeEncOpts& optOctree,
+  const EncoderParams& encParams,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud,

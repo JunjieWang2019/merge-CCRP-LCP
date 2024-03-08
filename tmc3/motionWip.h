@@ -62,6 +62,8 @@ static const unsigned int motionParamOffset = 1 << (motionParamPrec - 1);
 int plus1log2shifted4(int x);
 struct PCCOctree3Node;
 struct MSOctree;
+struct ParameterSetMotion;
+struct EncodeMotionSearchParams;
 //============================================================================
 
 int roundIntegerHalfInf(const double x);
@@ -73,8 +75,8 @@ struct PUtree {
   std::vector<point_t> MVs;
 };
 
-int deriveMotionMaxPrefixBits(const GeometryParameterSet::Motion& param);
-int deriveMotionMaxSuffixBits(const GeometryParameterSet::Motion& param);
+int deriveMotionMaxPrefixBits(int window_size);
+int deriveMotionMaxSuffixBits(int window_size);
 
 struct LPUwindow {
   Vec3<int> pos;
@@ -86,7 +88,7 @@ void encode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   PUtree* local_PU_tree,
-  const GeometryParameterSet::Motion& param,
+  const ParameterSetMotion& param,
   point_t nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
@@ -94,7 +96,7 @@ void encode_splitPU_MV_MC(
   bool recolor = false);
 
 void extracPUsubtree(
-  const GeometryParameterSet::Motion& param,
+  const ParameterSetMotion& param,
   PUtree* local_PU_tree,
   int block_size,
   int& pos_fs,
@@ -107,7 +109,7 @@ void extracPUsubtree(
 void decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
+  const ParameterSetMotion& param,
   point_t nodeSizeLog2,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
@@ -164,22 +166,21 @@ struct MSOctree {
 
   double
   find_motion(
-    const GeometryParameterSet::Motion& param,
+    const EncodeMotionSearchParams& msParams,
+    const ParameterSetMotion& mvPS,
     const MotionEntropyEstimate& motionEntropy,
     const MSOctree& mSOctreeOrig,
     uint32_t mSOctreeOrigNodeIdx,
     const PCCPointSet3& Block0,
     const point_t& xyz0,
     int local_size,
-    PUtree* local_PU_tree,
-    bool dualMotion = false
+    PUtree* local_PU_tree
   ) const;
 
   void
   apply_motion(
     point_t Mvd,
     PCCOctree3Node* node0,
-    const GeometryParameterSet::Motion& param,
     int nodeSizeLog2,
     PCCPointSet3* compensatedPointCloud,
     uint32_t depthMax = UINT32_MAX
@@ -192,10 +193,7 @@ struct MSOctree {
   apply_recolor_motion(
     point_t Mvd,
     PCCOctree3Node* node0,
-    const GeometryParameterSet::Motion& param,
-    int nodeSizeLog2,
-    PCCPointSet3& pointCloud,
-    uint32_t depthMax = UINT32_MAX
+    PCCPointSet3& pointCloud
   ) const;
 
   mutable ringbuf<int> a; // for search
@@ -203,16 +201,18 @@ struct MSOctree {
 };
 
 //----------------------------------------------------------------------------
+
 bool
 motionSearchForNode(
   const MSOctree& mSOctreeOrig,
   const MSOctree& mSOctree,
   const PCCOctree3Node* node0,
-  const GeometryParameterSet::Motion& param,
+  const EncodeMotionSearchParams& msParams,
+  const ParameterSetMotion& mvPS,
   int nodeSizeLog2,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree,
-  bool dualMotion=false);
+  PUtree* local_PU_tree
+);
 
 //============================================================================
 

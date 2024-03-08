@@ -248,7 +248,8 @@ AttributeDecoder::decode(
           && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
         if (attr_aps.mcap_to_rec_geom_flag)
           attrInterPredParams.compensatedPointCloud = pointCloud;
-        attrInterPredParams.decodeMotionAndBuildCompensated(gps, decoder.arithmeticDecoder, attr_aps.mcap_to_rec_geom_flag);
+        attrInterPredParams.decodeMotionAndBuildCompensated(
+          attr_aps.motion, decoder.arithmeticDecoder, attr_aps.mcap_to_rec_geom_flag);
       }
       decodeColorsRaht(attr_desc, attr_aps, abh, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
       break;

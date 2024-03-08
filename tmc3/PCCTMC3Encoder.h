@@ -59,9 +59,44 @@ namespace pcc {
 
 //============================================================================
 
+struct EncodeMotionSearchParams {
+  // window_size, max_prefix_bits and max_suffix_bits
+  // are used for historical reasons, and kept for motion entropy estimation
+  // TODO: Some cleanups should be made to avoid using them
+  int window_size = 0;
+  int max_prefix_bits = 0;
+  int max_suffix_bits = 0;
+
+  // Controls the use of an approximate or exact nearest neighbour search
+  bool approximate_nn = false;
+
+  // Number of iterations for the mean Nearest Neighbour intialization
+  // of the starting motion vector
+  int K = 1;
+
+  // Starting search distance around starting motion vector
+  int Amotion0 = 0;
+
+  // Provide lambda value for Lagrangian Rate distorsion optimization
+  double lambda = 0.;
+
+  // Factor applied to the color difference of a neighbour point in the
+  // computation of its distance to a current point in distorsion estimation
+  double dgeom_color_factor = 0.;
+
+  // A decimation factor on the number of points being considered during the
+  // distorsion estimation is obtained by: MotionBlockSize >> decimate
+  int decimate = 0;
+};
+
+//----------------------------------------------------------------------------
+
 struct EncoderAttributeParams {
   // NB: this only makes sense for setting configurable parameters
   AttributeBrickHeader abh;
+
+  // parameters for attributes motion search
+  EncodeMotionSearchParams motion;
 };
 
 //----------------------------------------------------------------------------
@@ -131,6 +166,9 @@ struct EncoderParams {
 
   // local motion
   int motionPreset;
+
+  // parameters for geometry motion search
+  EncodeMotionSearchParams motion;
 };
 
 //============================================================================
@@ -162,7 +200,7 @@ public:
   static void deriveParameterSets(EncoderParams* params);
   static void fixupParameterSets(EncoderParams* params);
   void setInterForCurrPic(bool x) { _codeCurrFrameAsInter = x; }
-  static void deriveMotionParams(EncoderParams* params);
+  void deriveMotionParams(EncoderParams* params);
 
 private:
   void appendSlice(PCCPointSet3& cloud);

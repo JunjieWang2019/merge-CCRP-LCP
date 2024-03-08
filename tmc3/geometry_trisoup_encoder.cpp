@@ -38,14 +38,14 @@
 #include "pointset_processing.h"
 #include "geometry.h"
 #include "geometry_octree.h"
+#include "PCCTMC3Encoder.h"
 
 namespace pcc {
 
 //============================================================================
 void
 encodeGeometryTrisoup(
-  const TrisoupEncOpts& opt,
-  const OctreeEncOpts& optOctree,
+  const EncoderParams& encParams,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud,
@@ -91,7 +91,7 @@ encodeGeometryTrisoup(
 
   // octree
   encodeGeometryOctree(
-    optOctree, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
+    encParams, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
     refFrame, sps, refPointCloud, mSOctree, compensatedPointCloud, &rste);
 
   std::cout << "Size compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";

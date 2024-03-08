@@ -49,6 +49,8 @@ namespace pcc {
 void
 AttributeInterPredParams::findMotion(
   const EncoderParams* params,
+  const EncodeMotionSearchParams& msParams,
+  const ParameterSetMotion& mvPS,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud
@@ -63,56 +65,9 @@ AttributeInterPredParams::findMotion(
 
   EntropyEncoder arithmeticEncoder;
 
-  auto scaleFactor = params->codedGeomScale;
-  int TriSoupSize = 1;
-  int presetMode = params->motionPreset;
-  if (gps.trisoup_enabled_flag)
-    TriSoupSize = 1 << gbh.trisoupNodeSizeLog2(gps);
-  auto motion = gps.motion;
-  motion.motion_min_pu_size = motion.motion_min_pu_size_color;
-  if (gps.interPredictionEnabledFlag) {
-    switch (presetMode) {
-    case 0:
-      break;
-
-    case 1:
-      // search parameters
-      motion.Amotion0 = motion.motion_window_size >> 2;
-      motion.lambda = 0.5;
-      motion.decimate = 6;
-      break;
-
-    case 2:
-      // search parameters
-      motion.Amotion0 = 1;
-      motion.lambda = 0.5/std::sqrt(4.*scaleFactor)*4.0;
-      motion.decimate = 7;
-      motion.dgeom_color_factor = 2;
-      motion.K = 10;
-      break;
-
-    case 3:
-      if (params->gps.trisoup_enabled_flag)
-        TriSoupSize = 1 << (params->trisoupNodeSizesLog2[0]);
-      // search parameters
-      motion.Amotion0 = 2;
-      motion.lambda = 2.5 * TriSoupSize * 4 / 32;
-      motion.decimate = 7;
-      motion.dgeom_color_factor = 2;
-      motion.K = 10;
-      break;
-
-    default:
-      // search parameters
-      motion.Amotion0 = motion.motion_window_size >> 2;
-      motion.lambda = 0.5;
-      motion.decimate = 6;
-    }
-  }
-
   mSOctreeCurr = MSOctree(
     &pointCloud, {}, std::min(
-      ilog2(uint32_t(gps.motion.motion_min_pu_size_color)),
+      ilog2(uint32_t(mvPS.motion_min_pu_size)),
       gbh.trisoupNodeSizeLog2(gps)));
   motionPUTrees.clear();
 
@@ -120,7 +75,7 @@ AttributeInterPredParams::findMotion(
   fifo.clear();
   fifo.push(0);
 
-  while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > gps.motion.motion_block_size - 1) {
+  while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > mvPS.motion_block_size - 1) {
     auto& node = mSOctreeCurr.nodes[fifo.front()];
     for(int i = 0; i < 8; ++i)
         if (node.child[i])
@@ -130,7 +85,7 @@ AttributeInterPredParams::findMotion(
 
   motionPUTrees.resize(fifo.size());
   // build root PU_trees
-  const int nodeSizeLog2 = ilog2(uint32_t(gps.motion.motion_block_size));
+  const int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
   int i = 0;
   while (!fifo.empty()) {
     auto& node = mSOctreeCurr.nodes[fifo.front()];
@@ -140,8 +95,8 @@ AttributeInterPredParams::findMotion(
     node0.end = node.end;
     node0.pos = node.pos0 >> nodeSizeLog2;
     node0.mSOctreeNodeIdx = mSOctreeCurr.nodeIdx(node.pos0, nodeSizeLog2);//fifo.front();
-    node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0, motion, nodeSizeLog2,
-        &arithmeticEncoder, &motionPUTrees[i].first, true);
+    node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0,
+      msParams, mvPS, nodeSizeLog2, &arithmeticEncoder, &motionPUTrees[i].first);
     motionPUTrees[i].second = fifo.front();
 
     fifo.pop_front();
@@ -153,7 +108,7 @@ AttributeInterPredParams::findMotion(
 
 void
 AttributeInterPredParams::encodeMotionAndBuildCompensated(
-  const GeometryParameterSet& gps,
+  const ParameterSetMotion& mvPS,
   EntropyEncoder& arithmeticEncoder,
   bool mcap_to_rec_geom_flag
 ) {
@@ -164,11 +119,7 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
   if (!mcap_to_rec_geom_flag)
     compensatedPointCloud.clear();
 
-  // dirty hack
-  auto motion = gps.motion;
-  motion.motion_min_pu_size = motion.motion_min_pu_size_color;
-
-  int nodeSizeLog2 = ilog2(uint32_t(gps.motion.motion_block_size));
+  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
   auto currentPUTrees = motionPUTrees;
   while (currentPUTrees.size()) {
     // coding (in morton order for simpler test)
@@ -186,11 +137,11 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
       auto& local_PU_tree = currentPUTrees[i].first;
 
       encode_splitPU_MV_MC(mSOctree,
-        &node0, &local_PU_tree, motion, nodeSizeLog2,
+        &node0, &local_PU_tree, mvPS, nodeSizeLog2,
         &arithmeticEncoder, &compensatedPointCloud,
         log2MotionBlockSize, mcap_to_rec_geom_flag);
 
-      if (!node0.isCompensated && 1 << childSizeLog2 >= gps.motion.motion_min_pu_size_color) {
+      if (!node0.isCompensated && 1 << childSizeLog2 >= mvPS.motion_min_pu_size) {
         node0.pos_fs = 1;
         node0.pos_fp = 0;
         node0.pos_MV = 0;
@@ -198,12 +149,12 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
           //assert(local_PU_tree.popul_flags[node0.pos_fp] && it->child[j]
           //        || !local_PU_tree.popul_flags[node0.pos_fp] && !it->child[j]);
           if (local_PU_tree.popul_flags[node0.pos_fp++]) {
-            assert(1 << childSizeLog2 >= gps.motion.motion_min_pu_size_color);
+            assert(1 << childSizeLog2 >= mvPS.motion_min_pu_size);
             // populated
             nextLevelPUTrees.emplace_back(
               std::make_pair(PUtree(), int(node.child[j])));
             extracPUsubtree(
-              motion, &local_PU_tree, 1 << childSizeLog2, node0.pos_fs,
+              mvPS, &local_PU_tree, 1 << childSizeLog2, node0.pos_fs,
               node0.pos_fp, node0.pos_MV, &nextLevelPUTrees.back().first);
           }
         }
@@ -219,6 +170,7 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
 
 void
 AttributeInterPredParams::prepareDecodeMotion(
+  const ParameterSetMotion& mvPS,
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud
@@ -229,7 +181,7 @@ AttributeInterPredParams::prepareDecodeMotion(
   }
   mSOctreeCurr = MSOctree(
     &pointCloud, {}, std::min(
-      ilog2(uint32_t(gps.motion.motion_min_pu_size_color)),
+      ilog2(uint32_t(mvPS.motion_min_pu_size)),
       gbh.trisoupNodeSizeLog2(gps)));
 }
 
@@ -237,7 +189,7 @@ AttributeInterPredParams::prepareDecodeMotion(
 
 void
 AttributeInterPredParams::decodeMotionAndBuildCompensated(
-  const GeometryParameterSet& gps,
+  const ParameterSetMotion& mvPS,
   EntropyDecoder& arithmeticDecoder,
   bool mcap_to_rec_geom_flag
 ) {
@@ -248,16 +200,12 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
   if (!mcap_to_rec_geom_flag)
     compensatedPointCloud.clear();
 
-  // dirty hack
-  auto motion = gps.motion;
-  motion.motion_min_pu_size = motion.motion_min_pu_size_color;
-
   auto& fifo = mSOctreeCurr.a;
   auto& fifo_next = mSOctreeCurr.b;
   fifo.clear();
   fifo.push(0);
 
-  while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > gps.motion.motion_block_size - 1) {
+  while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > mvPS.motion_block_size - 1) {
     auto& node = mSOctreeCurr.nodes[fifo.front()];
     for(int i = 0; i < 8; ++i)
         if (node.child[i])
@@ -265,9 +213,9 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
     fifo.pop_front();
   }
 
-  int nodeSizeLog2 = ilog2(uint32_t(gps.motion.motion_block_size));
+  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
 
-  while(1 << nodeSizeLog2 >= gps.motion.motion_min_pu_size_color) {
+  while(1 << nodeSizeLog2 >= mvPS.motion_min_pu_size) {
     fifo_next.clear();
     while (!fifo.empty()) {
       // coding (in morton order for simpler test)
@@ -281,11 +229,11 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
       assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
 
       decode_splitPU_MV_MC(mSOctree,
-        &node0, motion, nodeSizeLog2,
+        &node0, mvPS, nodeSizeLog2,
         &arithmeticDecoder, &compensatedPointCloud,
         log2MotionBlockSize, mcap_to_rec_geom_flag);
 
-      if (!node0.isCompensated && 1 << (nodeSizeLog2-1) >= gps.motion.motion_min_pu_size_color) {
+      if (!node0.isCompensated && 1 << (nodeSizeLog2-1) >= mvPS.motion_min_pu_size) {
         for (int i = 0; i < 8; ++i) {
           if (node.child[i]) {
             // populated

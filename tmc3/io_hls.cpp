@@ -661,7 +661,6 @@ write(const SequenceParameterSet& sps, const GeometryParameterSet& gps)
 
       bs.writeUe(gps.motion.motion_block_size);
       bs.writeUe(gps.motion.motion_min_pu_size);
-      bs.writeUe(gps.motion.motion_min_pu_size_color);
 
       bs.write(gps.gof_geom_entropy_continuation_enabled_flag);
 
@@ -731,7 +730,6 @@ parseGps(const PayloadBuffer& buf)
 
       bs.readUe(&gps.motion.motion_block_size);
       bs.readUe(&gps.motion.motion_min_pu_size);
-      bs.readUe(&gps.motion.motion_min_pu_size_color);
 
       bs.read(&gps.gof_geom_entropy_continuation_enabled_flag);
 
@@ -796,8 +794,11 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     bs.write(aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
       bs.write(aps.dual_motion_field_flag);
-      if (aps.dual_motion_field_flag)
+      if (aps.dual_motion_field_flag) {
         bs.write(aps.mcap_to_rec_geom_flag);
+        bs.writeUe(aps.motion.motion_block_size);
+        bs.writeUe(aps.motion.motion_min_pu_size);
+      }
     }
 
     if (
@@ -878,8 +879,11 @@ parseAps(const PayloadBuffer& buf)
     bs.read(&aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
       bs.read(&aps.dual_motion_field_flag);
-      if (aps.dual_motion_field_flag)
+      if (aps.dual_motion_field_flag) {
         bs.read(&aps.mcap_to_rec_geom_flag);
+        bs.readUe(&aps.motion.motion_block_size);
+        bs.readUe(&aps.motion.motion_min_pu_size);
+      }
     }
 
     if (

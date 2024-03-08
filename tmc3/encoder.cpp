@@ -154,9 +154,7 @@ PCCTMC3Encoder3::compress(
 
     // derive local motion parameters
     if (params->gps.interPredictionEnabledFlag)
-         deriveMotionParams(params);
-    params->gps.motion.motion_max_prefix_bits = deriveMotionMaxPrefixBits(params->gps.motion);
-    params->gps.motion.motion_max_suffix_bits = deriveMotionMaxSuffixBits(params->gps.motion);
+      deriveMotionParams(params);
 
     // Determine the number of bits to signal the bounding box
     params->sps.sps_bounding_box_offset_bits =
@@ -527,80 +525,140 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
   auto scaleFactor = params->codedGeomScale;
 
   // local
-  auto& motion = params->gps.motion;
+  auto& motionGPS = params->gps.motion;
+  auto& motionGEnc = params->motion;
   int presetMode = params->motionPreset;
   int TriSoupSize = 1;
-  std::cout << "presetMode  " << params->motionPreset << "\n";
-  if (params->gps.interPredictionEnabledFlag) {
+
+  std::cout << "presetMode : " << params->motionPreset << "\n";
+
+  // Set Geometry parameters
+
+  // some parameters are already set from command line
+
+  switch (presetMode) {
+  case 0:
+    params->randomAccessPeriod = 1;
+    break;
+
+  case 1:
+    motionGPS.motion_block_size = 1 << ilog2(uint32_t(std::max(64, int(std::round(8192 * scaleFactor)))));
+    motionGPS.motion_min_pu_size = motionGPS.motion_block_size >> MAX_PU_DEPTH;
+
+    // search parameters
+    motionGEnc.window_size = int(std::round(512 * 1 * scaleFactor * 2));
+    motionGEnc.Amotion0 = motionGEnc.window_size >> 2;
+    motionGEnc.lambda = 0.5;
+    motionGEnc.decimate = 6;
+    break;
+
+  case 2:
+    std::cout << "presetMode  for octree dense \n";
+    motionGPS.motion_block_size = 1 << ilog2(uint32_t(std::max(32, int(std::round(128 * scaleFactor)))));
+    motionGPS.motion_min_pu_size = motionGPS.motion_block_size >> 1;
+
+    // search parameters
+    motionGEnc.window_size = std::max(2, int(std::round(8 * scaleFactor)));
+    motionGEnc.Amotion0 = 1; // std::max(1, int(std::round(2 * scaleFactor)));
+    motionGEnc.lambda = 0.5/std::sqrt(4.*scaleFactor)*4.0;
+    motionGEnc.decimate = 7;
+    motionGEnc.dgeom_color_factor = 0.015;
+    motionGEnc.K = 10;
+    break;
+
+  case 3:
+    if (params->gps.trisoup_enabled_flag)
+      TriSoupSize = 1 << (params->trisoupNodeSizesLog2[0]);
+    std::cout << "presetMode for Trisoup dense of size " << TriSoupSize << " \n";
+
+
+    motionGPS.motion_block_size = std::min(256, 16 * TriSoupSize);
+    motionGPS.motion_min_pu_size = std::max(TriSoupSize, motionGPS.motion_block_size >> 1);
+
+    // search parameters
+    motionGEnc.window_size = 10;
+    motionGEnc.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
+    motionGEnc.lambda = 2.5*TriSoupSize*4;
+    motionGEnc.decimate = 7;
+    motionGEnc.dgeom_color_factor = 0.015;
+    motionGEnc.K = 10;
+    break;
+
+  default:
+    // NB: default parameters are large so that getting it wrong doesn't
+    //     run for ever.
+    motionGPS.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
+    motionGPS.motion_min_pu_size = motionGPS.motion_block_size >> (2 + MAX_PU_DEPTH);
+
+    // search parameters
+    motionGEnc.window_size = int(std::round(512 * 1 * scaleFactor * 2));
+    motionGEnc.Amotion0 = motionGEnc.window_size >> 2;
+    motionGEnc.lambda = 0.5;
+    motionGEnc.decimate = 6;
+  }
+
+  motionGEnc.max_prefix_bits = deriveMotionMaxPrefixBits(motionGEnc.window_size);
+  motionGEnc.max_suffix_bits = deriveMotionMaxSuffixBits(motionGEnc.window_size);
+
+  std::cout << "params->sps.geomPreScale : " << scaleFactor << "\n";
+  std::cout << "motion_block_size(geom) : " << motionGPS.motion_block_size << "\n";
+
+  // set attributes parameters
+  // for each attribute
+
+  for (const auto& it : params->attributeIdxMap) {
+    int attrIdx = it.second;
+    const auto& attr_sps = params->sps.attributeSets[attrIdx];
+    auto& attr_aps = params->aps[attrIdx];
+    auto& attr_enc = params->attr[attrIdx];
+    const auto& label = attr_sps.attributeLabel;
+
+    auto& motionAPS = attr_aps.motion;
+    auto& motionAEnc = attr_enc.motion;
+
+    motionAPS = motionGPS;
+    motionAEnc = motionGEnc;
+
     switch (presetMode) {
     case 0:
-      motion = GeometryParameterSet::Motion();
-      params->randomAccessPeriod = 1;
       break;
 
     case 1:
-      motion.motion_block_size = 1 << ilog2(uint32_t(std::max(64, int(std::round(8192 * scaleFactor)))));
-      motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
-      motion.motion_min_pu_size = motion.motion_block_size >> MAX_PU_DEPTH;
-      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
-
       // search parameters
-      motion.Amotion0 = motion.motion_window_size >> 2;
-      motion.lambda = 0.5;
-      motion.decimate = 6;
+      motionAEnc.Amotion0 = motionAEnc.window_size >> 2;
+      motionAEnc.lambda = 0.5;
+      motionAEnc.decimate = 6;
       break;
 
     case 2:
-      std::cout << "presetMode  for octree dense \n";
-      motion.motion_block_size = 1 << ilog2(uint32_t(std::max(32, int(std::round(128 * scaleFactor)))));
-      motion.motion_window_size = std::max(2, int(std::round(8 * scaleFactor)));
-      motion.motion_min_pu_size = motion.motion_block_size >> 1;
-      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
-
       // search parameters
-      motion.Amotion0 = 1; // std::max(1, int(std::round(2 * scaleFactor)));
-      motion.lambda = 0.5/std::sqrt(4.*scaleFactor)*4.0;
-      motion.decimate = 7;
-      motion.dgeom_color_factor = 0.015;
-      motion.K = 10;
+      motionAEnc.Amotion0 = 1;
+      motionAEnc.lambda = 0.5/std::sqrt(4.*scaleFactor)*4.0;
+      motionAEnc.decimate = 7;
+      motionAEnc.dgeom_color_factor = 2;
+      motionAEnc.K = 10;
       break;
 
     case 3:
-      if (params->gps.trisoup_enabled_flag)
-        TriSoupSize = 1 << (params->trisoupNodeSizesLog2[0]);
-      std::cout << "presetMode for Trisoup dense of size " << TriSoupSize << " \n";
-
-
-      motion.motion_block_size = std::min(256, 16 * TriSoupSize);
-      motion.motion_window_size = 10;
-      motion.motion_min_pu_size = std::max(TriSoupSize, motion.motion_block_size >> 1);
-      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
-
       // search parameters
-      motion.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
-      motion.lambda = 2.5*TriSoupSize*4;
-      motion.decimate = 7;
-      motion.dgeom_color_factor = 0.015;
-      motion.K = 10;
+      motionAEnc.Amotion0 = 2;
+      motionAEnc.lambda = 2.5 * TriSoupSize * 4 / 32;
+      motionAEnc.decimate = 7;
+      motionAEnc.dgeom_color_factor = 2;
+      motionAEnc.K = 10;
       break;
 
     default:
-      // NB: default parameters are large so that getting it wrong doesn't
-      //     run for ever.
-      motion.motion_block_size = std::max(64, int(std::round(8192 * scaleFactor)));
-      motion.motion_window_size = int(std::round(512 * 1 * scaleFactor * 2));
-      motion.motion_min_pu_size = motion.motion_block_size >> (2 + MAX_PU_DEPTH);
-      motion.motion_min_pu_size_color = motion.motion_min_pu_size;
-
-
       // search parameters
-      motion.Amotion0 = motion.motion_window_size >> 2;
-      motion.lambda = 0.5;
-      motion.decimate = 6;
+      motionAEnc.Amotion0 = motionAEnc.window_size >> 2;
+      motionAEnc.lambda = 0.5;
+      motionAEnc.decimate = 6;
     }
 
-    std::cout << "params->sps.geomPreScale  " << scaleFactor << "\n";
-    std::cout << "motion.motion_block_size  " << motion.motion_block_size << "\n";
+    motionAEnc.max_prefix_bits = deriveMotionMaxPrefixBits(motionAEnc.window_size);
+    motionAEnc.max_suffix_bits = deriveMotionMaxSuffixBits(motionAEnc.window_size);
+
+    std::cout << "motion_block_size(" << label << ") : " << motionAPS.motion_block_size << "\n";
   }
 }
 
@@ -764,7 +822,7 @@ PCCTMC3Encoder3::compressPartition(
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
 
     if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-      attrInterPredParams.findMotion(params, *_gps, _gbh, pointCloud);
+      attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, pointCloud);
 
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
     attrEncoder->encode(
@@ -903,7 +961,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
 
   if (!_gps->trisoup_enabled_flag) {
     encodeGeometryOctree(
-      params->geom, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
+      *params, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
       arithmeticEncoders, _refFrame, *_sps,
       attrInterPredParams.referencePointCloud,
       attrInterPredParams.mSOctreeRef,
@@ -915,7 +973,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     // todo(df): this should be derived from the level
     gbh.footer.geom_num_points_minus1 = params->partition.sliceMaxPointsTrisoup - 1;
     encodeGeometryTrisoup(
-      params->trisoup, params->geom, *_gps, gbh, pointCloud,
+      *params, *_gps, gbh, pointCloud,
       *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
       *_sps, attrInterPredParams.referencePointCloud,
       attrInterPredParams.mSOctreeRef,

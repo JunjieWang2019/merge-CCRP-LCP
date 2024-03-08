@@ -72,25 +72,28 @@ struct AttributeInterPredParams {
 
   void findMotion(
     const EncoderParams* params,
+    const EncodeMotionSearchParams& msParams,
+    const ParameterSetMotion& mvPS,
     const GeometryParameterSet& gps,
     const GeometryBrickHeader& gbh,
     PCCPointSet3& pointCloud
   );
 
   void encodeMotionAndBuildCompensated(
-    const GeometryParameterSet& gps,
+    const ParameterSetMotion& mvPS,
     EntropyEncoder& arithmeticEncoder,
     bool mcap_to_rec_geom_flag
   );
 
   void prepareDecodeMotion(
+    const ParameterSetMotion& mvPS,
     const GeometryParameterSet& gps,
     const GeometryBrickHeader& gbh,
     PCCPointSet3& pointCloud
   );
 
   void decodeMotionAndBuildCompensated(
-    const GeometryParameterSet& gps,
+    const ParameterSetMotion& mvPS,
     EntropyDecoder& arithmeticDecoder,
     bool mcap_to_rec_geom_flag
   );

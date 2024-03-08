@@ -56,9 +56,12 @@ namespace pcc {
 
 const int MAX_NUM_DM_LEAF_POINTS = 2;
 
-//============================================================================
+//----------------------------------------------------------------------------
 
+struct EncoderParams;
 struct RasterScanTrisoupEdges;
+
+//============================================================================
 
 struct PCCOctree3Node {
   PCCOctree3Node() = default;
@@ -849,7 +852,7 @@ GeometryOctreeContexts::reset()
 // :: octree encoder exposing internal ringbuffer
 
 void encodeGeometryOctree(
-  const OctreeEncOpts& opt,
+  const EncoderParams& opt,
   const GeometryParameterSet& gps,
   GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud,
