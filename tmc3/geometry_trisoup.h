@@ -1433,7 +1433,7 @@ struct RasterScanTrisoupEdges {
       fVerts.resize(leaves.size());
     }
 
-    if (currWedgePos == Vec3<int32_t>{INT32_MIN, INT32_MIN, INT32_MIN}) ;
+    if (currWedgePos == Vec3<int32_t>{INT32_MIN, INT32_MIN, INT32_MIN})
       currWedgePos = leaves[0].pos;
 
     int lastAcceptable = INT_MAX;
