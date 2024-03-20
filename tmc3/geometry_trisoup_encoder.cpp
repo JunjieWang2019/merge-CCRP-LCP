@@ -58,7 +58,7 @@ encodeGeometryTrisoup(
   bool isInter = gbh.interPredictionEnabledFlag;
 
   // prepare TriSoup parameters
-  int blockWidth = 1 << gbh.trisoupNodeSizeLog2(gps);
+  int blockWidth = gbh.trisoupNodeSize(gps);
 
   std::cout << "TriSoup QP = " << gbh.trisoup_QP << "\n";
 

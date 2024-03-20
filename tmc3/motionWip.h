@@ -89,10 +89,12 @@ void encode_splitPU_MV_MC(
   PCCOctree3Node* node0,
   PUtree* local_PU_tree,
   const ParameterSetMotion& param,
-  point_t nodeSizeLog2,
+  int nodeSize,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize,
+  bool flagNonPow2 = false,
+  int S = -1,
+  int S2 = -1,
   bool recolor = false);
 
 void extracPUsubtree(
@@ -110,10 +112,12 @@ void decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   const ParameterSetMotion& param,
-  point_t nodeSizeLog2,
+  int nodeSize,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize,
+  bool flagNonPow2 = false,
+  int S = -1,
+  int S2 = -1,
   bool recolor = false);
 
   //============================================================================
@@ -188,7 +192,10 @@ struct MSOctree {
     PCCOctree3Node* node0,
     int nodeSizeLog2,
     PCCPointSet3* compensatedPointCloud,
-    uint32_t depthMax = UINT32_MAX
+    uint32_t depthMax = UINT32_MAX,
+    bool flagNonPow2 = false,
+    int S = -1,
+    int S2 = -1
   ) const;
 
   int
@@ -214,9 +221,12 @@ motionSearchForNode(
   const PCCOctree3Node* node0,
   const EncodeMotionSearchParams& msParams,
   const ParameterSetMotion& mvPS,
-  int nodeSizeLog2,
+  int nodeSize,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree
+  PUtree* local_PU_tree,
+  bool flagNonPow2 = false,
+  int S = -1,
+  int S2 = -1
 );
 
 //============================================================================

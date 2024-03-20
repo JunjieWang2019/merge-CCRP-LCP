@@ -111,12 +111,12 @@ PCCTMC3Encoder3::compress(
       bbox.max = bbox.min + params->sps.seqBoundingBoxSize - 1;
     }
 
-    if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizesLog2.empty()) {
-      int nodeSizeLog2 = *std::max_element(
-          params->trisoupNodeSizesLog2.begin(),
-          params->trisoupNodeSizesLog2.end());
-      bbox.min = ((bbox.min >> nodeSizeLog2) << nodeSizeLog2);
-      bbox.max = ((bbox.max + (1 << nodeSizeLog2) - 1 >> nodeSizeLog2) << nodeSizeLog2);
+    if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizes.empty()) {
+      int nodeSize = *std::max_element(
+        params->trisoupNodeSizes.begin(),
+        params->trisoupNodeSizes.end());
+      bbox.min = (bbox.min / nodeSize) * nodeSize;
+      bbox.max = ((bbox.max + nodeSize - 1) / nodeSize) * nodeSize;
     }
 
     // Note whether the bounding box size is defined
@@ -290,10 +290,13 @@ PCCTMC3Encoder3::compress(
   // use the largest trisoup node size as a partitioning boundary for
   // consistency between slices with different trisoup node sizes.
   int partitionBoundaryLog2 = 0;
-  if (!params->trisoupNodeSizesLog2.empty())
-    partitionBoundaryLog2 = *std::max_element(
-      params->trisoupNodeSizesLog2.begin(),
-      params->trisoupNodeSizesLog2.end());
+  uint32_t partitionBoundary = 1;
+  if (!params->trisoupNodeSizes.empty())
+    partitionBoundary = *std::max_element(
+      params->trisoupNodeSizes.begin(),
+      params->trisoupNodeSizes.end());
+
+  partitionBoundaryLog2 = ilog2(partitionBoundary - 1) + 1;
 
   do {
     for (int t = 0; t < tileMaps.size(); t++) {
@@ -388,11 +391,11 @@ PCCTMC3Encoder3::compress(
       _sliceOrigin[2] -= (_sliceOrigin[2] % partitionBoundary);
     }
 
-    if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizesLog2.empty()) {
-      int nodeSizeLog2 = *std::max_element(
-          params->trisoupNodeSizesLog2.begin(),
-          params->trisoupNodeSizesLog2.end());
-      _sliceOrigin = ((_sliceOrigin >> nodeSizeLog2) << nodeSizeLog2);
+    if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizes.empty()) {
+      int nodeSize = *std::max_element(
+          params->trisoupNodeSizes.begin(),
+          params->trisoupNodeSizes.end());
+      _sliceOrigin = ((_sliceOrigin / nodeSize) * nodeSize);
     }
 
     compressPartition(sliceCloud, sliceSrcCloud, params, callback, reconCloud);
@@ -529,6 +532,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
   auto& motionGEnc = params->motion;
   int presetMode = params->motionPreset;
   int TriSoupSize = 1;
+  int TriSoupSizeLog2 = 0;
 
   std::cout << "presetMode : " << params->motionPreset << "\n";
 
@@ -568,11 +572,14 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
 
   case 3:
     if (params->gps.trisoup_enabled_flag)
-      TriSoupSize = 1 << (params->trisoupNodeSizesLog2[0]);
+      TriSoupSize = *std::max_element(
+        params->trisoupNodeSizes.begin(),
+        params->trisoupNodeSizes.end());
     std::cout << "presetMode for Trisoup dense of size " << TriSoupSize << " \n";
 
+    TriSoupSizeLog2 = ilog2(uint32_t(TriSoupSize - 1)) + 1;
 
-    motionGPS.motion_block_size = std::min(256, 16 * TriSoupSize);
+    motionGPS.motion_block_size = std::min(256, 16 << TriSoupSizeLog2);
     motionGPS.motion_min_pu_size = std::max(TriSoupSize, motionGPS.motion_block_size >> 1);
 
     // search parameters
@@ -682,11 +689,11 @@ PCCTMC3Encoder3::compressPartition(
   pointCloud = inputPointCloud;
 
   // apply a custom trisoup node size
-  params->gbh.trisoup_node_size_log2_minus2 = 0;
+  params->gbh.trisoup_node_size = 1;
   if (_gps->trisoup_enabled_flag) {
-    int idx = std::min(_sliceId, int(params->trisoupNodeSizesLog2.size()) - 1);
-    params->gbh.trisoup_node_size_log2_minus2 =
-      params->trisoupNodeSizesLog2[idx] - 2;
+    int idx = std::min(_sliceId, int(params->trisoupNodeSizes.size()) - 1);
+    params->gbh.trisoup_node_size =
+      params->trisoupNodeSizes[idx];
   }
 
   // Offset the point cloud to account for (preset) _sliceOrigin.
@@ -882,8 +889,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.geom_box_log2_scale = 0;
   gbh.geom_slice_qp_offset = params->gbh.geom_slice_qp_offset;
   gbh.geom_stream_cnt_minus1 = params->gbh.geom_stream_cnt_minus1;
-  gbh.trisoup_node_size_log2_minus2 =
-    params->gbh.trisoup_node_size_log2_minus2;
+  gbh.trisoup_node_size = params->gbh.trisoup_node_size;
   gbh.trisoup_QP = params->gbh.trisoup_QP;
   gbh.trisoup_centroid_vertex_residual_flag =
     params->gbh.trisoup_centroid_vertex_residual_flag;
@@ -908,17 +914,17 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   if (_sps->entropy_continuation_enabled_flag)
     gbh.entropy_continuation_flag = !_firstSliceInFrame;
 
-  int nodeSizeLog2 = 0;
-  if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizesLog2.empty())
-    nodeSizeLog2 = *std::max_element(
-      params->trisoupNodeSizesLog2.begin(),
-      params->trisoupNodeSizesLog2.end());
+  int nodeSize = 1;
+  if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizes.empty())
+    nodeSize = *std::max_element(
+      params->trisoupNodeSizes.begin(),
+      params->trisoupNodeSizes.end());
 
   // inform the geometry coder what the root node size is
   for (int k = 0; k < 3; k++) {
     // NB: A minimum whd of 2 means there is always at least 1 tree level
     if (params->trisoup.alignToNodeGrid)
-      gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, (_sliceBoxWhd[k] + (1 << nodeSizeLog2) - 1 >> nodeSizeLog2) << nodeSizeLog2));
+      gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, ((_sliceBoxWhd[k] + nodeSize - 1) / nodeSize) * nodeSize));
     else
       gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, _sliceBoxWhd[k]));
 

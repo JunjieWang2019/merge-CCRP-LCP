@@ -430,7 +430,7 @@ struct SequenceParameterSet {
   bool inter_frame_trisoup_align_slices_flag;
 
   // alignment trisoup grid step size
-  int inter_frame_trisoup_align_slices_step_log2_minus2;
+  int inter_frame_trisoup_align_slices_step;
 
   // local motion compensation
   int local_mc;
@@ -622,11 +622,16 @@ struct GeometryBrickHeader {
   }
 
   // size of triangle nodes (reconstructed surface) in trisoup geometry.
-  int trisoup_node_size_log2_minus2;
+  int trisoup_node_size;
 
   int trisoupNodeSizeLog2(const GeometryParameterSet& gps) const
   {
-    return gps.trisoup_enabled_flag ? trisoup_node_size_log2_minus2 + 2 : 0;
+    return gps.trisoup_enabled_flag ? ilog2(uint32_t(trisoup_node_size - 1)) + 1 : 0;
+  }
+
+  int trisoupNodeSize(const GeometryParameterSet& gps) const
+  {
+    return gps.trisoup_enabled_flag ? trisoup_node_size : 1;
   }
 
   // quantization parameter for TriSoup edge

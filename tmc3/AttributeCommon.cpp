@@ -66,9 +66,9 @@ AttributeInterPredParams::findMotion(
   EntropyEncoder arithmeticEncoder;
 
   mSOctreeCurr = MSOctree(
-    &pointCloud, {}, std::min(
-      ilog2(uint32_t(mvPS.motion_min_pu_size)),
-      gbh.trisoupNodeSizeLog2(gps)));
+    &pointCloud, {}, ilog2(uint32_t(std::min(
+      mvPS.motion_min_pu_size,
+      gbh.trisoupNodeSize(gps)) - 1)) + 1);
   motionPUTrees.clear();
 
   auto& fifo = mSOctreeCurr.a;
@@ -85,7 +85,7 @@ AttributeInterPredParams::findMotion(
 
   motionPUTrees.resize(fifo.size());
   // build root PU_trees
-  const int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
+  const int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
   int i = 0;
   while (!fifo.empty()) {
     auto& node = mSOctreeCurr.nodes[fifo.front()];
@@ -96,7 +96,8 @@ AttributeInterPredParams::findMotion(
     node0.pos = node.pos0 >> nodeSizeLog2;
     node0.mSOctreeNodeIdx = mSOctreeCurr.nodeIdx(node.pos0, nodeSizeLog2);//fifo.front();
     node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0,
-      msParams, mvPS, nodeSizeLog2, &arithmeticEncoder, &motionPUTrees[i].first);
+      msParams, mvPS, 1 << nodeSizeLog2, &arithmeticEncoder,
+      &motionPUTrees[i].first);
     motionPUTrees[i].second = fifo.front();
 
     fifo.pop_front();
@@ -114,12 +115,10 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
 
-  int log2MotionBlockSize = 0; // unused
-
   if (!mcap_to_rec_geom_flag)
     compensatedPointCloud.clear();
 
-  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
+  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
   auto currentPUTrees = motionPUTrees;
   while (currentPUTrees.size()) {
     // coding (in morton order for simpler test)
@@ -137,11 +136,11 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
       auto& local_PU_tree = currentPUTrees[i].first;
 
       encode_splitPU_MV_MC(mSOctree,
-        &node0, &local_PU_tree, mvPS, nodeSizeLog2,
+        &node0, &local_PU_tree, mvPS, 1 << nodeSizeLog2,
         &arithmeticEncoder, &compensatedPointCloud,
-        log2MotionBlockSize, mcap_to_rec_geom_flag);
+        false, -1, -1, mcap_to_rec_geom_flag);
 
-      if (!node0.isCompensated && 1 << childSizeLog2 >= mvPS.motion_min_pu_size) {
+      if (!node0.isCompensated && 1 << nodeSizeLog2 > mvPS.motion_min_pu_size) {
         node0.pos_fs = 1;
         node0.pos_fp = 0;
         node0.pos_MV = 0;
@@ -180,9 +179,9 @@ AttributeInterPredParams::prepareDecodeMotion(
     return;
   }
   mSOctreeCurr = MSOctree(
-    &pointCloud, {}, std::min(
-      ilog2(uint32_t(mvPS.motion_min_pu_size)),
-      gbh.trisoupNodeSizeLog2(gps)));
+    &pointCloud, {}, ilog2(uint32_t(std::min(
+      mvPS.motion_min_pu_size,
+      gbh.trisoupNodeSize(gps)) - 1)) + 1);
 }
 
 //----------------------------------------------------------------------------
@@ -194,8 +193,6 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
   bool mcap_to_rec_geom_flag
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
-
-  int log2MotionBlockSize = 0; // unused
 
   if (!mcap_to_rec_geom_flag)
     compensatedPointCloud.clear();
@@ -213,9 +210,9 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
     fifo.pop_front();
   }
 
-  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
+  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
 
-  while(1 << nodeSizeLog2 >= mvPS.motion_min_pu_size) {
+  while(1 << (nodeSizeLog2 + 1) > mvPS.motion_min_pu_size) {
     fifo_next.clear();
     while (!fifo.empty()) {
       // coding (in morton order for simpler test)
@@ -229,11 +226,11 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
       assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
 
       decode_splitPU_MV_MC(mSOctree,
-        &node0, mvPS, nodeSizeLog2,
+        &node0, mvPS, 1 << nodeSizeLog2,
         &arithmeticDecoder, &compensatedPointCloud,
-        log2MotionBlockSize, mcap_to_rec_geom_flag);
+        false, -1, -1, mcap_to_rec_geom_flag);
 
-      if (!node0.isCompensated && 1 << (nodeSizeLog2-1) >= mvPS.motion_min_pu_size) {
+      if (!node0.isCompensated && 1 << nodeSizeLog2 > mvPS.motion_min_pu_size) {
         for (int i = 0; i < 8; ++i) {
           if (node.child[i]) {
             // populated

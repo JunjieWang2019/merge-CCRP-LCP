@@ -471,7 +471,7 @@ write(const SequenceParameterSet& sps)
     bs.write(sps.inter_frame_trisoup_align_slices_flag);
 
   if(sps.inter_frame_trisoup_align_slices_flag)
-    bs.writeUe(sps.inter_frame_trisoup_align_slices_step_log2_minus2);
+    bs.writeUe(sps.inter_frame_trisoup_align_slices_step);
 
   bs.byteAlign();
 
@@ -578,7 +578,7 @@ parseSps(const PayloadBuffer& buf)
   sps.bypass_bin_coding_without_prob_update = false;
   sps.inter_frame_trisoup_enabled_flag = false;
   sps.inter_frame_trisoup_align_slices_flag = false;
-  sps.inter_frame_trisoup_align_slices_step_log2_minus2 = 0;
+  sps.inter_frame_trisoup_align_slices_step = 1;
   bool sps_extension_flag = bs.read();
   if (sps_extension_flag) {
     bs.read(&sps.inter_frame_prediction_enabled_flag);
@@ -591,7 +591,7 @@ parseSps(const PayloadBuffer& buf)
       bs.read(&sps.inter_frame_trisoup_align_slices_flag);
 
     if(sps.inter_frame_trisoup_align_slices_flag)
-      bs.readUe(&sps.inter_frame_trisoup_align_slices_step_log2_minus2);
+      bs.readUe(&sps.inter_frame_trisoup_align_slices_step);
   }
   bs.byteAlign();
 
@@ -973,7 +973,7 @@ write(
   }
 
   if (gps.trisoup_enabled_flag) {
-    bs.writeUe(gbh.trisoup_node_size_log2_minus2);
+    bs.writeUe(gbh.trisoup_node_size);
     bs.writeUe(gbh.trisoup_QP);
     bs.write(gbh.trisoup_centroid_vertex_residual_flag);
     if( gbh.trisoup_centroid_vertex_residual_flag ){
@@ -1072,7 +1072,7 @@ parseGbh(
   }
 
   if (gps.trisoup_enabled_flag) {
-    bs.readUe(&gbh.trisoup_node_size_log2_minus2);
+    bs.readUe(&gbh.trisoup_node_size);
     bs.readUe(&gbh.trisoup_QP);
     bs.read(&gbh.trisoup_centroid_vertex_residual_flag);
     if( gbh.trisoup_centroid_vertex_residual_flag ){

@@ -14,7 +14,7 @@ categories:
 
      ##
      # geometry parameters (octree)
-     - trisoupNodeSizeLog2: 0
+     - trisoupNodeSize: 0
      - mergeDuplicatedPoints: 1
      - neighbourAvailBoundaryLog2: 8
      - positionQuantizationScale:

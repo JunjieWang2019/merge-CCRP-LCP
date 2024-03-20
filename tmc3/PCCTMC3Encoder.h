@@ -153,7 +153,7 @@ struct EncoderParams {
   RecolourParams recolour;
 
   // per-slice trisoup node sizes
-  std::vector<int> trisoupNodeSizesLog2;
+  std::vector<int> trisoupNodeSizes;
 
   // Enable enforcement of level limits (encoder will abort if exceeded)
   bool enforceLevelLimits;

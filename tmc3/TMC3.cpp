@@ -768,10 +768,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gps.joint_2pt_idcm_enabled_flag, true,
     "Jointly code common prefix of two IDCM points")
 
-  ("trisoupNodeSizeLog2",
-    params.encoder.trisoupNodeSizesLog2, {0},
+  ("trisoupNodeSize",
+    params.encoder.trisoupNodeSizes, { 0 },
     "Node size for surface triangulation\n"
-    " <2: disabled")
+    " <4: disabled")
 
   ("trisoupQuantizationQP",
     params.encoder.gbh.trisoup_QP, 0,
@@ -1191,16 +1191,16 @@ sanitizeEncoderOpts(
   // Trisoup is enabled when a node size is specified
   // sanity: don't enable if only node size is 0.
   // todo(df): this needs to take into account slices where it is disabled
-  if (params.encoder.trisoupNodeSizesLog2.size() == 1)
-    if (params.encoder.trisoupNodeSizesLog2[0] < 2)
-      params.encoder.trisoupNodeSizesLog2.clear();
+  if (params.encoder.trisoupNodeSizes.size() == 1)
+    if (params.encoder.trisoupNodeSizes[0] < 4)
+      params.encoder.trisoupNodeSizes.clear();
 
-  for (auto trisoupNodeSizeLog2 : params.encoder.trisoupNodeSizesLog2)
-    if (trisoupNodeSizeLog2 < 2)
-      err.error() << "Trisoup node size must be greater than 1\n";
+  for (auto trisoupNodeSize : params.encoder.trisoupNodeSizes)
+    if (trisoupNodeSize < 4)
+      err.error() << "Trisoup node size must be at least 4\n";
 
   params.encoder.gps.trisoup_enabled_flag =
-    !params.encoder.trisoupNodeSizesLog2.empty();
+    !params.encoder.trisoupNodeSizes.empty();
 
   // Certain coding modes are not available when trisoup is enabled.
   // Disable them, and warn if set (they may be set as defaults).
@@ -1253,12 +1253,12 @@ sanitizeEncoderOpts(
     params.encoder.sps.inter_frame_trisoup_enabled_flag
       && params.encoder.trisoup.alignToNodeGrid;
 
-  params.encoder.sps.inter_frame_trisoup_align_slices_step_log2_minus2 =
+  params.encoder.sps.inter_frame_trisoup_align_slices_step =
     params.encoder.sps.inter_frame_trisoup_align_slices_flag ?
       *std::max_element(
-        params.encoder.trisoupNodeSizesLog2.begin(),
-        params.encoder.trisoupNodeSizesLog2.end()) - 2
-      : 0;
+        params.encoder.trisoupNodeSizes.begin(),
+        params.encoder.trisoupNodeSizes.end())
+      : 1;
 
   // Separate bypass bin coding only when cabac_bypass_stream is disabled
   if (params.encoder.sps.cabac_bypass_stream_enabled_flag)

@@ -34,11 +34,11 @@ categories:
      - neighbourAvailBoundaryLog2: 8
      - inferredDirectCodingMode: 0
      - positionQuantizationScale: '$eval{ 1 / (1 << ( ${src-geometry-precision} - ${test-depth} )) }'
-     - trisoupNodeSizeLog2:
-         r01: 5
-         r02: 4
-         r03: 3
-         r04: 2
+     - trisoupNodeSize:
+         r01: 32
+         r02: 16
+         r03: 8
+         r04: 4
      - trisoupQuantizationQP:
          r01: 30
          r02: 24

@@ -731,15 +731,12 @@ encodeGeometryOctree(
   refPointCloud = refFrame.cloud;
   PCCPointSet3& predPointCloud = refPointCloud;
 
-  int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
+  int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size - 1)) + 1;
   MSOctree& mSOctree = interPredParams.mSOctreeRef;
   if (isInter) {
     mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   }
   MSOctree mSOctreeCurr;
-
-  if (isInter)
-    mSOctreeCurr = MSOctree(&pointCloud, {}, gbh.trisoupNodeSizeLog2(gps));
 
   auto arithmeticEncoderIt = arithmeticEncoders.begin();
   GeometryOctreeEncoder encoder(gps, gbh, ctxtMem, arithmeticEncoderIt->get());
@@ -747,6 +744,13 @@ encodeGeometryOctree(
   // saved state for use with parallel bistream coding.
   // the saved state is restored at the start of each parallel octree level
   std::unique_ptr<GeometryOctreeContexts> savedState;
+
+  const int S2 = gbh.trisoupNodeSizeLog2(gps);
+  const int S = gbh.trisoupNodeSize(gps);
+  const int factorS = (1 << S2) - S;
+  const bool flagNonPow2 = factorS != 0;
+  if (flagNonPow2)
+    gbh.rootNodeSizeLog2 += 1;
 
   // generate the list of the node size for each level in the tree
   auto lvlNodeSizeLog2 = mkQtBtNodeSizeList(gps, params.qtbt, gbh);
@@ -757,9 +761,9 @@ encodeGeometryOctree(
 
   // local motion prediction structure -> LPUs from predPointCloud
   if (isInter) {
-    log2MotionBlockSize = int(log2(gps.motion.motion_block_size));
+    log2MotionBlockSize = int(log2(gps.motion.motion_block_size - 1) + 1);
     if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
-      int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size));
+      int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size - 1) + 1);
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }
@@ -769,7 +773,7 @@ encodeGeometryOctree(
   //  -- worst case size is the last level containing every input poit
   //     and each point being isolated in the previous level.
   int reservedBufferSize = pointCloud.getPointCount();
-  if (gps.trisoup_enabled_flag && gbh.trisoupNodeSizeLog2(gps))
+  if (gps.trisoup_enabled_flag && gbh.trisoupNodeSize(gps) > 1)
     reservedBufferSize = std::max(1000, reservedBufferSize >> 2 * gbh.trisoupNodeSizeLog2(gps) - 1);
 
   std::vector<PCCOctree3Node> fifo;
@@ -879,6 +883,21 @@ encodeGeometryOctree(
 
   int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
 
+  // process point cloud positions depending on TriSoup node size
+  if (flagNonPow2) {
+    for (int np = 0; np < pointCloud.getPointCount(); np++) {
+      const int temp0 = pointCloud[np][0] / S;
+      const int temp1 = pointCloud[np][1] / S;
+      const int temp2 = pointCloud[np][2] / S;
+      pointCloud[np][0] += temp0 * factorS;
+      pointCloud[np][1] += temp1 * factorS;
+      pointCloud[np][2] += temp2 * factorS;
+    }
+  }
+
+  if (isInter)
+    mSOctreeCurr = MSOctree(&pointCloud, {}, gbh.trisoupNodeSizeLog2(gps));
+
   for (int depth = 0; depth < maxDepth; depth++) {
     // The tree terminated early (eg, due to IDCM or quantisation)
     // Delete any unused arithmetic coders
@@ -897,6 +916,8 @@ encodeGeometryOctree(
     auto childSizeLog2 = lvlNodeSizeLog2[depth + 1];
     //// represents the largest dimension of the current node
     //int nodeMaxDimLog2 = nodeSizeLog2.max();
+
+    const auto nodeSize = S * (1 << nodeSizeLog2[0] - S2);
 
     // if one dimension is not split, atlasShift[k] = 0
     int codedAxesPrevLvl = depth ? gbh.tree_lvl_coded_axis_list[depth - 1] : 7;
@@ -1059,9 +1080,9 @@ encodeGeometryOctree(
           std::unique_ptr<PUtree> PU_tree(new PUtree);
 
           node0.hasMotion = motionSearchForNode(
-            mSOctreeCurr, mSOctree,&node0, encParams.motion,
-            encParams.gps.motion, nodeSizeLog2[0], encoder._arithmeticEncoder,
-            PU_tree.get());
+            mSOctreeCurr, mSOctree, &node0, encParams.motion,
+            encParams.gps.motion, nodeSize, encoder._arithmeticEncoder,
+            PU_tree.get(), flagNonPow2, S, S2);
           node0.PU_tree = std::move(PU_tree);
         }
 
@@ -1069,9 +1090,9 @@ encodeGeometryOctree(
         // results of MC are stacked in compensatedPointCloud that starts empty
         if (node0.PU_tree != nullptr) {
           encode_splitPU_MV_MC(mSOctree,
-            &node0, node0.PU_tree.get(), gps.motion, nodeSizeLog2,
+            &node0, node0.PU_tree.get(), gps.motion, nodeSize,
             encoder._arithmeticEncoder, &compensatedPointCloud,
-            log2MotionBlockSize);
+            flagNonPow2, S, S2);
         }
 
         // split the current node into 8 children
@@ -1327,7 +1348,7 @@ encodeGeometryOctree(
               std::unique_ptr<PUtree> child_PU_tree(new PUtree);
 
               extracPUsubtree(
-                gps.motion, node0.PU_tree.get(), 1 << childSizeLog2[0], node0.pos_fs,
+                gps.motion, node0.PU_tree.get(), nodeSize >> 1, node0.pos_fs,
                 node0.pos_fp, node0.pos_MV, child_PU_tree.get());
 
               child.PU_tree = std::move(child_PU_tree);
@@ -1335,7 +1356,7 @@ encodeGeometryOctree(
 
             if (isInter) {
               child.mSOctreeNodeIdx = mSOctreeCurr.nodes[node0.mSOctreeNodeIdx].child[childIndex];
-              assert(child.mSOctreeNodeIdx); // if not, missmatch between octrees
+              assert((forTrisoup && flagNonPow2) || child.mSOctreeNodeIdx); // if not, missmatch between octrees
             }
 
             //if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)
@@ -1357,7 +1378,21 @@ encodeGeometryOctree(
 
             if (forTrisoup && isLastDepth) {
               nodesRemaining->push_back(child);
-              nodesRemaining->back().pos <<= lvlNodeSizeLog2[maxDepth];
+              nodesRemaining->back().pos  *= S;
+              if (flagNonPow2) {
+                int maskS = (1 << S2) - 1;
+                for (int np = child.start; np < child.end; np++) {
+                  pointCloud[np][0] = ((pointCloud[np][0] >> S2) * S) + (pointCloud[np][0] & maskS);
+                  pointCloud[np][1] = ((pointCloud[np][1] >> S2) * S) + (pointCloud[np][1] & maskS);
+                  pointCloud[np][2] = ((pointCloud[np][2] >> S2) * S) + (pointCloud[np][2] & maskS);
+                }
+
+                for (int np = child.predStart; np < child.predEnd; np++) {
+                  compensatedPointCloud[np][0] = ((compensatedPointCloud[np][0] >> S2) * S) + (compensatedPointCloud[np][0] & maskS);
+                  compensatedPointCloud[np][1] = ((compensatedPointCloud[np][1] >> S2) * S) + (compensatedPointCloud[np][1] & maskS);
+                  compensatedPointCloud[np][2] = ((compensatedPointCloud[np][2] >> S2) * S) + (compensatedPointCloud[np][2] & maskS);
+                }
+              }
 
               if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
                 rste->callTriSoupSlice(false); // TriSoup unpile slices (not final = false)

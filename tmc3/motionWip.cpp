@@ -470,18 +470,19 @@ encode_splitPU_MV_MC(
   PCCOctree3Node* node0,
   PUtree* local_PU_tree,
   const ParameterSetMotion& param,
-  point_t nodeSizeLog2,
+  int nodeSize,
   EntropyEncoder* arithmeticEncoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize,
+  bool flagNonPow2,
+  int S,
+  int S2,
   bool recolor)
 {
-  const int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
 
   // --------------  non-split / terminal case  ----------------
-  if (node_size <= param.motion_min_pu_size || !local_PU_tree->split_flags[0]) {
-    if (node_size > param.motion_min_pu_size) {
+  if (nodeSize <= param.motion_min_pu_size || !local_PU_tree->split_flags[0]) {
+    if (nodeSize > param.motion_min_pu_size) {
       motionEncoder.encodeSplitPu(0);
     }
 
@@ -492,7 +493,7 @@ encode_splitPU_MV_MC(
     point_t MVd = MV;
 
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_motion(MVd, node0, nodeSize, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
     } else {
       mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
@@ -511,18 +512,19 @@ decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   const ParameterSetMotion& param,
-  point_t nodeSizeLog2,
+  int nodeSize,
   EntropyDecoder* arithmeticDecoder,
   PCCPointSet3* compensatedPointCloud,
-  int log2MotionBlkSize,
+  bool flagNonPow2,
+  int S,
+  int S2,
   bool recolor)
 {
-  int node_size = 1 << nodeSizeLog2[0];
   MotionEntropyDecoder motionDecoder(arithmeticDecoder);
 
   // decode split flag
   bool split = false;
-  if (node_size > param.motion_min_pu_size)
+  if (nodeSize > param.motion_min_pu_size)
     split = motionDecoder.decodeSplitPu();
 
   if (!split) {  // not split
@@ -533,7 +535,7 @@ decode_splitPU_MV_MC(
     MVd = MV;
 
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_motion(MVd, node0, nodeSize, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
     } else {
       mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
@@ -1264,7 +1266,7 @@ MSOctree::find_motion(
   }
   cost_Split += param.lambda * motionEntropy.hSplitPu[1];  // cost split flag
 
-  if (local_size <= mvPS.motion_min_pu_size|| cost_NoSplit <= cost_Split) {  // no split
+  if (local_size <= mvPS.motion_min_pu_size || cost_NoSplit <= cost_Split) {  // no split
     // push non split flag, only if size>size_min
     if (local_size > mvPS.motion_min_pu_size) {
       local_PU_tree->split_flags.push_back(0);
@@ -1301,9 +1303,12 @@ motionSearchForNode(
   const PCCOctree3Node* node0,
   const EncodeMotionSearchParams& param,
   const ParameterSetMotion& mvPS,
-  int nodeSizeLog2,
+  int nodeSize,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree)
+  PUtree* local_PU_tree,
+  bool flagNonPow2,
+  int S,
+  int S2)
 {
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
 
@@ -1315,12 +1320,22 @@ motionSearchForNode(
   MotionEntropyEstimate mcEstimate(motionEncoder, wSize, param.max_prefix_bits, param.max_suffix_bits);
 
   // motion search
-  Vec3<int32_t> pos = node0->pos << nodeSizeLog2;
+  Vec3<int32_t> pos = node0->pos * nodeSize;
   int mSOctreeOrigNodeIdx = node0->mSOctreeNodeIdx;
+
+  // TODO: scale point according to trisoup node size
+  if (flagNonPow2) {
+    int maskS = (1 << S2) - 1;
+    for (int i = 0; i < Block0.size(); ++i) {
+      Block0[i][0] = ((Block0[i][0] >> S2) * S) + (Block0[i][0] & maskS);
+      Block0[i][1] = ((Block0[i][1] >> S2) * S) + (Block0[i][1] & maskS);
+      Block0[i][2] = ((Block0[i][2] >> S2) * S) + (Block0[i][2] & maskS);
+    }
+  }
 
   // MV search
   mSOctree.find_motion(
-    param, mvPS, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, (1 << nodeSizeLog2), local_PU_tree);
+    param, mvPS, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, nodeSize, local_PU_tree);
 
   return true;
 }
@@ -1329,16 +1344,19 @@ void
 MSOctree::apply_motion(
   point_t MVd,
   PCCOctree3Node* node0,
-  int nodeSizeLog2,
+  int nodeSize,
   PCCPointSet3* compensatedPointCloud,
-  uint32_t depthMax) const
+  uint32_t depthMax,
+  bool flagNonPow2,
+  int S,
+  int S2) const
 {
   auto &fifo = a;
   assert(fifo.empty());
   fifo.clear();
   depthMax = std::min(depthMax, depth);
-  const int32_t node0SizeMinus1 = (1 << nodeSizeLog2) - 1;
-  const auto node0Pos0 = (node0->pos << nodeSizeLog2) + MVd;
+  const int32_t node0SizeMinus1 = nodeSize - 1;
+  const auto node0Pos0 = (node0->pos * nodeSize) + MVd;
   const auto node0Pos1 = node0Pos0 + node0SizeMinus1;
   const auto minNodeSizeMinus1 = (1 << maxDepth - depthMax) - 1;
 
@@ -1411,6 +1429,22 @@ MSOctree::apply_motion(
     predPoint[0] -= MVd[0];
     predPoint[1] -= MVd[1];
     predPoint[2] -= MVd[2];
+  }
+  // align points with octree nodes
+  if (flagNonPow2) {
+    // TODO:
+    //  should we apply at octree node level to avoid division and multiplications ?
+    const int factorS = (1 << S2) - S;
+    for (int i = node0->predStart; i < node0->predEnd; ++i) {
+      auto& predPoint = (*compensatedPointCloud)[i];
+
+      int temp0 = predPoint[0] / S;
+      int temp1 = predPoint[1] / S;
+      int temp2 = predPoint[2] / S;
+      predPoint[0] += temp0 * factorS;
+      predPoint[1] += temp1 * factorS;
+      predPoint[2] += temp2 * factorS;
+    }
   }
 }
 
