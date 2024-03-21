@@ -165,9 +165,10 @@ namespace dirac {
     void setBuffer(size_t size, uint8_t* buffer)
     {
       _bufSize = size;
-      if (buffer)
+      if (buffer) {
         _buf = _bufWr = buffer;
-      else {
+        allocatedBuffer.reset(nullptr);
+      } else {
         allocatedBuffer.reset(new uint8_t[size]);
         _buf = _bufWr = allocatedBuffer.get();
       }
@@ -194,7 +195,7 @@ namespace dirac {
       if (!_cabac_bypass_stream_enabled_flag)
         schro_arith_encode_init(&impl, &writeByteCallback, this);
       else {
-        _chunkStream.reset(_bufWr, _bufSize);
+        _chunkStream.reset(_bufWr, _bufSize, reallocCallback, this);
         schro_arith_encode_init(&impl, &writeChunkCallback, &_chunkStream);
       }
     }
@@ -284,8 +285,11 @@ namespace dirac {
     static void writeByteCallback(uint8_t byte, void* thisptr)
     {
       auto _this = reinterpret_cast<ArithmeticEncoder*>(thisptr);
-      if (_this->_bufSize == 0)
-        throw std::runtime_error("Aec stream overflow");
+      if (_this->_bufSize == 0) {
+        if (!_this->allocatedBuffer)
+          throw std::runtime_error("Aec stream overflow");
+        _this->realloc();
+      }
       _this->_bufSize--;
       *_this->_bufWr++ = byte;
     }
@@ -297,7 +301,31 @@ namespace dirac {
       auto _this = reinterpret_cast<ChunkStreamBuilder*>(thisptr);
       _this->writeAecByte(byte);
     }
+
     //------------------------------------------------------------------------
+
+    void realloc(uint8_t** new_buffer = nullptr, size_t* new_size = nullptr)
+    {
+      size_t currentSize = _bufSize + (_bufWr - _buf);
+      if (currentSize > 0x10000000)
+        // Never use more than 512MB for a bitstream chunk
+        throw std::runtime_error("Aec stream overflow");
+      size_t newSize = currentSize << 1;
+      uint8_t* newBuf = new uint8_t[newSize];
+      std::copy(_buf, _buf + currentSize, newBuf);
+      allocatedBuffer.reset(newBuf);
+      _bufSize += currentSize;
+      _bufWr = allocatedBuffer.get() + (_bufWr - _buf);
+      _buf = allocatedBuffer.get();
+      if (new_buffer) *new_buffer = newBuf;
+      if (new_size) *new_size = newSize;
+    }
+
+    static void reallocCallback(void* thisptr, uint8_t** new_buffer, size_t* new_size)
+    {
+      auto _this = reinterpret_cast<ArithmeticEncoder*>(thisptr);
+      _this->realloc(new_buffer, new_size);
+    }
 
   private:
     ::SchroArith impl;

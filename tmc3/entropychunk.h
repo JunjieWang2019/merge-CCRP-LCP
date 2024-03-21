@@ -49,6 +49,9 @@ namespace pcc {
 
 class ChunkStreamBuilder {
 public:
+  typedef void (*realloc_callback)
+    (void* owner, uint8_t** new_buffer, size_t* new_size);
+
   ChunkStreamBuilder(const ChunkStreamBuilder&) = delete;
   ChunkStreamBuilder(ChunkStreamBuilder&&) = delete;
   ChunkStreamBuilder& operator=(const ChunkStreamBuilder&) = delete;
@@ -56,9 +59,20 @@ public:
 
   ChunkStreamBuilder() : _chunkBase(nullptr), _outputSizeRemaining(0) {}
 
-  ChunkStreamBuilder(uint8_t* buf, size_t size) { reset(buf, size); }
+  ChunkStreamBuilder(
+    uint8_t* buf,
+    size_t size,
+    realloc_callback callback = nullptr,
+    void* owner = nullptr
+  ) { reset(buf, size, callback, owner); }
 
-  void reset(uint8_t* buf = nullptr, size_t size = 0);
+  void reset(
+    uint8_t* buf = nullptr,
+    size_t size = 0,
+    realloc_callback callback = nullptr,
+    void* owner = nullptr
+  );
+
   size_t size() const;
   void writeAecByte(uint8_t byte);
   void writeBypassBit(bool bit);
@@ -77,6 +91,13 @@ private:
   void reserveChunkByte();
   void finaliseChunk();
   void startNextChunk();
+  int realloc();
+
+  // callback argument/owner of the existing buffer
+  void* _callbackOwner = nullptr;
+
+  // callback function to be called for automatic reallocation of the buffer
+  realloc_callback _reallocCallback = nullptr;
 
 private:
   static const int kChunkSize = 256;
@@ -104,11 +125,18 @@ private:
 //=============================================================================
 
 inline void
-ChunkStreamBuilder::reset(uint8_t* buf, size_t size)
+ChunkStreamBuilder::reset(
+  uint8_t* buf,
+  size_t size,
+  realloc_callback callback,
+  void* owner)
 {
   _outputLength = 0;
   if (!buf)
     return;
+
+  _callbackOwner = owner;
+  _reallocCallback = callback;
 
   // allocate the first chunk, (fixup the start address first)
   _chunkBase = buf - kChunkSize;
@@ -228,8 +256,9 @@ inline void
 ChunkStreamBuilder::startNextChunk()
 {
   // start a new chunk
-  if (_outputSizeRemaining < kChunkSize)
-    throw std::runtime_error("Chunk buffer overflow");
+  while (_outputSizeRemaining < kChunkSize)
+    if (realloc())
+      throw std::runtime_error("Chunk buffer overflow");
 
   // NB: reserves one byte for the aec length
   _chunkBytesRemaining = kChunkSize - 1;
@@ -242,6 +271,30 @@ ChunkStreamBuilder::startNextChunk()
   _outputSizeRemaining -= kChunkSize;
   _outputLength += kChunkSize;
 }
+
+//-----------------------------------------------------------------------------
+
+inline int
+ChunkStreamBuilder::realloc()
+{
+  if (!_reallocCallback)
+    return -1;
+
+  uint8_t* new_buf;
+  size_t new_size;
+
+  try {
+    _reallocCallback(_callbackOwner, &new_buf, &new_size);
+  } catch (...) {
+    return -1;
+  }
+
+  _outputSizeRemaining = new_size - _outputLength;
+  _chunkBase = new_buf + _outputLength - kChunkSize;
+
+  return 0;
+}
+
 
 //=============================================================================
 
