@@ -565,9 +565,7 @@ MSOctree::MSOctree(
   if (!pointCloud.size())
     return;
 
-  std::vector<MSONode> nodesNext;
   nodes.reserve(pointCloud.size());
-  nodesNext.reserve(pointCloud.size());
 
   auto bbox = pointCloud.computeBoundingBox();
 
