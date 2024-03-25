@@ -119,4 +119,72 @@ void decodeGeometryTrisoup(
 
 //============================================================================
 
+// Iterate over subnodes of an octree level in raster scan order
+template <
+  class NodesIterator,
+  class GetPosNode,
+  class Callback
+>
+void IterOneLevelSubnodesRSO(
+  const NodesIterator& begin,
+  const NodesIterator& end,
+  GetPosNode getPos,
+  Callback callback
+)
+{
+  // process all nodes within a single level
+  auto fifoCurrNode = begin;
+  auto fifoCurrLvlEnd = end;
+  auto fifoSliceFirstNode = fifoCurrNode;
+  auto fifoTubeFirstNode = fifoCurrNode;
+  int tubeIndex = 0;
+  int nodeSliceIndex = 0;
+  auto goNextNode = [&]() {
+    ++fifoCurrNode;
+    if (
+      fifoCurrNode == fifoCurrLvlEnd
+      && nodeSliceIndex == 1
+      && tubeIndex == 1
+      ) {
+        return; // end of current level
+    }
+    else if (
+      fifoCurrNode == fifoCurrLvlEnd
+      || getPos(fifoCurrNode)[1] != getPos(fifoTubeFirstNode)[1]
+      || getPos(fifoCurrNode)[0] != getPos(fifoTubeFirstNode)[0]
+      ) {
+      // End of child tube
+      if (tubeIndex == 0) {
+        ++tubeIndex;
+        fifoCurrNode = fifoTubeFirstNode;
+      }
+      else {
+        if (
+          fifoCurrNode == fifoCurrLvlEnd
+          || getPos(fifoCurrNode)[0] != getPos(fifoTubeFirstNode)[0]
+          ) {
+          // End of child slice
+          if (nodeSliceIndex == 0) {
+            ++nodeSliceIndex;
+            fifoCurrNode = fifoSliceFirstNode;
+          }
+          else {
+            nodeSliceIndex = 0;
+            fifoSliceFirstNode = fifoCurrNode;
+          }
+        }
+        tubeIndex = 0;
+        fifoTubeFirstNode = fifoCurrNode;
+      }
+    }
+  };
+  for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
+    auto firstChildIdx = (nodeSliceIndex << 2) | (tubeIndex << 1);
+    callback(fifoCurrNode, firstChildIdx);
+    callback(fifoCurrNode, firstChildIdx + 1);
+  }
+}
+
+//============================================================================
+
 }  // namespace pcc

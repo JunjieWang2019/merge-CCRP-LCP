@@ -72,15 +72,26 @@ AttributeInterPredParams::findMotion(
   motionPUTrees.clear();
 
   auto& fifo = mSOctreeCurr.a;
+  auto& fifo_next = mSOctreeCurr.b;
   fifo.clear();
-  fifo.push(0);
+  fifo_next.clear();
 
+  // build node list, at the level of the prediction units,
+  // in raster scan order, to follow node coding order.
+  fifo.push(0);
   while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > mvPS.motion_block_size - 1) {
-    auto& node = mSOctreeCurr.nodes[fifo.front()];
-    for(int i = 0; i < 8; ++i)
-        if (node.child[i])
-          fifo.push_back(node.child[i]);
-    fifo.pop_front();
+    IterOneLevelSubnodesRSO(fifo.begin(), fifo.end(),
+    [&](const decltype(fifo.begin())& it) -> const point_t& {
+      return mSOctreeCurr.nodes[*it].pos0;
+    },
+    [&](const decltype(fifo.begin())& it, int childIdx) {
+      auto& node = mSOctreeCurr.nodes[*it];
+      if (node.child[childIdx])
+        fifo_next.push_back(node.child[childIdx]);
+    }
+    );
+    std::swap(fifo, fifo_next);
+    fifo_next.clear();
   }
 
   motionPUTrees.resize(fifo.size());
@@ -206,20 +217,27 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
   auto& fifo = mSOctreeCurr.a;
   auto& fifo_next = mSOctreeCurr.b;
   fifo.clear();
-  fifo.push(0);
+  fifo_next.clear();
 
+  fifo.push(0);
   while(mSOctreeCurr.nodes[fifo.front()].sizeMinus1 > mvPS.motion_block_size - 1) {
-    auto& node = mSOctreeCurr.nodes[fifo.front()];
-    for(int i = 0; i < 8; ++i)
-        if (node.child[i])
-          fifo.push_back(node.child[i]);
-    fifo.pop_front();
+    IterOneLevelSubnodesRSO(fifo.begin(), fifo.end(),
+    [&](const decltype(fifo.begin())& it) -> const point_t& {
+      return mSOctreeCurr.nodes[*it].pos0;
+    },
+    [&](const decltype(fifo.begin())& it, int childIdx) {
+      auto& node = mSOctreeCurr.nodes[*it];
+      if (node.child[childIdx])
+        fifo_next.push_back(node.child[childIdx]);
+    }
+    );
+    std::swap(fifo, fifo_next);
+    fifo_next.clear();
   }
 
   int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
 
   while(1 << (nodeSizeLog2 + 1) > mvPS.motion_min_pu_size) {
-    fifo_next.clear();
     while (!fifo.empty()) {
       // coding (in morton order for simpler test)
       auto& node = mSOctreeCurr.nodes[fifo.front()];
