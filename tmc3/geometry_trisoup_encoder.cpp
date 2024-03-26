@@ -53,9 +53,7 @@ encodeGeometryTrisoup(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud)
+  InterPredParams& interPredParams)
 {
   bool isInter = gbh.interPredictionEnabledFlag;
 
@@ -86,15 +84,18 @@ encodeGeometryTrisoup(
   // trisoup uses octree coding until reaching the triangulation level.
   std::vector<PCCOctree3Node> nodes;
   EntropyDecoder foo;
-  RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, true, bitDropped,distanceSearchEncoder, isInter, compensatedPointCloud, gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
+  RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, true, bitDropped,
+    distanceSearchEncoder, isInter, interPredParams.compensatedPointCloud,
+    gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
   rste.init();
 
   // octree
   encodeGeometryOctree(
     encParams, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
-    refFrame, sps, refPointCloud, mSOctree, compensatedPointCloud, &rste);
+    refFrame, sps, interPredParams, &rste);
 
-  std::cout << "Size compensatedPointCloud for TriSoup = " << compensatedPointCloud.getPointCount() << "\n";
+  std::cout << "Size compensatedPointCloud for TriSoup = "
+    << interPredParams.compensatedPointCloud.getPointCount() << "\n";
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
 

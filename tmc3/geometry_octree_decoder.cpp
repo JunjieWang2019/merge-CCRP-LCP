@@ -493,23 +493,25 @@ decodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
+  InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste)
 {
   if (rste) {
     assert(nodesRemaining);
   }
 
+  PCCPointSet3& compensatedPointCloud = interPredParams.compensatedPointCloud;
+
   const bool isInter = gbh.interPredictionEnabledFlag;
 
-  PCCPointSet3& predPointCloud = refPointCloud;
+  PCCPointSet3& predPointCloud = interPredParams.referencePointCloud;
+  MSOctree& mSOctree = interPredParams.mSOctreeRef;
   if (isInter) {
     int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
     predPointCloud = refFrame->cloud;
     // for recoloring, need same depth as in encoder
-    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
+    mSOctree
+      = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   }
 
   // init main fifo
@@ -1080,16 +1082,13 @@ decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
+  InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste
 )
 {
   decodeGeometryOctree(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, refPointCloud, mSOctree,
-    compensatedPointCloud, rste);
+    refFrame, minimum_position, interPredParams, rste);
 }
 
 //-------------------------------------------------------------------------
@@ -1106,13 +1105,10 @@ decodeGeometryOctreeScalable(
 )
 {
   std::vector<PCCOctree3Node> nodes;
-  PCCPointSet3 compensatedPointCloud;
-  MSOctree mSOctree;
-  PCCPointSet3 refPointCloud;
+  InterPredParams interPredParams;
   decodeGeometryOctree(
     gps, gbh, minGeomNodeSizeLog2, pointCloud, ctxtMem, arithmeticDecoder,
-    &nodes, refFrame, { 0, 0, 0 }, refPointCloud, mSOctree,
-    compensatedPointCloud);
+    &nodes, refFrame, { 0, 0, 0 }, interPredParams);
 
   if (minGeomNodeSizeLog2 > 0) {
     size_t size =

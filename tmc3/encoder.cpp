@@ -962,10 +962,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   if (!_gps->trisoup_enabled_flag) {
     encodeGeometryOctree(
       *params, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
-      arithmeticEncoders, _refFrame, *_sps,
-      attrInterPredParams.referencePointCloud,
-      attrInterPredParams.mSOctreeRef,
-      attrInterPredParams.compensatedPointCloud);
+      arithmeticEncoders, _refFrame, *_sps, attrInterPredParams);
   }
   else
   {
@@ -975,15 +972,11 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryTrisoup(
       *params, *_gps, gbh, pointCloud,
       *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
-      *_sps, attrInterPredParams.referencePointCloud,
-      attrInterPredParams.mSOctreeRef,
-      attrInterPredParams.compensatedPointCloud);
+      *_sps, attrInterPredParams);
   }
 
   // signal the actual number of points coded
   gbh.footer.geom_num_points_minus1 = pointCloud.getPointCount() - 1;
-
-  attrInterPredParams.frameDistance = 1;
 
   // assemble data unit
   //  - record the position of each aec buffer for chunk concatenation

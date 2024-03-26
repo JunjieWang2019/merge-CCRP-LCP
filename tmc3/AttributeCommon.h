@@ -58,11 +58,7 @@ std::vector<int> sortedPointCloud(
 struct MSOctree;
 struct EncoderParams;
 
-struct AttributeInterPredParams {
-  PCCPointSet3 referencePointCloud;
-  MSOctree mSOctreeRef;
-  PCCPointSet3 compensatedPointCloud;
-  int frameDistance;
+struct AttributeInterPredParams: InterPredParams {
   bool enableAttrInterPred;
 #if 0
   int getPointCount() const { return referencePointCloud.getPointCount(); }

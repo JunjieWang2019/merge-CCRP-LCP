@@ -661,8 +661,7 @@ MSOctree::MSOctree(
     pointCloud[i] += offsetOrigin;
   }
 
-  a = ringbuf<int>(nodes.size());
-  b = ringbuf<int>(nodes.size());
+  allocRingBuffers();
 }
 
 //----------------------------------------------------------------------------

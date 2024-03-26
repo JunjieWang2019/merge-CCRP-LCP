@@ -712,9 +712,7 @@ encodeGeometryOctree(
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
+  InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste)
 {
   const OctreeEncOpts& params = encParams.geom;
@@ -723,12 +721,16 @@ encodeGeometryOctree(
     assert(nodesRemaining);
   }
 
+  PCCPointSet3& compensatedPointCloud = interPredParams.compensatedPointCloud;
+
   const bool isInter = gbh.interPredictionEnabledFlag;
 
+  PCCPointSet3& refPointCloud = interPredParams.referencePointCloud;
   refPointCloud = refFrame.cloud;
   PCCPointSet3& predPointCloud = refPointCloud;
 
   int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
+  MSOctree& mSOctree = interPredParams.mSOctreeRef;
   mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   MSOctree mSOctreeCurr;
 
@@ -1447,14 +1449,12 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
+  InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste)
 {
   encodeGeometryOctree(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
-    sps, refPointCloud, mSOctree, compensatedPointCloud, rste);
+    sps, interPredParams, rste);
 }
 
 //-------------------------------------------------------------------------

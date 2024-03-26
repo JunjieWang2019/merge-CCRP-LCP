@@ -54,7 +54,7 @@ struct CloudFrame;
 struct RasterScanTrisoupEdges;
 struct MSOctree;
 struct EncoderParams;
-
+struct InterPredParams;
 
 //============================================================================
 
@@ -67,9 +67,7 @@ void encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoder,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
+  InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste = nullptr);
 
 void decodeGeometryOctree(
@@ -80,9 +78,7 @@ void decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud,
+  InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste = nullptr);
 
 void decodeGeometryOctreeScalable(
@@ -105,9 +101,7 @@ void encodeGeometryTrisoup(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoder,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud);
+  InterPredParams& interPredParams);
 
 void decodeGeometryTrisoup(
   const GeometryParameterSet& gps,
@@ -117,9 +111,7 @@ void decodeGeometryTrisoup(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  PCCPointSet3& refPointCloud,
-  MSOctree& mSOctree,
-  PCCPointSet3& compensatedPointCloud);
+  InterPredParams& interPredParams);
 
 //============================================================================
 

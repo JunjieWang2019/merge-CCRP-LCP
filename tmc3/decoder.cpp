@@ -516,9 +516,7 @@ PCCTMC3Decoder3::decodeCurrentBrick()
     if (!_params.minGeomNodeSizeLog2) {
       decodeGeometryOctree(
         *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
-        _sps->seqBoundingBoxOrigin, attrInterPredParams.referencePointCloud,
-        attrInterPredParams.mSOctreeRef,
-        attrInterPredParams.compensatedPointCloud);
+        _sps->seqBoundingBoxOrigin, attrInterPredParams);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
@@ -527,10 +525,7 @@ PCCTMC3Decoder3::decodeCurrentBrick()
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin,
-      attrInterPredParams.referencePointCloud,
-      attrInterPredParams.mSOctreeRef,
-      attrInterPredParams.compensatedPointCloud);
+      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams);
   }
 
   // At least the first slice's geometry has been decoded
@@ -580,7 +575,6 @@ PCCTMC3Decoder3::decodeCurrentBrick()
     int abhSize;
     abh = parseAbh(*_sps, attr_aps, buf, &abhSize);
 
-    attrInterPredParams.frameDistance = 1;
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled && !abh.disableAttrInterPred;
 
     pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
@@ -749,9 +743,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(
     if (!_params.minGeomNodeSizeLog2) {
       decodeGeometryOctree(
         *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
-        _sps->seqBoundingBoxOrigin, attrInterPredParams.referencePointCloud,
-        attrInterPredParams.mSOctreeRef,
-        attrInterPredParams.compensatedPointCloud);
+        _sps->seqBoundingBoxOrigin, attrInterPredParams);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
@@ -760,10 +752,7 @@ PCCTMC3Decoder3::decodeGeometryBrick(
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin,
-      attrInterPredParams.referencePointCloud,
-      attrInterPredParams.mSOctreeRef,
-      attrInterPredParams.compensatedPointCloud);
+      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams);
   }
 
   // At least the first slice's geometry has been decoded
@@ -818,7 +807,6 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   int abhSize;
   abh = parseAbh(*_sps, attr_aps, buf, &abhSize);
 
-  attrInterPredParams.frameDistance = 1;
   attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled && !abh.disableAttrInterPred;
 
   pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;

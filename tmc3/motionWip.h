@@ -149,6 +149,11 @@ struct MSOctree {
   PCCPointSet3* pointCloud;
   std::vector<MSONode> nodes;
 
+  void allocRingBuffers() {
+    a = ringbuf<int>(nodes.size());
+    b = ringbuf<int>(nodes.size());
+  }
+
   int
   nearestNeighbour_updateDMax(point_t pos, int32_t& d_max, bool approximate = false) const;
 
@@ -213,6 +218,14 @@ motionSearchForNode(
   EntropyEncoder* arithmeticEncoder,
   PUtree* local_PU_tree
 );
+
+//============================================================================
+
+struct InterPredParams {
+  PCCPointSet3 referencePointCloud;
+  MSOctree mSOctreeRef;
+  PCCPointSet3 compensatedPointCloud;
+};
 
 //============================================================================
 
