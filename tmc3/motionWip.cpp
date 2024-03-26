@@ -698,23 +698,27 @@ MSOctree::iNearestNeighbour_updateDMax(const point_t& pos, int32_t& d_max) const
   int32_t nodeIdx = 0;
   const MSONode* node = &nodes[nodeIdx];
   int currDepth = 0;
-  int pointChildMask = 1 << maxDepth - 1;
   const point_t posOf = pos - offsetOrigin;
-  for (; currDepth < depthMax; ++currDepth) {
-    const int childIdx
-      = (!!((posOf[2]) & pointChildMask))
-      | (!!((posOf[1]) & pointChildMask) << 1)
-      | (!!((posOf[0]) & pointChildMask) << 2);
+  if (  (posOf[0] >= 0) & (posOf[0] < 1 << maxDepth)
+      & (posOf[1] >= 0) & (posOf[1] < 1 << maxDepth)
+      & (posOf[2] >= 0) & (posOf[2] < 1 << maxDepth)
+  ) {
+    int pointChildMask = 1 << maxDepth - 1;
+    for (; currDepth < depthMax; ++currDepth) {
+      const int childIdx
+        = (!!((posOf[2]) & pointChildMask))
+        | (!!((posOf[1]) & pointChildMask) << 1)
+        | (!!((posOf[0]) & pointChildMask) << 2);
 
-    if (!node->child[childIdx])
-      break;
+      if (!node->child[childIdx])
+        break;
 
-    stack[++stack_last] = NNStackElt(nodeIdx, childIdx);
-    nodeIdx = node->child[childIdx];
-    node = &nodes[nodeIdx];
-    pointChildMask >>= 1;
+      stack[++stack_last] = NNStackElt(nodeIdx, childIdx);
+      nodeIdx = node->child[childIdx];
+      node = &nodes[nodeIdx];
+      pointChildMask >>= 1;
+    }
   }
-
   for (; currDepth < depthMax; ++currDepth) {
     int d_min = INT32_MAX;
     int i_min;
@@ -827,22 +831,26 @@ MSOctree::iApproximateNearestNeighbour_updateDMax(const point_t& pos, int32_t& d
   int32_t nodeIdx = 0;
   const MSONode* node = &nodes[nodeIdx];
   int currDepth = 0;
-  int pointChildMask = 1 << maxDepth - 1;
   const point_t posOf = pos - offsetOrigin;
-  for (; currDepth < depthMax; ++currDepth) {
-    const int childIdx
-      = (!!((posOf[2]) & pointChildMask))
-      | (!!((posOf[1]) & pointChildMask) << 1)
-      | (!!((posOf[0]) & pointChildMask) << 2);
+  if (  (posOf[0] >= 0) & (posOf[0] < 1 << maxDepth)
+      & (posOf[1] >= 0) & (posOf[1] < 1 << maxDepth)
+      & (posOf[2] >= 0) & (posOf[2] < 1 << maxDepth)
+  ) {
+    int pointChildMask = 1 << maxDepth - 1;
+    for (; currDepth < depthMax; ++currDepth) {
+      const int childIdx
+        = (!!((posOf[2]) & pointChildMask))
+        | (!!((posOf[1]) & pointChildMask) << 1)
+        | (!!((posOf[0]) & pointChildMask) << 2);
 
-    if (!node->child[childIdx])
-      break;
+      if (!node->child[childIdx])
+        break;
 
-    nodeIdx = node->child[childIdx];
-    node = &nodes[nodeIdx];
-    pointChildMask >>= 1;
+      nodeIdx = node->child[childIdx];
+      node = &nodes[nodeIdx];
+      pointChildMask >>= 1;
+    }
   }
-
   for (; currDepth < depthMax; ++currDepth) {
     int d_min = INT32_MAX;
     int i_min;
@@ -901,22 +909,26 @@ MSOctree::iApproxNearestNeighbourAttr(const point_t& pos) const {
   int32_t nodeIdx = 0;
   const MSONode* node = &nodes[nodeIdx];
   int currDepth = 0;
-  int pointChildMask = 1 << maxDepth - 1;
   const point_t posOf = pos - offsetOrigin;
-  for (; currDepth < depthMax; ++currDepth) {
-    const int childIdx
-      = (!!((posOf[2]) & pointChildMask))
-      | (!!((posOf[1]) & pointChildMask) << 1)
-      | (!!((posOf[0]) & pointChildMask) << 2);
+  if (  (posOf[0] >= 0) & (posOf[0] < 1 << maxDepth)
+      & (posOf[1] >= 0) & (posOf[1] < 1 << maxDepth)
+      & (posOf[2] >= 0) & (posOf[2] < 1 << maxDepth)
+  ) {
+    int pointChildMask = 1 << maxDepth - 1;
+    for (; currDepth < depthMax; ++currDepth) {
+      const int childIdx
+        = (!!((posOf[2]) & pointChildMask))
+        | (!!((posOf[1]) & pointChildMask) << 1)
+        | (!!((posOf[0]) & pointChildMask) << 2);
 
-    if (!node->child[childIdx])
-      break;
+      if (!node->child[childIdx])
+        break;
 
-    nodeIdx = node->child[childIdx];
-    node = &nodes[nodeIdx];
-    pointChildMask >>= 1;
+      nodeIdx = node->child[childIdx];
+      node = &nodes[nodeIdx];
+      pointChildMask >>= 1;
+    }
   }
-
   for (; currDepth < depthMax; ++currDepth) {
     int d_min = INT32_MAX;
     int i_min;
