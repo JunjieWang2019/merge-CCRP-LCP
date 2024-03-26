@@ -47,23 +47,32 @@ namespace pcc {
 // A ringbuf::iterator with RandomAccessIterator semantics.
 
 template<typename T>
+class ringbuf;
+
+template<typename T>
 class ring_iterator {
+  friend ringbuf<T>;
+
   typedef typename std::remove_const<T>::type T_nonconst;
 
   typedef ring_iterator<T> iterator;
   typedef ring_iterator<const T_nonconst> const_iterator;
 
   // the backing store
-  T* base_;
+  const ringbuf<T>* base_;
 
   // length of backing store
-  size_t max_;
+  const size_t* max_;
 
   // iterator's index into backing store
   size_t idx_;
 
   // notional start of ring buffer, used to determine index ordering
   const iterator* start_;
+
+  explicit ring_iterator(const ringbuf<T>* base, const size_t* max, const iterator* start)
+    : base_(base), max_(max), idx_(), start_(start)
+  {}
 
 public:
   typedef std::random_access_iterator_tag iterator_category;
@@ -81,10 +90,6 @@ public:
 
   //-------------------------------------------------------------------------
 
-  explicit ring_iterator(T* base, size_t max, const iterator* start)
-    : base_(base), max_(max), idx_(), start_(start)
-  {}
-
   operator ring_iterator<const T_nonconst>() const
   {
     return *(const_iterator*)this;
@@ -93,12 +98,12 @@ public:
   //-------------------------------------------------------------------------
   // Iterator
 
-  reference operator*() const { return base_[idx_]; }
+  reference operator*() const { return base_->buf_[idx_]; }
 
   iterator& operator++()
   {
     idx_++;
-    idx_ = idx_ == max_ ? 0 : idx_;
+    idx_ = idx_ == *max_ ? 0 : idx_;
     return *this;
   }
 
@@ -108,7 +113,7 @@ public:
   bool operator==(const iterator& other) const { return idx_ == other.idx_; }
   bool operator!=(const iterator& other) const { return !(*this == other); }
 
-  //pointer operator->() const { return &base_[idx_]; }
+  //pointer operator->() const { return &(base_->buf_[idx_]); }
 
   iterator operator++(int)
   {
@@ -122,7 +127,7 @@ public:
 
   iterator& operator--()
   {
-    idx_ = idx_ == 0 ? max_ : idx_;
+    idx_ = idx_ == 0 ? *max_ : idx_;
     idx_--;
     return *this;
   }
@@ -140,9 +145,9 @@ public:
   reference operator[](size_t n)
   {
     size_t idx = idx_ + n;
-    if (idx_ >= max_)
-      idx_ -= max_;
-    return base_[idx];
+    if (idx >= *max_)
+      idx -= *max_;
+    return base_->_buf_[idx];
   }
 
   // Precondition: 0 < it + n < end;
@@ -150,11 +155,11 @@ public:
   iterator& operator+=(difference_type n)
   {
     idx_ += n;
-    if (idx_ >= max_) {
+    if (idx_ >= *max_) {
       if (n > 0)
-        idx_ -= max_;
+        idx_ -= *max_;
       else
-        idx_ += max_;
+        idx_ += *max_;
     }
     return *this;
   }
@@ -215,7 +220,7 @@ private:
   {
     difference_type dist = difference_type(idx_ - origin.idx_);
     if (dist < 0)
-      dist += origin.max_;
+      dist += *origin.max_;
     return size_t(dist);
   }
 };
@@ -262,13 +267,16 @@ public:
   typedef ring_iterator<T> iterator;
   typedef ring_iterator<const T> const_iterator;
 
+  friend iterator;
+  friend const_iterator;
+
   //--------------------------------------------------------------------------
 
   ringbuf()
     : buf_(nullptr)
     , capacity_(0)
-    , rd_it_(iterator(buf_.get(), capacity_, &rd_it_))
-    , wr_it_(iterator(buf_.get(), capacity_, &rd_it_))
+    , rd_it_(iterator(this, &capacity_, &rd_it_))
+    , wr_it_(iterator(this, &capacity_, &rd_it_))
   {}
 
   //--------------------------------------------------------------------------
@@ -276,8 +284,8 @@ public:
   ringbuf(size_t size)
     : buf_(static_cast<T*>(operator new[](sizeof(T) * (size + 1))))
     , capacity_(size + 1)
-    , rd_it_(iterator(buf_.get(), capacity_, &rd_it_))
-    , wr_it_(iterator(buf_.get(), capacity_, &rd_it_))
+    , rd_it_(iterator(this, &capacity_, &rd_it_))
+    , wr_it_(iterator(this, &capacity_, &rd_it_))
   {}
 
   //--------------------------------------------------------------------------
@@ -291,7 +299,8 @@ public:
     // unfortunately the iterators cannot be moved, since they hold a
     // pointer to the ringbuffer's internal iterator.
     // it_zero is used to extract the true iterator idx
-    iterator it_zero = iterator(nullptr, 0, &it_zero);
+    ringbuf zero_buf;
+    iterator it_zero = iterator(&zero_buf, &zero_buf.capacity_, &it_zero);
 
     auto lhs_rd_idx = -(it_zero - rd_it_);
     auto lhs_wr_idx = -(it_zero - wr_it_);
@@ -302,13 +311,13 @@ public:
     std::swap(buf_, rhs.buf_);
     std::swap(capacity_, rhs.capacity_);
 
-    rd_it_ = iterator(buf_.get(), capacity_, &rd_it_);
-    wr_it_ = iterator(buf_.get(), capacity_, &rd_it_);
+    rd_it_ = iterator(this, &capacity_, &rd_it_);
+    wr_it_ = iterator(this, &capacity_, &rd_it_);
     rd_it_ += rhs_rd_idx;
     wr_it_ += rhs_wr_idx;
 
-    rhs.rd_it_ = iterator(rhs.buf_.get(), rhs.capacity_, &rhs.rd_it_);
-    rhs.wr_it_ = iterator(rhs.buf_.get(), rhs.capacity_, &rhs.rd_it_);
+    rhs.rd_it_ = iterator(&rhs, &rhs.capacity_, &rhs.rd_it_);
+    rhs.wr_it_ = iterator(&rhs, &rhs.capacity_, &rhs.rd_it_);
     rhs.rd_it_ += lhs_rd_idx;
     rhs.wr_it_ += lhs_wr_idx;
 
@@ -336,6 +345,8 @@ public:
 
   bool empty() const { return begin() == end(); }
 
+  // N.B. adding elements may invalidate external iterators if the buffer has
+  // to be reallocated
   //--------------------------------------------------------------------------
 
   void push(const value_type& val) { emplace_back(val); }
@@ -351,6 +362,8 @@ public:
   template<class... Args>
   void emplace_back(Args&&... args)
   {
+    if (size() == capacity())
+      reallocate();
     new (&*wr_it_) T(args...);
     ++wr_it_;
   }
@@ -395,8 +408,8 @@ public:
 
   void clear()
   {
-    rd_it_ = iterator(buf_.get(), capacity_, &rd_it_);
-    wr_it_ = iterator(buf_.get(), capacity_, &rd_it_);
+    rd_it_ = iterator(this, &capacity_, &rd_it_);
+    wr_it_ = iterator(this, &capacity_, &rd_it_);
   }
 
   //--------------------------------------------------------------------------
@@ -417,6 +430,17 @@ private:
   size_t capacity_;
   iterator rd_it_;
   iterator wr_it_;
+
+  void reallocate() {
+    auto old_capacity = capacity();
+    size_t new_size = old_capacity * 2;
+    T* new_buf = static_cast<T*>(operator new[](sizeof(T) * (new_size + 1)));
+    std::copy(begin(), end(), new_buf);
+    buf_.reset(new_buf);
+    capacity_ = new_size + 1;
+    rd_it_ = iterator(this, &capacity_, &rd_it_);
+    wr_it_ = iterator(this, &capacity_, &rd_it_) + old_capacity;
+  }
 };
 
 //===========================================================================
