@@ -85,7 +85,7 @@ public:
 
   ring_iterator(ring_iterator&&) = default;
   ring_iterator(const ring_iterator&) = default;
-  ring_iterator() = default;
+  ring_iterator(): base_(), max_(&idx_), idx_(), start_() {}
   ring_iterator& operator =(ring_iterator&&) = default;
 
   //-------------------------------------------------------------------------
@@ -290,7 +290,7 @@ public:
 
   //--------------------------------------------------------------------------
 
-  ringbuf(ringbuf&& other) noexcept { *this = std::move(other); }
+  ringbuf(ringbuf&& other) noexcept: ringbuf() { *this = std::move(other); }
 
   //--------------------------------------------------------------------------
 
