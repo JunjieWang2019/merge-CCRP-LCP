@@ -61,7 +61,7 @@ AttributeInterPredParams::findMotion(
     return;
   }
 
-  MSOctree& mSOctree = mSOctreeRef;
+  const MSOctree& mSOctree = mSOctreeRef;
 
   EntropyEncoder arithmeticEncoder;
 
@@ -112,7 +112,7 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
   EntropyEncoder& arithmeticEncoder,
   bool mcap_to_rec_geom_flag
 ) {
-  MSOctree& mSOctree = mSOctreeRef;
+  const MSOctree& mSOctree = mSOctreeRef;
 
   int log2MotionBlockSize = 0; // unused
 
@@ -193,7 +193,7 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
   EntropyDecoder& arithmeticDecoder,
   bool mcap_to_rec_geom_flag
 ) {
-  MSOctree& mSOctree = mSOctreeRef;
+  const MSOctree& mSOctree = mSOctreeRef;
 
   int log2MotionBlockSize = 0; // unused
 

@@ -731,7 +731,9 @@ encodeGeometryOctree(
 
   int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size));
   MSOctree& mSOctree = interPredParams.mSOctreeRef;
-  mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
+  if (isInter) {
+    mSOctree = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
+  }
   MSOctree mSOctreeCurr;
 
   if (isInter)
