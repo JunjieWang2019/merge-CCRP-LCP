@@ -25,20 +25,19 @@ categories:
      - inferredDirectCodingMode: 0
      - positionQuantizationScale: '$eval{ 1 / (1 << ( ${src-geometry-precision} - ${test-depth} )) }'
      - trisoupNodeSize:
-         r01: 32
-         r02: 16
-         r03: 8
-         r04: 4
+         r01: 16
+         r02: 13
+         r03: 10
+         r04: 8
+         r05: 6
+         r06: 4
      - trisoupQuantizationQP:
-         r01: 30
-         r02: 24
-         r03: 18
-         r04: 12
-     - trisoupFaceVertexEnabled:
-         r01: 1
-         r02: 1
-         r03: 1
-         r04: 0
+         r01: 24
+         r02: 22
+         r03: 20
+         r04: 18
+         r05: 15
+         r06: 12
      -
        - !conditional '"${group}" =~ m{^cat2}'
        - trisoupThickness: '${thickness}'
@@ -57,10 +56,12 @@ categories:
      -
        - !conditional '${has_colour}'
        - qp:
-           r01: 40
-           r02: 34
-           r03: 28
-           r04: 22
+           r01: 34
+           r02: 32
+           r03: 30
+           r04: 28
+           r05: 25
+           r06: 22
        # NB: raht doesn't yet support quantizationStepChroma
        - qpChromaOffset: 0
        - bitdepth: 8
