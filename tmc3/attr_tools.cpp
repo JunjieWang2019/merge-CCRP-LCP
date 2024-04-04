@@ -85,45 +85,41 @@ translateLayer(
   size_t count_rf,
   size_t count_mc,
   int64_t* morton_rf,
-  int64_t* morton_rf_transformed,
   int64_t* morton_mc,
   int* attr_mc,
   bool integer_haar_enable_flag,
   size_t layerSize)
 {
   size_t shift = layerDepth * 3;
-  std::vector<MortonCodeWithIndex> packed;
+  std::vector<int64_t> morton_layer;
   if (layerSize)
-    packed.reserve(layerSize / attrCount);
+    morton_layer.reserve(layerSize / attrCount);
   else
-    packed.reserve(count_rf);
+    morton_layer.reserve(count_rf);
 
   int64_t prev = -1;
   size_t i = 0;
-  MortonCodeWithIndex val;
   for (size_t n = 0; n < count_rf; n++) {
     int64_t curr = morton_rf[n] >> shift;
     if (curr != prev) {
       prev = curr;
-      val.mortonCode = morton_rf_transformed[n] >> shift;
-      val.index = i++;
-      packed.push_back(val);
+      morton_layer.push_back(curr);
     }
   }
-  std::sort(packed.begin(), packed.end());
-  count_rf = packed.size();
+
+  count_rf = morton_layer.size();
   layerAttr.resize(count_rf * attrCount);
 
   i = 0;
   size_t j = 0;
   while (i < count_rf && j < count_mc) {
-    prev = packed[i].mortonCode;
+    prev = morton_layer[i];
 
     while (j < count_mc && prev > (morton_mc[j] >> shift))
       j++;
 
     int64_t weight = 0;
-    auto layer = std::next(layerAttr.begin(), attrCount * packed[i].index);
+    auto layer = std::next(layerAttr.begin(), attrCount * i);
     for (size_t k = 0; k < attrCount; k++)
       layer[k] = 0;
 
@@ -147,10 +143,10 @@ translateLayer(
     }
 
     i++;
-    while (i < count_rf && prev == packed[i].mortonCode) {
+    while (i < count_rf && prev == morton_layer[i]) {
       std::copy(
         layer, layer + attrCount,
-        std::next(layerAttr.begin(), attrCount * packed[i].index));
+        std::next(layerAttr.begin(), attrCount * i));
       i++;
     }
   }

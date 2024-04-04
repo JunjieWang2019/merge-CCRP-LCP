@@ -63,7 +63,6 @@ void translateLayer(
   size_t count_rf,
   size_t count_mc,
   int64_t* morton_rf,
-  int64_t* morton_rf_transformed,
   int64_t* morton_mc,
   int* attr_mc,
   bool integer_haar_enable_flag,

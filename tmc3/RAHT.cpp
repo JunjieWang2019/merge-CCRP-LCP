@@ -801,11 +801,6 @@ uraht_process(
 
   int RDOCodingDepth = abh.attr_layer_code_mode.size();
   std::vector<int64_t> interTree;
-  std::vector<int64_t> mortonTranslated;
-  if (coder.isInterEnabled()) {
-    mortonTranslated.resize(numPoints);
-    std::copy(&positions[0], &positions[numPoints], mortonTranslated.begin());
-  }
 
   weightsLf.reserve(numPoints);
   attrsLf.reserve(numPoints * numAttrs);
@@ -1021,8 +1016,7 @@ uraht_process(
     if (coder.isInterEnabled()) {
       translateLayer(
         interTree, level / 3, numAttrs, numPoints, numPoints_mc, positions,
-        mortonTranslated.data(), positions_mc, attributes_mc,
-        rahtPredParams.integer_haar_enable_flag);
+        positions_mc, attributes_mc, rahtPredParams.integer_haar_enable_flag);
     }
 
     // initial scan position of the coefficient buffer

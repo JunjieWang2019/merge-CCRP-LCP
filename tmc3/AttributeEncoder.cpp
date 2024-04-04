@@ -103,7 +103,8 @@ PCCResidualsEncoder::start(const SequenceParameterSet& sps, int pointCount)
   int maxAcBufLen = pointCount * 3 * 2 + 1024;
   arithmeticEncoder.setBuffer(maxAcBufLen, nullptr);
   arithmeticEncoder.enableBypassStream(sps.cabac_bypass_stream_enabled_flag);
-  arithmeticEncoder.setBypassBinCodingWithoutProbUpdate(sps.bypass_bin_coding_without_prob_update);
+  arithmeticEncoder.setBypassBinCodingWithoutProbUpdate(
+    sps.bypass_bin_coding_without_prob_update);
   arithmeticEncoder.start();
 }
 
@@ -449,8 +450,9 @@ AttributeEncoder::encode(
           attrInterPredParams.compensatedPointCloud = pointCloud;
         attrInterPredParams.encodeMotionAndBuildCompensated(gps, encoder.arithmeticEncoder, attr_aps.mcap_to_rec_geom_flag);
       }
-      encodeColorsTransformRaht(desc, attr_aps, abh, qpSet, pointCloud,
-        encoder, predEncoder, attrInterPredParams);
+      encodeColorsTransformRaht(
+        desc, attr_aps, abh, qpSet, pointCloud, encoder, predEncoder,
+        attrInterPredParams);
       break;
 
     case AttributeEncoding::kRaw:
