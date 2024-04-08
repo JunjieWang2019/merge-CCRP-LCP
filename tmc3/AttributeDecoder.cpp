@@ -293,6 +293,22 @@ AttributeDecoder::decode(
       decodeColorsRaht(attr_desc, attr_aps, abh, qpSet, decoder, pointCloud, predDecoder, attrInterPredParams);
       break;
 
+    case AttributeEncoding::kRAHTperBlock:
+      if (
+        attrInterPredParams.enableAttrInterPred
+        && attr_aps.dual_motion_field_flag
+        && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
+        if (attr_aps.mcap_to_rec_geom_flag)
+          attrInterPredParams.compensatedPointCloud = pointCloud;
+        attrInterPredParams.decodeMotionAndBuildCompensated(
+          attr_aps.motion, decoder.arithmeticDecoder,
+          attr_aps.mcap_to_rec_geom_flag);
+      }
+      decodeRAHTperBlock(
+        attr_desc, attr_aps, abh, qpSet, decoder, pointCloud, predDecoder,
+        attrInterPredParams);
+      break;
+
     case AttributeEncoding::kRaw:
       // Already handled
       break;
@@ -307,6 +323,42 @@ AttributeDecoder::decode(
 
   // save the context state for re-use by a future slice if required
   ctxtMem = decoder.getCtx();
+}
+
+//----------------------------------------------------------------------------
+
+template<const int attribCount>
+void
+rahtEntropyDecoder(
+  const int voxelCount, int* coefficients, PCCResidualsDecoder& decoder)
+{
+  // Decode coefficients
+  if (attribCount == 3) {
+    int32_t values[3];
+
+    for (int n = 0; n < voxelCount; n++) {
+      int zeroRun = decoder.decodeRunLength();
+      if (zeroRun) {
+        n += zeroRun;
+        if (n >= voxelCount)
+          break;
+      }
+
+      decoder.decode(values);
+      for (int d = 0; d < 3; d++)
+        coefficients[n + voxelCount * d] = values[d];
+    }
+  } else if (attribCount == 1) {
+    for (int n = 0; n < voxelCount; n++) {
+      int zeroRun = decoder.decodeRunLength();
+      if (zeroRun) {
+        n += zeroRun;
+        if (n >= voxelCount)
+          break;
+      }
+      coefficients[n] = decoder.decode();
+    }
+  }
 }
 
 //----------------------------------------------------------------------------
@@ -342,40 +394,18 @@ decodeRaht(
   }
   abh.attr_layer_code_mode.clear();
 
-  // Decode coefficients
-  if (attribCount == 3) {
-    int32_t values[3];
-
-    for (int n = 0; n < voxelCount; n++) {
-      int zeroRun = decoder.decodeRunLength();
-      if (zeroRun) {
-        n += zeroRun;
-        if (n >= voxelCount)
-          break;
-      }
-
-      decoder.decode(values);
-      for (int d = 0; d < 3; d++)
-        coefficients[n + voxelCount * d] = values[d];
-    }
-  } else if (attribCount == 1) {
-    for (int n = 0; n < voxelCount; n++) {
-      int zeroRun = decoder.decodeRunLength();
-      if (zeroRun) {
-        n += zeroRun;
-        if (n >= voxelCount)
-          break;
-      }
-      coefficients[n] = decoder.decode();
-    }
-  }
+  rahtEntropyDecoder<attribCount>(voxelCount, coefficients.data(), decoder);
 
   if (attrInterPredParams.hasLocalMotion()) {
     predDecoder.set(&decoder.arithmeticDecoder);
     const int voxelCount_mc =
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
-    uint64_t maxMortonCode = mortonCode.back();
-    int depth = (ilog2(maxMortonCode|7) + 2) / 3;
+    uint64_t maxMortonCode = mortonCode.back() | 7;
+    int depth = 0;
+    while (maxMortonCode) {
+      maxMortonCode >>= 3;
+      depth++;
+    }
     abh.attr_layer_code_mode.resize(depth, 0);
     int codeModeSize = abh.attr_layer_code_mode.size();
     for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
@@ -403,6 +433,143 @@ decodeRaht(
       aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
       voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
       coefficients.data(), predDecoder);
+  }
+
+  int clipMax = (1 << desc.bitdepth) - 1;
+  auto attribute = attributes.begin();
+  if (attribCount == 3) {
+    for (auto index : indexOrd) {
+      auto& color = pointCloud.getColor(index);
+      color[0] = attr_t(PCCClip(*attribute++, 0, clipMax));
+      color[1] = attr_t(PCCClip(*attribute++, 0, clipMax));
+      color[2] = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
+  } else if (attribCount == 1) {
+    for (auto index : indexOrd) {
+      auto& refl = pointCloud.getReflectance(index);
+      refl = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
+  }
+}
+
+//----------------------------------------------------------------------------
+
+void
+AttributeDecoder::decodeRAHTperBlock(
+  const AttributeDescription& desc,
+  const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
+  const QpSet& qpSet,
+  PCCResidualsDecoder& decoder,
+  PCCPointSet3& pointCloud,
+  attr::ModeDecoder& predDecoder,
+  const AttributeInterPredParams& attrInterPredParams)
+{
+  const int attribCount = 3;
+  const int voxelCount = pointCloud.getPointCount();
+
+  // Morton codes
+  std::vector<int64_t> mortonCode;
+  std::vector<int> attributes;
+  auto indexOrd =
+    sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
+  attributes.resize(voxelCount * attribCount);
+
+  // Entropy decode
+  std::vector<int> coefficients(attribCount * voxelCount, 0);
+  std::vector<Qps> pointQpOffsets;
+  pointQpOffsets.reserve(voxelCount);
+
+  int n = 0;
+  for (auto index : indexOrd) {
+    pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
+  }
+
+  const int prefix_shift = 3 * aps.block_size_log2;
+  abh.attr_layer_code_mode.clear();
+  if (attrInterPredParams.hasLocalMotion()) {
+    predDecoder.set(&decoder.arithmeticDecoder);
+    const int voxelCount_mc =
+      int(attrInterPredParams.compensatedPointCloud.getPointCount());
+    std::cout << "Using inter MC for prediction" << std::endl;
+
+    std::vector<int64_t> mortonCode_mc;
+    std::vector<int> attributes_mc;
+    sortedPointCloud(
+      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
+      attributes_mc);
+
+    abh.attr_layer_code_mode.resize(aps.block_size_log2);
+
+    int block_pc_begin = 0;
+    int block_mc_begin = 0;
+    while (block_pc_begin < voxelCount) {
+      int64_t prefix = mortonCode[block_pc_begin] >> prefix_shift;
+
+      int block_pc_end = block_pc_begin + 1;
+      while (block_pc_end < voxelCount
+             && (mortonCode[block_pc_end] >> prefix_shift) == prefix)
+        block_pc_end++;
+
+      while (block_mc_begin < voxelCount_mc
+             && (mortonCode_mc[block_mc_begin] >> prefix_shift) < prefix)
+        block_mc_begin++;
+      int block_mc_end = block_mc_begin;
+      while (block_mc_end < voxelCount_mc
+             && (mortonCode_mc[block_mc_end] >> prefix_shift) == prefix)
+        block_mc_end++;
+
+      rahtEntropyDecoder<3>(
+        block_pc_end - block_pc_begin,
+        coefficients.data() + attribCount * block_pc_begin, decoder);
+
+      int codeModeSize = abh.attr_layer_code_mode.size();
+      for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
+        int& predMode = abh.attr_layer_code_mode[layerIdx];
+        predMode = decoder.decodeInterPredMode(
+          aps.rahtPredParams, layerIdx, codeModeSize);
+      }
+
+      // Transform.
+      regionAdaptiveHierarchicalInverseTransform(
+        aps.rahtPredParams, abh, qpSet, pointQpOffsets.data() + block_pc_begin,
+        attribCount, block_pc_end - block_pc_begin,
+        mortonCode.data() + block_pc_begin,
+        attributes.data() + attribCount * block_pc_begin,
+        block_mc_end - block_mc_begin, mortonCode_mc.data() + block_mc_begin,
+        attributes_mc.data() + attribCount * block_mc_begin,
+        coefficients.data() + attribCount * block_pc_begin, predDecoder);
+
+      block_pc_begin = block_pc_end;
+      block_mc_begin = block_mc_end;
+    }
+  } else {
+    predDecoder.reset();
+    predDecoder.set(&decoder.arithmeticDecoder);
+
+    int block_pc_begin = 0;
+    while (block_pc_begin < voxelCount) {
+      int64_t prefix = mortonCode[block_pc_begin] >> prefix_shift;
+
+      int block_pc_end = block_pc_begin + 1;
+      while (block_pc_end < voxelCount
+             && (mortonCode[block_pc_end] >> prefix_shift) == prefix)
+        block_pc_end++;
+
+      rahtEntropyDecoder<3>(
+        block_pc_end - block_pc_begin,
+        coefficients.data() + attribCount * block_pc_begin, decoder);
+
+      // Transform.
+      regionAdaptiveHierarchicalInverseTransform(
+        aps.rahtPredParams, abh, qpSet, pointQpOffsets.data() + block_pc_begin,
+        attribCount, block_pc_end - block_pc_begin,
+        mortonCode.data() + block_pc_begin,
+        attributes.data() + attribCount * block_pc_begin, 0, nullptr, nullptr,
+        coefficients.data() + attribCount * block_pc_begin, predDecoder);
+
+      block_pc_begin = block_pc_end;
+    }
   }
 
   int clipMax = (1 << desc.bitdepth) - 1;

@@ -766,7 +766,12 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   bs.writeSe(aps.aps_chroma_qp_offset);
   bs.write(aps.aps_slice_qp_deltas_present_flag);
 
-  if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
+  if (aps.attr_encoding == AttributeEncoding::kRAHTperBlock)
+    bs.writeUe(aps.block_size_log2);
+
+  if (
+    aps.attr_encoding == AttributeEncoding::kRAHTransform
+    || aps.attr_encoding == AttributeEncoding::kRAHTperBlock) {
     bs.write(aps.rahtPredParams.prediction_enabled_flag);
     if (aps.rahtPredParams.prediction_enabled_flag) {
       bs.writeUe(aps.rahtPredParams.prediction_threshold0);
@@ -803,7 +808,8 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     }
 
     if (
-      aps.attr_encoding == AttributeEncoding::kRAHTransform
+      (aps.attr_encoding == AttributeEncoding::kRAHTransform
+       || aps.attr_encoding == AttributeEncoding::kRAHTperBlock)
       && aps.rahtPredParams.prediction_enabled_flag) {
       bs.write(aps.rahtPredParams.prediction_skip1_flag);
       bs.write(aps.rahtPredParams.subnode_prediction_enabled_flag);
@@ -842,8 +848,13 @@ parseAps(const PayloadBuffer& buf)
   bs.readSe(&aps.aps_chroma_qp_offset);
   bs.read(&aps.aps_slice_qp_deltas_present_flag);
 
+  if (aps.attr_encoding == AttributeEncoding::kRAHTperBlock)
+    bs.readUe(&aps.block_size_log2);
+
   aps.rahtPredParams.raht_enable_inter_intra_layer_RDO = false;
-  if (aps.attr_encoding == AttributeEncoding::kRAHTransform) {
+  if (
+    aps.attr_encoding == AttributeEncoding::kRAHTransform
+    || aps.attr_encoding == AttributeEncoding::kRAHTperBlock) {
     aps.rahtPredParams.intra_mode_level = 0;
     aps.rahtPredParams.mode_level = 0;
     aps.rahtPredParams.upper_mode_level = 0;
@@ -889,7 +900,8 @@ parseAps(const PayloadBuffer& buf)
     }
 
     if (
-      aps.attr_encoding == AttributeEncoding::kRAHTransform
+      (aps.attr_encoding == AttributeEncoding::kRAHTransform
+       || aps.attr_encoding == AttributeEncoding::kRAHTperBlock)
       && aps.rahtPredParams.prediction_enabled_flag) {
       bs.read(&aps.rahtPredParams.prediction_skip1_flag);
       bs.read(&aps.rahtPredParams.subnode_prediction_enabled_flag);

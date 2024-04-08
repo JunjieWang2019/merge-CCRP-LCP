@@ -611,12 +611,13 @@ Controls the use of motion compensated attributes projection from
 reference frame onto reconstructed geometry. The result is used for 
 attributes prediction.
 
-### `--transformType=0|3`
+### `--transformType=0|1|3`
 Coding method to use for the current attribute:
 
   | Value | Description                                                |
   |:-----:| ---------------------------------------------------------- |
   | 0     | Region Adaptive Hierarchical Transform (RAHT)              |
+  | 1     | Per blocks RAHT (per block RAHT)                           |
   | 3     | Uncompressed (PCM)                                         |
 
 ### `--integerHaar=0|1`
@@ -681,6 +682,9 @@ from it.
 ### `--rahtCrossChromaComponentPrediction=0|1`
 Controls the use of cross-chroma component prediction. When it is enabled,
 The second chroma component is predicted from the first one.
+
+### `--rahtBlockSize=INT-VALUE`
+Controls the block size of RAHT per block.
 
 ### `--qp=INT-VALUE`
 Attribute's luma quantization parameter.

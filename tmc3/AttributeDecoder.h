@@ -93,6 +93,16 @@ protected:
     PCCPointSet3& pointCloud,
     attr::ModeDecoder& predDecoder,
     const AttributeInterPredParams& attrInterPredParams);
+
+  void decodeRAHTperBlock(
+    const AttributeDescription& desc,
+    const AttributeParameterSet& aps,
+    AttributeBrickHeader& abh,
+    const QpSet& qpSet,
+    PCCResidualsDecoder& decoder,
+    PCCPointSet3& pointCloud,
+    attr::ModeDecoder& predDecoder,
+    const AttributeInterPredParams& attrInterPredParams);
 };
 
 //============================================================================

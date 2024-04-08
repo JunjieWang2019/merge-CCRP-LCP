@@ -94,6 +94,16 @@ protected:
     attr::ModeEncoder& predEncoder,
     const AttributeInterPredParams& attrInterPredParams);
 
+  void encodeRAHTperBlock(
+    const AttributeDescription& desc,
+    const AttributeParameterSet& aps,
+    AttributeBrickHeader& abh,
+    const QpSet& qpSet,
+    PCCPointSet3& pointCloud,
+    PCCResidualsEncoder& encoder,
+    attr::ModeEncoder& predEncoder,
+    const AttributeInterPredParams& attrInterPredParams);
+
 private:
   // The current attribute slice header
   AttributeBrickHeader* _abh;

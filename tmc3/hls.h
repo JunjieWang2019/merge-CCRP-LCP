@@ -133,6 +133,7 @@ std::ostream& operator<<(std::ostream& os, const AttributeLabel& label);
 enum class AttributeEncoding
 {
   kRAHTransform = 0,
+  kRAHTperBlock = 1,
   kRaw = 3,
 };
 
@@ -694,6 +695,9 @@ struct AttributeParameterSet {
 
   //--- raht parameters
   RahtPredictionParams rahtPredParams;
+
+  // RAHT per block
+  int block_size_log2;
 
   // Whether raw attribute are coded as fixed width or variable length.
   bool raw_attr_variable_len_flag;

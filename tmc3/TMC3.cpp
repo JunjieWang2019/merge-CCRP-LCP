@@ -405,6 +405,7 @@ operator<<(std::ostream& out, const AttributeEncoding& val)
 {
   switch (val) {
   case AttributeEncoding::kRAHTransform: out << "0 (RAHT)"; break;
+  case AttributeEncoding::kRAHTperBlock: out << "1 (RAHT per block)"; break;
   case AttributeEncoding::kRaw: out << "3 (Raw)"; break;
   }
   return out;
@@ -933,6 +934,7 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.attr_encoding, AttributeEncoding::kRAHTransform,
     "Coding method to use for attribute:\n"
     "  0: Region Adaptive Hierarchical Transform (RAHT)\n"
+    "  1: RAHT per block\n"
     "  3: Uncompressed (PCM)")
 
   ("integerHaar",
@@ -1003,6 +1005,9 @@ ParseParameters(int argc, char* argv[], Parameters& params)
   ("rahtCrossChromaComponentPrediction",
     params_attr.aps.rahtPredParams.cross_chroma_component_prediction_flag, true,
     "Use first chroma component to predict the second chroma component")
+
+  ("rahtBlockSizeLog2", params_attr.aps.block_size_log2, 4,
+    "RAHT block size (RAHT per block only)")
 
   ("qp",
     // NB: this is adjusted with minus 4 after the arguments are parsed
@@ -1335,7 +1340,9 @@ sanitizeEncoderOpts(
         attr_sps.attr_num_dimensions_minus1 + 1,
         attrMeta.attr_default_value.back());
 
-    if (attr_aps.attr_encoding == AttributeEncoding::kRAHTransform) {
+    if (
+      attr_aps.attr_encoding == AttributeEncoding::kRAHTransform
+      || attr_aps.attr_encoding == AttributeEncoding::kRAHTperBlock) {
       auto& predParams = attr_aps.rahtPredParams;
       if (!predParams.prediction_enabled_flag) {
         predParams.prediction_skip1_flag = false;

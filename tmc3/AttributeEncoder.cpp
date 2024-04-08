@@ -493,6 +493,22 @@ AttributeEncoder::encode(
         attrInterPredParams);
       break;
 
+    case AttributeEncoding::kRAHTperBlock:
+      if (
+        attrInterPredParams.enableAttrInterPred
+        && attr_aps.dual_motion_field_flag
+        && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
+        if (attr_aps.mcap_to_rec_geom_flag)
+          attrInterPredParams.compensatedPointCloud = pointCloud;
+        attrInterPredParams.encodeMotionAndBuildCompensated(
+          attr_aps.motion, encoder.arithmeticEncoder,
+          attr_aps.mcap_to_rec_geom_flag);
+      }
+      encodeRAHTperBlock(
+        desc, attr_aps, abh, qpSet, pointCloud, encoder, predEncoder,
+        attrInterPredParams);
+      break;
+
     case AttributeEncoding::kRaw:
       // Already handled
       break;
@@ -522,64 +538,19 @@ AttributeEncoder::encode(
 //----------------------------------------------------------------------------
 
 template<const int attribCount>
-inline void
-encodeRaht(
+void
+rahtEntropyEncoder(
   const AttributeDescription& desc,
   const AttributeParameterSet& aps,
   AttributeBrickHeader& abh,
-  const QpSet& qpSet,
-  PCCPointSet3& pointCloud,
+  const int voxelCount,
+  const int* coefficients,
+  const int* indexOrd,
+  const int* attributes,
   PCCResidualsEncoder& encoder,
   attr::ModeEncoder& predEncoder,
-  const AttributeInterPredParams& attrInterPredParams)
+  PCCPointSet3& pointCloud)
 {
-  const int voxelCount = pointCloud.getPointCount();
-
-  // Allocate arrays.
-  std::vector<int64_t> mortonCode;
-  std::vector<int> attributes;
-  std::vector<Qps> pointQpOffsets;
-  std::vector<int> coefficients(attribCount * voxelCount);
-
-  // Populate input arrays.
-  auto indexOrd =
-    sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
-  pointQpOffsets.reserve(voxelCount);
-  for (auto index : indexOrd) {
-    pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
-  }
-
-  if (attrInterPredParams.hasLocalMotion()) {
-    predEncoder.set(&encoder.arithmeticEncoder);
-    const int voxelCount_mc =
-      int(attrInterPredParams.compensatedPointCloud.getPointCount());
-
-    // Allocate arrays.
-    std::vector<int64_t> mortonCode_mc;
-    std::vector<int> attributes_mc;
-    sortedPointCloud(
-      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
-      attributes_mc);
-    uint64_t maxMortonCode = mortonCode.back();
-    int depth = (ilog2(maxMortonCode|7) + 2) / 3;
-    abh.attr_layer_code_mode.resize(depth, 0);
-    // Transform.
-    regionAdaptiveHierarchicalTransform(
-      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
-      voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
-      mortonCode_mc.data(), attributes_mc.data(), coefficients.data(),
-      predEncoder);
-  } else {
-    predEncoder.reset();
-    predEncoder.set(&encoder.arithmeticEncoder);
-
-    // Transform.
-    regionAdaptiveHierarchicalTransform(
-      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
-      voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
-      coefficients.data(), predEncoder);
-  }
-
   // Entropy encode.
   int zeroRun = 0;
   if (attribCount == 3) {
@@ -623,18 +594,214 @@ encodeRaht(
   predEncoder.flush();
 
   int clipMax = (1 << desc.bitdepth) - 1;
-  auto attribute = attributes.begin();
+  auto attribute = attributes;
   if (attribCount == 3) {
-    for (auto index : indexOrd) {
+    for (int n = 0; n < voxelCount; ++n) {
+      auto index = indexOrd[n];
       auto& color = pointCloud.getColor(index);
       color[0] = attr_t(PCCClip(*attribute++, 0, clipMax));
       color[1] = attr_t(PCCClip(*attribute++, 0, clipMax));
       color[2] = attr_t(PCCClip(*attribute++, 0, clipMax));
     }
   } else if (attribCount == 1) {
-    for (auto index : indexOrd) {
+    for (int n = 0; n < voxelCount; ++n) {
+      auto index = indexOrd[n];
       auto& refl = pointCloud.getReflectance(index);
       refl = attr_t(PCCClip(*attribute++, 0, clipMax));
+    }
+  }
+}
+
+//----------------------------------------------------------------------------
+
+template<const int attribCount>
+inline void
+encodeRaht(
+  const AttributeDescription& desc,
+  const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
+  const QpSet& qpSet,
+  PCCPointSet3& pointCloud,
+  PCCResidualsEncoder& encoder,
+  attr::ModeEncoder& predEncoder,
+  const AttributeInterPredParams& attrInterPredParams)
+{
+  const int voxelCount = pointCloud.getPointCount();
+
+  // Allocate arrays.
+  std::vector<int64_t> mortonCode;
+  std::vector<int> attributes;
+  std::vector<Qps> pointQpOffsets;
+  std::vector<int> coefficients(attribCount * voxelCount);
+
+  // Populate input arrays.
+  auto indexOrd =
+    sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
+  pointQpOffsets.reserve(voxelCount);
+  for (auto index : indexOrd) {
+    pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
+  }
+
+  abh.attr_layer_code_mode.clear();
+  if (attrInterPredParams.hasLocalMotion()) {
+    predEncoder.set(&encoder.arithmeticEncoder);
+    const int voxelCount_mc =
+      int(attrInterPredParams.compensatedPointCloud.getPointCount());
+
+    // Allocate arrays.
+    std::vector<int64_t> mortonCode_mc;
+    std::vector<int> attributes_mc;
+    sortedPointCloud(
+      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
+      attributes_mc);
+    uint64_t maxMortonCode = mortonCode.back() | 7;
+    int depth = 0;
+    while (maxMortonCode) {
+      maxMortonCode >>= 3;
+      depth++;
+    }
+    abh.attr_layer_code_mode.resize(depth, 0);
+
+    // Transform.
+    regionAdaptiveHierarchicalTransform(
+      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
+      voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
+      mortonCode_mc.data(), attributes_mc.data(), coefficients.data(),
+      predEncoder);
+  } else {
+    predEncoder.reset();
+    predEncoder.set(&encoder.arithmeticEncoder);
+
+    // Transform.
+    regionAdaptiveHierarchicalTransform(
+      aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
+      voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
+      coefficients.data(), predEncoder);
+  }
+
+  rahtEntropyEncoder<attribCount>(
+    desc, aps, abh, voxelCount, coefficients.data(), indexOrd.data(),
+    attributes.data(), encoder, predEncoder, pointCloud);
+}
+
+//----------------------------------------------------------------------------
+
+void
+AttributeEncoder::encodeRAHTperBlock(
+  const AttributeDescription& desc,
+  const AttributeParameterSet& aps,
+  AttributeBrickHeader& abh,
+  const QpSet& qpSet,
+  PCCPointSet3& pointCloud,
+  PCCResidualsEncoder& encoder,
+  attr::ModeEncoder& predEncoder,
+  const AttributeInterPredParams& attrInterPredParams)
+{
+  const int attribCount = 3;
+  const int voxelCount = pointCloud.getPointCount();
+
+  // Allocate arrays.
+  std::vector<int64_t> mortonCode;
+  std::vector<int> attributes;
+  std::vector<Qps> pointQpOffsets;
+  std::vector<int> coefficients(attribCount * voxelCount);
+
+  // Populate input arrays.
+  auto indexOrd =
+    sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
+  pointQpOffsets.reserve(voxelCount);
+  for (auto index : indexOrd) {
+    pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
+  }
+
+  const int prefix_shift = 3 * aps.block_size_log2;
+  abh.attr_layer_code_mode.clear();
+  if (attrInterPredParams.hasLocalMotion()) {
+    predEncoder.set(&encoder.arithmeticEncoder);
+    const int voxelCount_mc =
+      int(attrInterPredParams.compensatedPointCloud.getPointCount());
+
+    std::cout << "Using inter MC for prediction" << std::endl;
+
+    // Allocate arrays.
+    std::vector<int64_t> mortonCode_mc;
+    std::vector<int> attributes_mc;
+    sortedPointCloud(
+      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
+      attributes_mc);
+
+    abh.attr_layer_code_mode.resize(aps.block_size_log2);
+
+    int block_pc_begin = 0;
+    int block_mc_begin = 0;
+    while (block_pc_begin < voxelCount) {
+      int64_t prefix = mortonCode[block_pc_begin] >> prefix_shift;
+
+      int block_pc_end = block_pc_begin + 1;
+      while (block_pc_end < voxelCount
+             && (mortonCode[block_pc_end] >> prefix_shift) == prefix)
+        block_pc_end++;
+
+      while (block_mc_begin < voxelCount_mc
+             && (mortonCode_mc[block_mc_begin] >> prefix_shift) < prefix)
+        block_mc_begin++;
+      int block_mc_end = block_mc_begin;
+      while (block_mc_end < voxelCount_mc
+             && (mortonCode_mc[block_mc_end] >> prefix_shift) == prefix)
+        block_mc_end++;
+
+      for (auto& predMode : abh.attr_layer_code_mode)
+        predMode = 0;
+
+      // Transform.
+      regionAdaptiveHierarchicalTransform(
+        aps.rahtPredParams, abh, qpSet, pointQpOffsets.data() + block_pc_begin,
+        attribCount, block_pc_end - block_pc_begin,
+        mortonCode.data() + block_pc_begin,
+        attributes.data() + attribCount * block_pc_begin,
+        block_mc_end - block_mc_begin, mortonCode_mc.data() + block_mc_begin,
+        attributes_mc.data() + attribCount * block_mc_begin,
+        coefficients.data() + attribCount * block_pc_begin, predEncoder);
+
+      rahtEntropyEncoder<attribCount>(
+        desc, aps, abh, block_pc_end - block_pc_begin,
+        coefficients.data() + attribCount * block_pc_begin,
+        indexOrd.data() + block_pc_begin,
+        attributes.data() + attribCount * block_pc_begin, encoder,
+        predEncoder, pointCloud);
+
+      block_pc_begin = block_pc_end;
+      block_mc_begin = block_mc_end;
+    }
+  } else {
+    predEncoder.reset();
+    predEncoder.set(&encoder.arithmeticEncoder);
+
+    int block_pc_begin = 0;
+    while (block_pc_begin < voxelCount) {
+      int64_t prefix = mortonCode[block_pc_begin] >> prefix_shift;
+
+      int block_pc_end = block_pc_begin + 1;
+      while (block_pc_end < voxelCount
+             && (mortonCode[block_pc_end] >> prefix_shift) == prefix)
+        block_pc_end++;
+
+      // Transform.
+      regionAdaptiveHierarchicalTransform(
+        aps.rahtPredParams, abh, qpSet, pointQpOffsets.data() + block_pc_begin,
+        attribCount, block_pc_end - block_pc_begin,
+        mortonCode.data() + block_pc_begin,
+        attributes.data() + attribCount * block_pc_begin, 0, nullptr, nullptr,
+        coefficients.data() + attribCount * block_pc_begin, predEncoder);
+
+      rahtEntropyEncoder<attribCount>(
+        desc, aps, abh, block_pc_end - block_pc_begin,
+        coefficients.data() + attribCount * block_pc_begin,
+        indexOrd.data() + block_pc_begin,
+        attributes.data() + attribCount * block_pc_begin, encoder,
+        predEncoder, pointCloud);
+
+      block_pc_begin = block_pc_end;
     }
   }
 }

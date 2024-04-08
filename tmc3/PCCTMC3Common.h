@@ -176,10 +176,6 @@ private:
 
 struct MortonCodeWithIndex {
   int64_t mortonCode;
-
-  // The position used to generate the mortonCode
-  Vec3<int32_t> position;
-
   int32_t index;
 
   bool operator<(const MortonCodeWithIndex& rhs) const

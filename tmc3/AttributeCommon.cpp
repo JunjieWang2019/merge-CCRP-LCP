@@ -258,7 +258,7 @@ sortedPointCloud(
   std::vector<MortonCodeWithIndex> packedVoxel;
   packedVoxel.reserve(voxelCount);
   for (int n = 0; n < voxelCount; n++) {
-    packedVoxel.push_back({mortonAddr(pointCloud[n]), pointCloud[n], n});
+    packedVoxel.push_back({mortonAddr(pointCloud[n]), n});
   }
   sort(packedVoxel.begin(), packedVoxel.end());
 
