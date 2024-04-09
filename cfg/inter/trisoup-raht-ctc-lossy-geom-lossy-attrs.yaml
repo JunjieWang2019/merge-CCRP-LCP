@@ -67,14 +67,14 @@ categories:
      -
        - !conditional '${has_colour}'
        - qp:
-           r01: 34
-           r02: 32
-           r03: 30
-           r04: 28
-           r05: 25
-           r06: 22
+           r01: '${qp1}' #34
+           r02: '${qp2}' #32
+           r03: '${qp3}' #30
+           r04: '${qp4}' #28
+           r05: '${qp5}' #25
+           r06: '${qp6}' #22
        # NB: raht doesn't yet support quantizationStepChroma
-       - qpChromaOffset: 0
+       - qpChromaOffset: '${chromaOffset}' #0
        - bitdepth: 8
        - attribute: color
 
@@ -88,10 +88,10 @@ categories:
 
     sequences:
       # cat2
-      8ivfbv2_longdress_vox10:   { test-depth: 10, thickness: 24 }
-      8ivfbv2_loot_vox10:        { test-depth: 10, thickness: 24 }
-      8ivfbv2_redandblack_vox10: { test-depth: 10, thickness: 24 }
-      8ivfbv2_soldier_vox10:     { test-depth: 10, thickness: 24 }
-      basketball_player_vox11:   { test-depth: 11, thickness: 36 }
-      dancer_player_vox11:       { test-depth: 11, thickness: 36 }
-      queen:                     { test-depth: 10, thickness: 40 }
+      8ivfbv2_longdress_vox10:   { test-depth: 10, thickness: 24, qp1: 42, qp2: 38, qp3: 35, qp4: 32, qp5: 28, qp6: 23, chromaOffset: 4  }
+      8ivfbv2_loot_vox10:        { test-depth: 10, thickness: 24, qp1: 38, qp2: 32, qp3: 27, qp4: 24, qp5: 20, qp6: 16, chromaOffset: 4  }
+      8ivfbv2_redandblack_vox10: { test-depth: 10, thickness: 24, qp1: 41, qp2: 36, qp3: 29, qp4: 25, qp5: 22, qp6: 18, chromaOffset: 4  }
+      8ivfbv2_soldier_vox10:     { test-depth: 10, thickness: 24, qp1: 41, qp2: 36, qp3: 29, qp4: 25, qp5: 22, qp6: 18, chromaOffset: 4  }
+      basketball_player_vox11:   { test-depth: 11, thickness: 36, qp1: 38, qp2: 32, qp3: 27, qp4: 22, qp5: 18, qp6: 16, chromaOffset: 4  }
+      dancer_player_vox11:       { test-depth: 11, thickness: 36, qp1: 38, qp2: 32, qp3: 27, qp4: 22, qp5: 18, qp6: 16, chromaOffset: 4  }
+      queen:                     { test-depth: 10, thickness: 40, qp1: 47, qp2: 45, qp3: 43, qp4: 39, qp5: 33, qp6: 27, chromaOffset: 0  }
