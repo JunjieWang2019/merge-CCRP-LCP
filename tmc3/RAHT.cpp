@@ -1098,17 +1098,18 @@ uraht_process(
     bool curLevelEnableACInterPred = false;
     enableACRDOInterPred =
       rahtPredParams.raht_enable_inter_intra_layer_RDO
-      && enableACInterPred && enableIntraPredictionInLvl && depth < RDOCodingDepth;
+      && enableACInterPred && rahtPredParams.prediction_enabled_flag
+        && depth < RDOCodingDepth;
     if (enableACRDOInterPred) {
       if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-        curLevelEnableACInterPred = enableIntraPredictionInLvl;
+        curLevelEnableACInterPred = rahtPredParams.prediction_enabled_flag;
         curLevelEnableLayerModeCoding = curLevelEnableACInterPred;
       }
       else {
         curLevelEnableLayerModeCoding =
-          enableIntraPredictionInLvl && abh.attr_layer_code_mode[depth];
+          rahtPredParams.prediction_enabled_flag && abh.attr_layer_code_mode[depth];
         curLevelEnableACInterPred =
-          enableIntraPredictionInLvl && abh.attr_layer_code_mode[depth] == 1;
+          rahtPredParams.prediction_enabled_flag && abh.attr_layer_code_mode[depth] == 1;
       }
     }
 
