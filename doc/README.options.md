@@ -362,6 +362,25 @@ enables to reduce some complexity in coding the bypass bins.
 Controls the enabling of approximate nearest neighbor for faster motion
 search.
 
+### `--localizedAttributesEnabled=0|1`
+Controls the enabling of the localized attributes compatible bitstream.
+When enabled, the geometry and the attributes can be decoded slab by slab
+to enable more localized processing.
+
+### `--localizedAttributesEncoding=0|1`
+Controls the enabling of the localized encoding for localized attributes.
+When not enabled geometry is encoded for the complete slice, and recoloring
+of the attributes is performed using the full slice. Otherwise, when enabled,
+the geometry, then recoloring, then attributes coding is performed one slab
+by one slab.
+
+Enabling `localizedAttributesEncoding` also enables
+`localizedAttributesEnabled`.
+
+### `--localizedAttributesSlabThickness=INT-VALUE`
+Controls the thickness of the slabs when `localizedAttributesEnabled`
+is enabled.
+
 Geometry coding
 ---------------
 

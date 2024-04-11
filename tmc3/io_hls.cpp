@@ -473,6 +473,11 @@ write(const SequenceParameterSet& sps)
   if(sps.inter_frame_trisoup_align_slices_flag)
     bs.writeUe(sps.inter_frame_trisoup_align_slices_step);
 
+  bs.write(sps.localized_attributes_enabled_flag);
+
+  if (sps.localized_attributes_enabled_flag)
+    bs.writeUe(sps.localized_attributes_slab_thickness_minus1);
+
   bs.byteAlign();
 
   return buf;
@@ -579,6 +584,8 @@ parseSps(const PayloadBuffer& buf)
   sps.inter_frame_trisoup_enabled_flag = false;
   sps.inter_frame_trisoup_align_slices_flag = false;
   sps.inter_frame_trisoup_align_slices_step = 1;
+  sps.localized_attributes_enabled_flag = false;
+  sps.localized_attributes_slab_thickness_minus1 = 0;
   bool sps_extension_flag = bs.read();
   if (sps_extension_flag) {
     bs.read(&sps.inter_frame_prediction_enabled_flag);
@@ -592,6 +599,11 @@ parseSps(const PayloadBuffer& buf)
 
     if(sps.inter_frame_trisoup_align_slices_flag)
       bs.readUe(&sps.inter_frame_trisoup_align_slices_step);
+
+    bs.read(&sps.localized_attributes_enabled_flag);
+
+    if (sps.localized_attributes_enabled_flag)
+      bs.readUe(&sps.localized_attributes_slab_thickness_minus1);
   }
   bs.byteAlign();
 

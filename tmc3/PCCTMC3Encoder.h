@@ -169,6 +169,12 @@ struct EncoderParams {
 
   // parameters for geometry motion search
   EncodeMotionSearchParams motion;
+
+  // Encoder will use localized attributes even during the encoding
+  bool localized_attributes_encoding;
+
+  // localized attributes slab thickness
+  int localized_attributes_slab_thickness;
 };
 
 //============================================================================
@@ -202,9 +208,12 @@ public:
   void setInterForCurrPic(bool x) { _codeCurrFrameAsInter = x; }
   void deriveMotionParams(EncoderParams* params);
 
+  void processNextSlabAttributes(PCCPointSet3& slabPointCloud, uint32_t xStartSlab, bool isLast);
+
 private:
   void appendSlice(PCCPointSet3& cloud);
 
+  void startEncodeGeometryBrick(const EncoderParams*);
   void encodeGeometryBrick(const EncoderParams*, PayloadBuffer* buf, AttributeInterPredParams& attrInterPredParams);
 
   SrcMappedPointSet quantization(const PCCPointSet3& src);
@@ -272,6 +281,50 @@ private:
 
   CloudFrame _refFrame;
 
+  // For local encoding
+  PayloadBuffer
+    payload_geom;
+
+  std::vector<PayloadBuffer>
+    payload_attr;
+
+  pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>
+    clock_user_geom;
+
+  std::vector<pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>>
+    clock_user_attr;
+
+  std::vector<AttributeBrickHeader>
+    _abh;
+
+  std::vector<decltype(makeAttributeEncoder())>
+    attrEncoder;
+
+  // LocalizedAttributes
+
+  enum class Type {
+    kNone = -1, // global decoder
+    kLocalEncoder = 1,
+    kGlobalEncoder = 2
+  };
+
+  Type type;
+
+  uint32_t slabThickness;
+
+  bool isInter;
+
+  int currSlabIdx;
+
+  // For encoder
+  const PCCPointSet3* originPartCloud;
+  point_t origin;
+  double targetToSourceScaleFactor;
+  Box3<int32_t> bBoxOrigin;
+  const EncoderParams* params;
+
+  // This is for global encoder
+  std::vector<int> numPointsPerSlab;
 };
 
 //----------------------------------------------------------------------------

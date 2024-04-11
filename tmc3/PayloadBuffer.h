@@ -46,12 +46,18 @@ namespace pcc {
 struct PayloadBuffer : public std::vector<char> {
   PayloadType type;
 
+  PayloadBuffer(PayloadBuffer&&) = default;
+  PayloadBuffer(const PayloadBuffer&) = default;
+
   PayloadBuffer() : type(PayloadType::kNotSet) {}
 
   PayloadBuffer(PayloadType payload_type) : type(payload_type)
   {
     reserve(4096);
   }
+
+  PayloadBuffer& operator =(PayloadBuffer&&) = default;
+  PayloadBuffer& operator =(const PayloadBuffer&) = default;
 };
 
 //============================================================================

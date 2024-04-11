@@ -868,6 +868,7 @@ void encodeGeometryOctree(
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
+  struct PCCTMC3Encoder3& encoder,
   RasterScanTrisoupEdges* rste = nullptr);
 
 template <bool forTrisoup>
@@ -880,8 +881,10 @@ void decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
+  const SequenceParameterSet& sps,
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
+  struct PCCTMC3Decoder3& decoder,
   RasterScanTrisoupEdges* rste = nullptr);
 
 //============================================================================

@@ -443,31 +443,22 @@ AttributeEncoder::encode(
   const GeometryParameterSet& gps,
   const AttributeDescription& desc,
   const AttributeParameterSet& attr_aps,
-  AttributeBrickHeader& abh,
-  AttributeContexts& ctxtMem,
   PCCPointSet3& pointCloud,
   PayloadBuffer* payload,
   AttributeInterPredParams& attrInterPredParams,
   attr::ModeEncoder& predEncoder)
 {
   if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
-    AttrRawEncoder::encode(sps, desc, attr_aps, abh, pointCloud, payload);
+    AttrRawEncoder::encode(sps, desc, attr_aps, _abh, pointCloud, payload);
     return;
   }
 
-  // Encoders are able to modify the slice header:
-  _abh = &abh;
-
-  QpSet qpSet = deriveQpSet(desc, attr_aps, abh);
-
-  PCCResidualsEncoder encoder(attr_aps, abh, ctxtMem);
-  encoder.start(sps, int(pointCloud.getPointCount()));
-  abh.attr_layer_code_mode.clear();
+  //_abh.attr_layer_code_mode.clear();
   if (desc.attr_num_dimensions_minus1 == 0) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
       encodeReflectancesTransformRaht(
-        desc, attr_aps, abh, qpSet, pointCloud, encoder, predEncoder,
+        desc, attr_aps, _abh, _qpSet, pointCloud, *_pEncoder, predEncoder,
         attrInterPredParams);
       break;
 
@@ -480,16 +471,17 @@ AttributeEncoder::encode(
   } else if (desc.attr_num_dimensions_minus1 == 2) {
     switch (attr_aps.attr_encoding) {
     case AttributeEncoding::kRAHTransform:
+      // local motion encoding and compensation performed on the whole frame
       if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag
           && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
         if (attr_aps.mcap_to_rec_geom_flag)
           attrInterPredParams.compensatedPointCloud = pointCloud;
         attrInterPredParams.encodeMotionAndBuildCompensated(
-          attr_aps.motion, encoder.arithmeticEncoder,
+          attr_aps.motion, _pEncoder->arithmeticEncoder,
           attr_aps.mcap_to_rec_geom_flag);
       }
       encodeColorsTransformRaht(
-        desc, attr_aps, abh, qpSet, pointCloud, encoder, predEncoder,
+        desc, attr_aps, _abh, _qpSet, pointCloud, *_pEncoder, predEncoder,
         attrInterPredParams);
       break;
 
@@ -501,11 +493,11 @@ AttributeEncoder::encode(
         if (attr_aps.mcap_to_rec_geom_flag)
           attrInterPredParams.compensatedPointCloud = pointCloud;
         attrInterPredParams.encodeMotionAndBuildCompensated(
-          attr_aps.motion, encoder.arithmeticEncoder,
+          attr_aps.motion, _pEncoder->arithmeticEncoder,
           attr_aps.mcap_to_rec_geom_flag);
       }
       encodeRAHTperBlock(
-        desc, attr_aps, abh, qpSet, pointCloud, encoder, predEncoder,
+        desc, attr_aps, _abh, _qpSet, pointCloud, *_pEncoder, predEncoder,
         attrInterPredParams);
       break;
 
@@ -520,19 +512,131 @@ AttributeEncoder::encode(
       desc.attr_num_dimensions_minus1 == 0
       || desc.attr_num_dimensions_minus1 == 2);
   }
+}
 
-  uint32_t acDataLen = encoder.stop();
+//----------------------------------------------------------------------------
+
+void AttributeEncoder::encodeSlab(
+  const SequenceParameterSet& sps,
+  const GeometryParameterSet& gps,
+  const AttributeDescription& desc,
+  const AttributeParameterSet& attr_aps,
+  PCCPointSet3& slabPointCloud,
+  PayloadBuffer* payload,
+  AttributeInterPredParams& attrInterPredParams,
+  attr::ModeEncoder& predEncoder)
+{
+  if (attr_aps.attr_encoding == AttributeEncoding::kRaw) {
+    throw std::runtime_error("Not Supported yet");
+    return;
+  }
+
+  PCCPointSet3 tmp;
+  // local motion encoding and compensation performed by slab
+  if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag
+      && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
+    // compensatedPointCloud is needed by geometry
+    tmp.swap(attrInterPredParams.compensatedPointCloud);
+    attrInterPredParams.mortonCode_mc.clear();
+    attrInterPredParams.attributes_mc.clear();
+    if (attr_aps.mcap_to_rec_geom_flag)
+      attrInterPredParams.compensatedPointCloud = slabPointCloud;
+    attrInterPredParams.encodeMotionAndBuildCompensated(
+      attr_aps.motion, _pEncoder->arithmeticEncoder, attr_aps.mcap_to_rec_geom_flag);
+  }
+  if (desc.attr_num_dimensions_minus1 == 0) {
+    switch (attr_aps.attr_encoding) {
+    case AttributeEncoding::kRAHTransform:
+      encodeReflectancesTransformRaht(
+        desc, attr_aps, _abh, _qpSet, slabPointCloud, *_pEncoder, predEncoder,
+        attrInterPredParams);
+      break;
+
+    case AttributeEncoding::kRaw:
+      // Already handled
+      break;
+    default:
+      std::runtime_error("Not supported attributes encoding");
+    }
+  } else if (desc.attr_num_dimensions_minus1 == 2) {
+    switch (attr_aps.attr_encoding) {
+    case AttributeEncoding::kRAHTransform:
+      encodeColorsTransformRaht(
+        desc, attr_aps, _abh, _qpSet, slabPointCloud, *_pEncoder, predEncoder,
+        attrInterPredParams);
+      break;
+
+    case AttributeEncoding::kRAHTperBlock:
+      encodeRAHTperBlock(
+        desc, attr_aps, _abh, _qpSet, slabPointCloud, *_pEncoder, predEncoder,
+        attrInterPredParams);
+      break;
+
+    case AttributeEncoding::kRaw:
+      // Already handled
+      break;
+    default:
+      std::runtime_error("Not supported attributes encoding");
+    }
+  } else {
+    assert(
+      desc.attr_num_dimensions_minus1 == 0
+      || desc.attr_num_dimensions_minus1 == 2);
+  }
+  if (attrInterPredParams.enableAttrInterPred
+      && attr_aps.dual_motion_field_flag
+      && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
+    tmp.swap(attrInterPredParams.compensatedPointCloud);
+  }
+}
+
+//----------------------------------------------------------------------------
+
+void AttributeEncoder::startEncode(
+  const SequenceParameterSet& sps,
+  const GeometryParameterSet& gps,
+  const AttributeDescription& desc,
+  const AttributeParameterSet& attr_aps,
+  const AttributeBrickHeader& abh,
+  const AttributeContexts& ctxtMem,
+  uint32_t pointCountInPointCloud)
+{
+  if (attr_aps.attr_encoding == AttributeEncoding::kRaw)
+    return;
+
+  _abh = abh;
+
+  _pEncoder.reset(new PCCResidualsEncoder(attr_aps, _abh, ctxtMem));
+  _pEncoder->start(sps, int(pointCountInPointCloud));
+
+  _qpSet = deriveQpSet(desc, attr_aps, _abh);
+}
+
+//----------------------------------------------------------------------------
+
+void AttributeEncoder::finishEncode(
+  const SequenceParameterSet& sps,
+  const GeometryParameterSet& gps,
+  const AttributeDescription& desc,
+  const AttributeParameterSet& attr_aps,
+  AttributeContexts& ctxtMem,
+  PayloadBuffer* payload)
+{
+  if (attr_aps.attr_encoding == AttributeEncoding::kRaw)
+    return;
+
+  uint32_t acDataLen = _pEncoder->stop();
 
   // write abh
-  write(sps, attr_aps, abh, payload);
-  _abh = nullptr;
+  write(sps, attr_aps, _abh, payload);
+  _abh = AttributeBrickHeader();
 
   std::copy_n(
-    encoder.arithmeticEncoder.buffer(), acDataLen,
+    _pEncoder->arithmeticEncoder.buffer(), acDataLen,
     std::back_inserter(*payload));
 
   // save the context state for re-use by a future slice if required
-  ctxtMem = encoder.getCtx();
+  ctxtMem = _pEncoder->getCtx();
 }
 
 //----------------------------------------------------------------------------
@@ -648,12 +752,14 @@ encodeRaht(
     const int voxelCount_mc =
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
 
+    auto& mortonCode_mc = attrInterPredParams.mortonCode_mc;
+    auto& attributes_mc = attrInterPredParams.attributes_mc;
     // Allocate arrays.
-    std::vector<int64_t> mortonCode_mc;
-    std::vector<int> attributes_mc;
-    sortedPointCloud(
-      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
-      attributes_mc);
+    if (mortonCode_mc.empty())
+      sortedPointCloud(
+        attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
+        attributes_mc);
+
     uint64_t maxMortonCode = mortonCode.back() | 7;
     int depth = 0;
     while (maxMortonCode) {
@@ -721,14 +827,13 @@ AttributeEncoder::encodeRAHTperBlock(
     const int voxelCount_mc =
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
 
-    std::cout << "Using inter MC for prediction" << std::endl;
-
+    auto& mortonCode_mc = attrInterPredParams.mortonCode_mc;
+    auto& attributes_mc = attrInterPredParams.attributes_mc;
     // Allocate arrays.
-    std::vector<int64_t> mortonCode_mc;
-    std::vector<int> attributes_mc;
-    sortedPointCloud(
-      attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
-      attributes_mc);
+    if (mortonCode_mc.empty())
+      sortedPointCloud(
+        attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
+        attributes_mc);
 
     abh.attr_layer_code_mode.resize(aps.block_size_log2);
 

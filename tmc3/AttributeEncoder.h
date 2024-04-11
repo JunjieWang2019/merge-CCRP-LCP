@@ -63,13 +63,41 @@ public:
     const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& attr_aps,
-    AttributeBrickHeader& abh,
-    AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     PayloadBuffer* payload,
     AttributeInterPredParams &attrInterPredParams,
     attr::ModeEncoder& predEncoder
-    ) override;
+  ) override;
+
+  void encodeSlab(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& attr_aps,
+    PCCPointSet3& slabPointCloud,
+    PayloadBuffer* payload,
+    AttributeInterPredParams& attrInterPredParams,
+    attr::ModeEncoder& predEncoder
+  ) override;
+
+  void startEncode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& attr_aps,
+    const AttributeBrickHeader& abh,
+    const AttributeContexts& ctxtMem,
+    uint32_t pointCountInPointCloud
+  ) override;
+
+  void finishEncode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& attr_aps,
+    AttributeContexts& ctxtMem,
+    PayloadBuffer* payload
+  ) override;
 
 protected:
   // todo(df): consider alternative encapsulation
@@ -106,7 +134,11 @@ protected:
 
 private:
   // The current attribute slice header
-  AttributeBrickHeader* _abh;
+  AttributeBrickHeader _abh;
+
+  // for local attributes
+  std::unique_ptr<PCCResidualsEncoder> _pEncoder;
+  QpSet _qpSet;
 };
 
 //============================================================================

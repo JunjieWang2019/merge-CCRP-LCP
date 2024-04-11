@@ -42,6 +42,8 @@
 #include "geometry.h"
 #include "geometry_octree.h"
 
+#include "PCCTMC3Encoder.h"
+#include "PCCTMC3Decoder.h"
 
 namespace pcc {
 
@@ -54,9 +56,11 @@ decodeGeometryTrisoup(
   GeometryOctreeContexts& ctxtMemOctree,
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
-  const Vec3<int> minimum_position,
-  InterPredParams& interPredParams)
+  const SequenceParameterSet& sps,
+  InterPredParams& interPredParams,
+  PCCTMC3Decoder3& decoder)
 {
+  const Vec3<int> minimum_position = sps.seqBoundingBoxOrigin;
   bool isInter = gbh.interPredictionEnabledFlag;
 
   // prepare TriSoup parameters
@@ -68,12 +72,17 @@ decodeGeometryTrisoup(
   RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, false,
     1 /*distanceSearchEncoder*/, isInter, interPredParams.compensatedPointCloud,
     gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
+  rste.useLocalAttr = sps.localized_attributes_enabled_flag;
+  if (rste.useLocalAttr) {
+    rste.decoder = &decoder;
+    rste.slabThickness = sps.localized_attributes_slab_thickness_minus1 + 1;
+  }
   rste.init();
 
   // octree
   decodeGeometryOctree<true>(
     gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, &nodes, refFrame,
-    minimum_position, interPredParams, &rste);
+    sps, minimum_position, interPredParams, decoder, &rste);
 
   //std::cout << "\nSize compensatedPointCloud for TriSoup = "
   //  << interPredParams.compensatedPointCloud.getPointCount() << "\n";
@@ -1055,6 +1064,28 @@ void rayTracingAlongdirection_samp1_optimZ(
     }// loop g2
   }//loop g1
 }
+
+
+//--
+void
+RasterScanTrisoupEdges::processLocalAttributes(PCCPointSet3& recPointCloud, bool isLast)
+{
+  auto allocatedSizeLocal = localPointCloud.size();
+  localPointCloud.resize(nRecPointsLocal);
+  if (isEncoder)
+    encoder->processNextSlabAttributes(localPointCloud, xStartLocalSlab, isLast);
+  else
+    decoder->processNextSlabAttributes(localPointCloud, xStartLocalSlab, isLast);
+  localPointCloud.resize(allocatedSizeLocal);
+
+  if (recPointCloud.getPointCount() < nRecPoints + nRecPointsLocal)
+    recPointCloud.resize(nRecPoints + nRecPointsLocal + PC_PREALLOCATION_SIZE);
+
+  recPointCloud.setFromPartition(localPointCloud, 0, nRecPointsLocal, nRecPoints);
+  nRecPoints += nRecPointsLocal;
+  nRecPointsLocal = 0; // point cloud buffer has been rendered
+}
+
 
 //============================================================================
 }  // namespace pcc

@@ -433,8 +433,13 @@ struct SequenceParameterSet {
   // alignment trisoup grid step size
   int inter_frame_trisoup_align_slices_step;
 
-  // local motion compensation
-  int local_mc;
+  // use localized attributes, decoding can be started on partial geometry
+  // when set to 1 all attribute slices belonging to the sequence shall
+  // support localized attributes decoding
+  bool localized_attributes_enabled_flag;
+
+  // thickness of a slab for localized attributes
+  int localized_attributes_slab_thickness_minus1;
 };
 
 //============================================================================
@@ -748,6 +753,7 @@ struct AttributeBrickHeader {
   int attr_region_bits_minus1;
 
   bool disableAttrInterPred = true;
+  // TODO: move attr_layer_code_mode outside of abh
   std::vector<int> attr_layer_code_mode;
 };
 

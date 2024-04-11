@@ -66,11 +66,45 @@ public:
     int minGeomNodeSizeLog2,
     const char* payload,
     size_t payloadLen,
-    AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     AttributeInterPredParams& attrInterPredParams,
     attr::ModeDecoder& predDecoder
     ) = 0;
+
+  virtual void decodeSlab(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& attr_desc,
+    const AttributeParameterSet& attr_aps,
+    AttributeBrickHeader& abh,
+    int geom_num_points_minus1,
+    int minGeomNodeSizeLog2,
+    const char* payload,
+    size_t payloadLen,
+    PCCPointSet3& slabPointCloud,
+    AttributeInterPredParams& attrInterPredParams,
+    attr::ModeDecoder& predDecoder
+  ) = 0;
+
+  virtual void startDecode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& aps,
+    const AttributeBrickHeader& abh,
+    const char* payload,
+    size_t payloadLen,
+    const AttributeContexts& ctxtMem
+  ) = 0;
+
+  virtual void finishDecode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& aps,
+    const AttributeBrickHeader& abh,
+    AttributeContexts& ctxtMem
+  ) = 0;
 };
 
 //----------------------------------------------------------------------------
@@ -88,12 +122,40 @@ public:
     const GeometryParameterSet& gps,
     const AttributeDescription& desc,
     const AttributeParameterSet& attr_aps,
-    AttributeBrickHeader& abh,
-    AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     PayloadBuffer* payload,
     AttributeInterPredParams &attrInterPredParams,
     attr::ModeEncoder& predEncoder
+  ) = 0;
+
+  virtual void encodeSlab(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& attr_aps,
+    PCCPointSet3& slabPointCloud,
+    PayloadBuffer* payload,
+    AttributeInterPredParams& attrInterPredParams,
+    attr::ModeEncoder& predEncoder
+  ) = 0;
+
+  virtual void startEncode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& attr_aps,
+    const AttributeBrickHeader& abh,
+    const AttributeContexts& ctxtMem,
+    uint32_t pointCountInPointCloud
+  ) = 0;
+
+  virtual void finishEncode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& attr_aps,
+    AttributeContexts& ctxtMem,
+    PayloadBuffer* payload
   ) = 0;
 };
 

@@ -115,8 +115,11 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
 
-  if (!mcap_to_rec_geom_flag)
+  if (!mcap_to_rec_geom_flag) {
     compensatedPointCloud.clear();
+    mortonCode_mc.clear();
+    attributes_mc.clear();
+  }
 
   int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
   auto currentPUTrees = motionPUTrees;
@@ -194,8 +197,11 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
 
-  if (!mcap_to_rec_geom_flag)
+  if (!mcap_to_rec_geom_flag) {
     compensatedPointCloud.clear();
+    mortonCode_mc.clear();
+    attributes_mc.clear();
+  }
 
   auto& fifo = mSOctreeCurr.a;
   auto& fifo_next = mSOctreeCurr.b;

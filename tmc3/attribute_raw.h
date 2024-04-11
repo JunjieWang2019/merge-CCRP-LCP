@@ -49,7 +49,7 @@ public:
     const SequenceParameterSet& sps,
     const AttributeDescription& desc,
     const AttributeParameterSet& attr_aps,
-    AttributeBrickHeader& abh,
+    const AttributeBrickHeader& abh,
     PCCPointSet3& cloud,
     PayloadBuffer* payload);
 };

@@ -481,6 +481,7 @@ struct TrisoupNodeFaceVertex {
 };
 
 //============================================================================
+
 struct RasterScanTrisoupEdges {
   const int32_t blockWidth;
   // Eight corners of block.
@@ -579,6 +580,15 @@ struct RasterScanTrisoupEdges {
   int nRecPoints = 0;
   int idxSegment = 0;
   std::vector<int64_t> renderedBlock;
+
+  // for local attributes
+  struct PCCTMC3Encoder3* encoder = nullptr;
+  struct PCCTMC3Decoder3* decoder = nullptr;
+  bool useLocalAttr = false;
+  int nRecPointsLocal = 0;
+  int xStartLocalSlab = -1;
+  int slabThickness = INT_MAX;
+  PCCPointSet3 localPointCloud;
 
   bool haloFlag;
   bool vertexMergeFlag;
@@ -1561,8 +1571,16 @@ struct RasterScanTrisoupEdges {
 
     lastWedgex = currWedgePos[0];
 
+    if (useLocalAttr)
+      localPointCloud.resize(pointCloud.getPointCount());
+
     if (isEncoder)
       recPointCloud.resize(pointCloud.getPointCount());
+
+    if (useLocalAttr) {
+      localPointCloud.addRemoveAttributes(pointCloud);
+      recPointCloud.addRemoveAttributes(pointCloud);
+    }
 
     sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
     sliceBB.max = sliceBB.min + (gbh.slice_bb_width << gbh.slice_bb_width_log2_scale);
@@ -1606,6 +1624,9 @@ struct RasterScanTrisoupEdges {
     }
   }
 
+  //---------------------------------------------------------------------------
+
+  void processLocalAttributes(PCCPointSet3& recPointCloud, bool isLast=false);
 
   //---------------------------------------------------------------------------
   // quantize  accordign to QP
@@ -1668,8 +1689,14 @@ struct RasterScanTrisoupEdges {
       fVerts.resize(leaves.size());
     }
 
-    if (currWedgePos == Vec3<int32_t>{INT32_MIN, INT32_MIN, INT32_MIN})
+    if (currWedgePos == Vec3<int32_t>{INT32_MIN, INT32_MIN, INT32_MIN}) {
       currWedgePos = leaves[0].pos;
+      if (useLocalAttr) {
+        // TODO: better syntax for better alignment with no division
+        // also slab should be aligned with trisoup nodes....
+        xStartLocalSlab = (currWedgePos[0] / slabThickness) * slabThickness;
+      }
+    }
 
     int lastAcceptable = INT_MAX;
     if (!isFinalPass)
@@ -1941,18 +1968,28 @@ struct RasterScanTrisoupEdges {
           nodeIdxC++;
         }
 
-        // rendering by TriSoup triangles
+        // rendering by TriSoup triangles + local attributes rendering
         int upperxForRendering = !nextIsAvailable() ?  INT32_MAX  : currWedgePos[0] - 3 * blockWidth;
         while (firstNodeToRender < leaves.size()
           && leaves[firstNodeToRender].pos[0] < upperxForRendering) {
           auto leaf = leaves[firstNodeToRender];
+
+          // rendering attributes of a finished Slab
+          if (useLocalAttr && leaves[firstNodeToRender].pos[0] >= xStartLocalSlab + slabThickness) {
+            processLocalAttributes(isEncoder ? recPointCloud : pointCloud);
+            // keep slabs aligned on a regular grid
+            while (leaves[firstNodeToRender].pos[0] >= xStartLocalSlab + slabThickness)
+              xStartLocalSlab += slabThickness;
+          }
 
           int nPointsInBlock =
             generateTrianglesInNodeRasterScan(
               leaf, firstNodeToRender, renderedBlock, sliceBB, haloTriangle,
               thickness, isFaceVertexActivated);
           flush2PointCloud(
+            useLocalAttr ? nRecPointsLocal :
             nRecPoints, renderedBlock.begin(), nPointsInBlock,
+            useLocalAttr ? localPointCloud :
             isEncoder ? recPointCloud : pointCloud);
           firstNodeToRender++;
         }
@@ -1972,6 +2009,13 @@ struct RasterScanTrisoupEdges {
     // store centroids for colocated next frame
     ctxtMemOctree.refFrameNodeKeys = currentFrameNodeKeys;
     ctxtMemOctree.refFrameCentroValue = CentroValue;
+
+    if (useLocalAttr) {
+      // rendering attributes of last slab
+      if (nRecPointsLocal) {
+        processLocalAttributes(isEncoder ? recPointCloud : pointCloud, true);
+      }
+    }
 
     if (isEncoder) {
       // copy reconstructed point cloud to point cloud

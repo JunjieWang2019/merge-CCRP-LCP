@@ -727,7 +727,9 @@ encodeGeometryOctree(
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
-  RasterScanTrisoupEdges* rste)
+  PCCTMC3Encoder3& rootEncoder,
+  RasterScanTrisoupEdges* rste
+  )
 {
   const OctreeEncOpts& params = encParams.geom;
 
@@ -893,6 +895,28 @@ encodeGeometryOctree(
     encoder.clearMap();
     encoder.resetMap(forTrisoup);
   }
+
+  // localized attributes point indexes
+  std::vector<std::vector<int> > laPointIdx;
+  int localSlabIdx = 0;
+  int xStartLocalSlab = 0;
+  int slabThickness;
+  bool useLocalAttr = sps.localized_attributes_enabled_flag && !forTrisoup;
+  PCCPointSet3 localPointCloud;
+  if (useLocalAttr) {
+    slabThickness = sps.localized_attributes_slab_thickness_minus1 + 1;
+    int numSlabs =
+      ((1 << gbh.maxRootNodeDimLog2) + sps.localized_attributes_slab_thickness_minus1)
+        / (sps.localized_attributes_slab_thickness_minus1 + 1);
+    laPointIdx.resize(numSlabs);
+    localPointCloud.reserve(pointCloud.getPointCount());
+  }
+
+  PCCPointSet3 recPointCloud;
+  recPointCloud.addRemoveAttributes(
+    pointCloud.hasColors(), pointCloud.hasReflectances());
+  recPointCloud.resize(pointCloud.getPointCount());
+  int nRecPoints = 0;
 
   int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
 
@@ -1296,21 +1320,49 @@ encodeGeometryOctree(
 
       // Leaf nodes are immediately coded.  No further splitting occurs.
       if (tubeIndex && nodeSliceIndex && isLeafNode(effectiveChildSizeLog2)) {
-        int childStart = node0.start;
-
         // inverse quantise any quantised positions
         geometryScale(pointCloud, node0, quantNodeSizeLog2);
+
+        if (!useLocalAttr) {
+          for (auto idx = node0.start; idx < node0.end; idx++)
+            pointIdxToDmIdx[idx] = nextDmIdx++;
+        } else {
+          int slabIdx;
+          if (isLastDepth) {
+            int nodeposX = node0.pos[0] << !!(codedAxesCurLvl & 4) + effectiveChildSizeLog2[0];
+
+            // rendering attributes of a finished Slab
+            while (nodeposX >= xStartLocalSlab + slabThickness) {
+              localPointCloud.appendPartition(pointCloud,laPointIdx[localSlabIdx]);
+              laPointIdx[localSlabIdx] = std::vector<int>(); // just release memory
+              auto nRecPointsLocal = localPointCloud.getPointCount();
+              if (nRecPointsLocal) {
+                rootEncoder.processNextSlabAttributes(localPointCloud, xStartLocalSlab, false);
+                recPointCloud.setFromPartition(localPointCloud, 0, nRecPointsLocal, nRecPoints);
+                localPointCloud.clear();
+                nRecPoints += nRecPointsLocal;
+              }
+              // keep slabs aligned on a regular grid
+              xStartLocalSlab += slabThickness;
+              ++localSlabIdx;
+            }
+            slabIdx = localSlabIdx;
+          } else {
+            // TODO: better
+            slabIdx = pointCloud[node0.start][0] / slabThickness;
+            // TODO: shall we and how to handle case where quantization is bigger than thickness
+          }
+          int idxLaPoint = laPointIdx[slabIdx].size();
+          laPointIdx[slabIdx].resize(idxLaPoint + node0.end - node0.start);
+          for (auto idx = node0.start; idx < node0.end; idx++)
+            laPointIdx[slabIdx][idxLaPoint++] = idx;
+        }
 
         for (int i = 0; i < 8; i++) {
           if (!node0.childCounts[i]) {
             // child is empty: skip
             continue;
           }
-
-          int childEnd = childStart + node0.childCounts[i];
-          for (auto idx = childStart; idx < childEnd; idx++)
-            pointIdxToDmIdx[idx] = nextDmIdx++;
-          childStart = childEnd;
 
           // if the bitstream is configured to represent unique points,
           // no point count is sent.
@@ -1413,27 +1465,29 @@ encodeGeometryOctree(
             //}
 #endif
 
-            if (forTrisoup && isLastDepth) {
-              nodesRemaining->push_back(child);
-              nodesRemaining->back().pos  *= S;
-              if (flagNonPow2) {
-                int maskS = (1 << S2) - 1;
-                for (int np = child.start; np < child.end; np++) {
-                  pointCloud[np][0] = ((pointCloud[np][0] >> S2) * S) + (pointCloud[np][0] & maskS);
-                  pointCloud[np][1] = ((pointCloud[np][1] >> S2) * S) + (pointCloud[np][1] & maskS);
-                  pointCloud[np][2] = ((pointCloud[np][2] >> S2) * S) + (pointCloud[np][2] & maskS);
+            if (forTrisoup) {
+              if (isLastDepth) {
+                nodesRemaining->push_back(child);
+                nodesRemaining->back().pos  *= S;
+                if (flagNonPow2) {
+                  int maskS = (1 << S2) - 1;
+                  for (int np = child.start; np < child.end; np++) {
+                    pointCloud[np][0] = ((pointCloud[np][0] >> S2) * S) + (pointCloud[np][0] & maskS);
+                    pointCloud[np][1] = ((pointCloud[np][1] >> S2) * S) + (pointCloud[np][1] & maskS);
+                    pointCloud[np][2] = ((pointCloud[np][2] >> S2) * S) + (pointCloud[np][2] & maskS);
+                  }
+
+                  for (int np = child.predStart; np < child.predEnd; np++) {
+                    compensatedPointCloud[np][0] = ((compensatedPointCloud[np][0] >> S2) * S) + (compensatedPointCloud[np][0] & maskS);
+                    compensatedPointCloud[np][1] = ((compensatedPointCloud[np][1] >> S2) * S) + (compensatedPointCloud[np][1] & maskS);
+                    compensatedPointCloud[np][2] = ((compensatedPointCloud[np][2] >> S2) * S) + (compensatedPointCloud[np][2] & maskS);
+                  }
                 }
 
-                for (int np = child.predStart; np < child.predEnd; np++) {
-                  compensatedPointCloud[np][0] = ((compensatedPointCloud[np][0] >> S2) * S) + (compensatedPointCloud[np][0] & maskS);
-                  compensatedPointCloud[np][1] = ((compensatedPointCloud[np][1] >> S2) * S) + (compensatedPointCloud[np][1] & maskS);
-                  compensatedPointCloud[np][2] = ((compensatedPointCloud[np][2] >> S2) * S) + (compensatedPointCloud[np][2] & maskS);
-                }
+                if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
+                  rste->callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
+                lastPos0 = child.pos[0];
               }
-
-              if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
-                rste->callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
-              lastPos0 = child.pos[0];
             }
 
             numNodesNextLvl++;
@@ -1487,30 +1541,37 @@ encodeGeometryOctree(
   // The following is to re-order the points according in the decoding
   // order since IDCM causes leaves to be coded earlier than they
   // otherwise would.
-  PCCPointSet3 pointCloud2;
-  pointCloud2.addRemoveAttributes(
-    pointCloud.hasColors(), pointCloud.hasReflectances());
-  pointCloud2.resize(pointCloud.getPointCount());
+  if (!useLocalAttr) {
+    // copy points with DM points first, the rest second
+    nRecPoints = nextDmIdx;
+    for (int i = 0; i < pointIdxToDmIdx.size(); i++) {
+      int dstIdx = pointIdxToDmIdx[i];
+      if (dstIdx == -1) {
+        dstIdx = nRecPoints++;
+      }
+      else if (dstIdx == -2) {  // ignore duplicated points
+        continue;
+      }
 
-  // copy points with DM points first, the rest second
-  int outIdx = nextDmIdx;
-  for (int i = 0; i < pointIdxToDmIdx.size(); i++) {
-    int dstIdx = pointIdxToDmIdx[i];
-    if (dstIdx == -1) {
-      dstIdx = outIdx++;
+      recPointCloud[dstIdx] = pointCloud[i];
+      if (pointCloud.hasColors())
+        recPointCloud.setColor(dstIdx, pointCloud.getColor(i));
+      if (pointCloud.hasReflectances())
+        recPointCloud.setReflectance(dstIdx, pointCloud.getReflectance(i));
     }
-    else if (dstIdx == -2) {  // ignore duplicated points
-      continue;
+  } else {
+  ////
+  // The following is to render the last slab
+    localPointCloud.appendPartition(pointCloud,laPointIdx[localSlabIdx]);
+    auto nRecPointsLocal = localPointCloud.getPointCount();
+    if (nRecPointsLocal) {
+      rootEncoder.processNextSlabAttributes(localPointCloud, xStartLocalSlab, true);
+      recPointCloud.setFromPartition(localPointCloud, 0, nRecPointsLocal, nRecPoints);
+      nRecPoints += nRecPointsLocal;
     }
-
-    pointCloud2[dstIdx] = pointCloud[i];
-    if (pointCloud.hasColors())
-      pointCloud2.setColor(dstIdx, pointCloud.getColor(i));
-    if (pointCloud.hasReflectances())
-      pointCloud2.setReflectance(dstIdx, pointCloud.getReflectance(i));
   }
-  pointCloud2.resize(outIdx);
-  swap(pointCloud, pointCloud2);
+  recPointCloud.resize(nRecPoints);
+  swap(pointCloud, recPointCloud);
 }
 
 // instanciate for Trisoup
@@ -1526,6 +1587,7 @@ encodeGeometryOctree<true>(
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
+  PCCTMC3Encoder3& rootEncoder,
   RasterScanTrisoupEdges* rste);
 
 // instanciate for Octree
@@ -1541,6 +1603,7 @@ encodeGeometryOctree<false>(
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
+  PCCTMC3Encoder3& rootEncoder,
   RasterScanTrisoupEdges* rste);
 
 //============================================================================
@@ -1555,11 +1618,12 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  InterPredParams& interPredParams)
+  InterPredParams& interPredParams,
+  PCCTMC3Encoder3& encoder)
 {
   encodeGeometryOctree<false>(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
-    sps, interPredParams);
+    sps, interPredParams, encoder);
 }
 
 //-------------------------------------------------------------------------

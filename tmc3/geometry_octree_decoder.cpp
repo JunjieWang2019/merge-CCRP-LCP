@@ -42,6 +42,7 @@
 #include "io_hls.h"
 #include "tables.h"
 #include "quantization.h"
+#include "PCCTMC3Decoder.h"
 #include "motionWip.h"
 #include <unordered_map>
 
@@ -504,8 +505,10 @@ decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
+  const SequenceParameterSet& sps,
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
+  PCCTMC3Decoder3& rootDecoder,
   RasterScanTrisoupEdges* rste)
 {
   if (forTrisoup) {
@@ -624,6 +627,22 @@ decodeGeometryOctree(
   const int S2 = gbh.trisoupNodeSizeLog2(gps);
   const int factorS = (1 << S2) - S;
   const bool flagNonPow2 = factorS != 0;
+  // localized attributes point indexes
+  std::vector<std::vector<point_t> > laPoints;
+  int localSlabIdx = 0;
+  int xStartLocalSlab = 0;
+  int slabThickness;
+  bool useLocalAttr = sps.localized_attributes_enabled_flag && !forTrisoup;
+  PCCPointSet3 localPointCloud;
+  if (useLocalAttr) {
+    slabThickness = sps.localized_attributes_slab_thickness_minus1 + 1;
+    int numSlabs =
+      ((1 << gbh.maxRootNodeDimLog2) + sps.localized_attributes_slab_thickness_minus1)
+        / (sps.localized_attributes_slab_thickness_minus1 + 1);
+    laPoints.resize(numSlabs);
+    localPointCloud.addRemoveAttributes(pointCloud);
+    localPointCloud.reserve(ringBufferSize);
+  }
 
   int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
 
@@ -959,6 +978,34 @@ decodeGeometryOctree(
 
       //int predFailureCount = popcnt(uint8_t(occupancy ^ predOccupancyReal));
       if (tubeIndex && nodeSliceIndex && isLeafNode(effectiveChildSizeLog2)) {
+        int slabIdx;
+        if (useLocalAttr) {
+          int nodeposX = node0.pos[0] << !!(codedAxesCurLvl & 4) + effectiveChildSizeLog2[0];
+          if (isLastDepth) {
+            // rendering attributes of a finished Slab
+            while (nodeposX >= xStartLocalSlab + slabThickness) {
+              int numPoints = laPoints[localSlabIdx].size();
+              localPointCloud.resize(numPoints);
+              for (int i = 0; i < numPoints; ++i)
+                localPointCloud[i] = laPoints[localSlabIdx][i];
+              laPoints[localSlabIdx] = std::vector<point_t>(); // just release memory
+              if (numPoints) {
+                rootDecoder.processNextSlabAttributes(localPointCloud, xStartLocalSlab, false);
+                pointCloud.setFromPartition(localPointCloud, 0, numPoints, processedPointCount);
+                localPointCloud.clear();
+                processedPointCount += numPoints;
+              }
+              // keep slabs aligned on a regular grid
+              xStartLocalSlab += slabThickness;
+              ++localSlabIdx;
+            }
+            slabIdx = localSlabIdx;
+          } else {
+            // TODO: better
+            slabIdx = nodeposX / slabThickness;
+            // TODO: shall we and how to handle case where quantization is bigger than thickness
+          }
+        }
         // nodeSizeLog2 > 1: for each child:
         //  - determine elegibility for IDCM
         //  - directly decode point positions if IDCM allowed and selected
@@ -996,8 +1043,15 @@ decodeGeometryOctree(
 
           point = invQuantPosition(node0.qp, posQuantBitMasks, point);
 
-          for (int i = 0; i < numPoints; ++i)
-            pointCloud[processedPointCount++] = point;
+          if (useLocalAttr) {
+            int idxLaPoint = laPoints[slabIdx].size();
+            laPoints[slabIdx].resize(idxLaPoint + numPoints);
+            for (int i = 0; i < numPoints; ++i)
+              laPoints[slabIdx][idxLaPoint++] = point;
+          } else {
+            for (int i = 0; i < numPoints; ++i)
+              pointCloud[processedPointCount++] = point;
+          }
         }
 
         // do not recurse into leaf nodes
@@ -1065,22 +1119,29 @@ decodeGeometryOctree(
             //}
 #endif
 
-            if (forTrisoup && isLastDepth) {
-              nodesRemaining->push_back(child);
-              nodesRemaining->back().pos *= S;
+            if (forTrisoup) {
+              if (isLastDepth) {
+                nodesRemaining->push_back(child);
+                nodesRemaining->back().pos *= S;
 
-              if (flagNonPow2) {
-                int maskS = (1 << S2) - 1;
-                for (int np = child.predStart; np < child.predEnd; np++) {
-                  compensatedPointCloud[np][0] = ((compensatedPointCloud[np][0] >> S2) * S) + (compensatedPointCloud[np][0] & maskS);
-                  compensatedPointCloud[np][1] = ((compensatedPointCloud[np][1] >> S2) * S) + (compensatedPointCloud[np][1] & maskS);
-                  compensatedPointCloud[np][2] = ((compensatedPointCloud[np][2] >> S2) * S) + (compensatedPointCloud[np][2] & maskS);
+                if (flagNonPow2) {
+                  int maskS = (1 << S2) - 1;
+                  for (int np = child.predStart; np < child.predEnd; np++) {
+                    compensatedPointCloud[np][0] = ((compensatedPointCloud[np][0] >> S2) * S) + (compensatedPointCloud[np][0] & maskS);
+                    compensatedPointCloud[np][1] = ((compensatedPointCloud[np][1] >> S2) * S) + (compensatedPointCloud[np][1] & maskS);
+                    compensatedPointCloud[np][2] = ((compensatedPointCloud[np][2] >> S2) * S) + (compensatedPointCloud[np][2] & maskS);
+                  }
                 }
-              }
 
-              if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
-                rste->callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
-              lastPos0 = child.pos[0];
+                if (lastPos0 != INT_MIN && child.pos[0] != lastPos0)
+                  rste->callTriSoupSlice(false); // TriSoup unpile slices (not final = false)
+                lastPos0 = child.pos[0];
+              } else if (0) {
+                /* callback local attributes here */
+                // This is not OK
+                // we will have to handle local QP...
+                // some work to be done here...
+              }
             }
 
             numNodesNextLvl++;
@@ -1100,6 +1161,20 @@ decodeGeometryOctree(
 
   // save the context state for re-use by a future slice if required
   //ctxtMem = decoder.getCtx(); // ctxtMem is now directly used
+
+  ////
+  // The following is to render the last slab
+  if (useLocalAttr) {
+    int numPoints = laPoints[localSlabIdx].size();
+    localPointCloud.resize(numPoints);
+    for (int i = 0; i < numPoints; ++i)
+      localPointCloud[i] = laPoints[localSlabIdx][i];
+    if (numPoints) {
+      rootDecoder.processNextSlabAttributes(localPointCloud, xStartLocalSlab, true);
+      pointCloud.setFromPartition(localPointCloud, 0, numPoints, processedPointCount);
+      processedPointCount += numPoints;
+    }
+  }
 
   // NB: the point cloud needs to be resized if partially decoded
   // OR: if geometry quantisation has changed the number of points
@@ -1137,8 +1212,10 @@ decodeGeometryOctree<true>(
   EntropyDecoder& arithmeticDecoder,
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
+  const SequenceParameterSet& sps,
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
+  PCCTMC3Decoder3& rootDecoder,
   RasterScanTrisoupEdges* rste);
 
 // instanciate for Octree
@@ -1152,8 +1229,10 @@ decodeGeometryOctree<false>(
   EntropyDecoder& arithmeticDecoder,
   std::vector<PCCOctree3Node>* nodesRemaining,
   const CloudFrame* refFrame,
+  const SequenceParameterSet& sps,
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
+  PCCTMC3Decoder3& rootDecoder,
   RasterScanTrisoupEdges* rste);
 
 //-------------------------------------------------------------------------
@@ -1166,13 +1245,15 @@ decodeGeometryOctree(
   GeometryOctreeContexts& ctxtMem,
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
+  const SequenceParameterSet& sps,
   const Vec3<int> minimum_position,
-  InterPredParams& interPredParams
+  InterPredParams& interPredParams,
+  PCCTMC3Decoder3& decoder
 )
 {
   decodeGeometryOctree<false>(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, interPredParams, nullptr);
+    refFrame, sps, minimum_position, interPredParams, decoder, nullptr);
 }
 
 //-------------------------------------------------------------------------
@@ -1185,14 +1266,16 @@ decodeGeometryOctreeScalable(
   PCCPointSet3& pointCloud,
   GeometryOctreeContexts& ctxtMem,
   EntropyDecoder& arithmeticDecoder,
-  const CloudFrame* refFrame
+  const CloudFrame* refFrame,
+  const SequenceParameterSet& sps,
+  PCCTMC3Decoder3& decoder
 )
 {
   std::vector<PCCOctree3Node> nodes;
   InterPredParams interPredParams;
   decodeGeometryOctree<false>(
     gps, gbh, minGeomNodeSizeLog2, pointCloud, ctxtMem, arithmeticDecoder,
-    &nodes, refFrame, { 0, 0, 0 }, interPredParams);
+    &nodes, refFrame, sps, { 0, 0, 0 }, interPredParams, decoder);
 
   if (minGeomNodeSizeLog2 > 0) {
     size_t size =

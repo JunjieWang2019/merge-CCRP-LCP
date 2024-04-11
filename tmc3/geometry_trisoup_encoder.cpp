@@ -53,7 +53,8 @@ encodeGeometryTrisoup(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  InterPredParams& interPredParams)
+  InterPredParams& interPredParams,
+  PCCTMC3Encoder3& encoder)
 {
   bool isInter = gbh.interPredictionEnabledFlag;
 
@@ -71,12 +72,17 @@ encodeGeometryTrisoup(
   RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, true,
     1, isInter, interPredParams.compensatedPointCloud,
     gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
+  rste.useLocalAttr = sps.localized_attributes_enabled_flag;
+  if (rste.useLocalAttr) {
+    rste.encoder = &encoder;
+    rste.slabThickness = sps.localized_attributes_slab_thickness_minus1 + 1;
+  }
   rste.init();
 
   // octree
   encodeGeometryOctree<true>(
     encParams, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
-    refFrame, sps, interPredParams, &rste);
+    refFrame, sps, interPredParams, encoder, &rste);
 
   std::cout << "Size compensatedPointCloud for TriSoup = "
     << interPredParams.compensatedPointCloud.getPointCount() << "\n";

@@ -270,7 +270,7 @@ PCCTMC3Decoder3::decompress(
       startFrame();
 
     // avoid accidents with stale attribute decoder on next slice
-    _attrDecoder.reset();
+    _attrDecoder.clear();
     // Avoid dropping an actual frame
     _suppressOutput = false;
     _payloadsBrick.geometry = /*std::move*/(*buf);
@@ -412,10 +412,23 @@ PCCTMC3Decoder3::decodeCurrentBrick()
 
   attrInterPredParams.compensatedPointCloud.clear();
   attrInterPredParams.compensatedPointCloud.addRemoveAttributes(hasColour, hasReflectance);
+  attrInterPredParams.mortonCode_mc.clear();
+  attrInterPredParams.attributes_mc.clear();
   _currentPointCloud.clear();
   _currentPointCloud.addRemoveAttributes(hasColour, hasReflectance);
 
-  pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
+  clock_user_geom = pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>();
+
+  clock_user_attr =
+    std::vector<pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>>(
+      _payloadsBrick.attributes.size());
+
+  _abh = std::vector<AttributeBrickHeader>(_payloadsBrick.attributes.size());
+
+  _attrDecoder =
+    std::vector<decltype(makeAttributeDecoder())>(_payloadsBrick.attributes.size());
+
+  auto& clock_user = clock_user_geom;
   clock_user.start();
 
   int gbhSize, gbfSize;
@@ -506,6 +519,59 @@ PCCTMC3Decoder3::decodeCurrentBrick()
     }
   }
 
+  // Init
+  if (1) {
+    // Ensure context arrays are allocated context arrays
+    // todo(df): move this to sps activation
+    _ctxtMemAttrSliceIds.resize(_sps->attributeSets.size());
+    _ctxtMemAttrs.resize(_sps->attributeSets.size());
+
+    int attrIdx = -1;
+    for (auto& buf: _payloadsBrick.attributes) {
+      ++attrIdx;
+      assert(buf.type == PayloadType::kAttributeBrick);
+      // todo(df): replace assertions with error handling
+      assert(_sps);
+      assert(_gps);
+
+      auto& abh = _abh[attrIdx];
+      // verify that this corresponds to the correct geometry slice
+      abh = parseAbhIds(buf);
+      assert(abh.attr_geom_slice_id == _sliceId);
+
+      // todo(df): validate that sps activation is not changed via the APS
+      const auto it_attr_aps = _apss.find(abh.attr_attr_parameter_set_id);
+
+      assert(it_attr_aps != _apss.cend());
+      const auto& attr_aps = it_attr_aps->second;
+
+      assert(abh.attr_sps_attr_idx < _sps->attributeSets.size());
+      const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
+      const auto& label = attr_sps.attributeLabel;
+
+      // sanity check for loss detection
+      if (_gbh.entropy_continuation_flag)
+        assert(_gbh.prev_slice_id == _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx]);
+
+      // In order to determinet hat the attribute decoder is reusable, the abh
+      // must be inspected.
+      int abhSize;
+      abh = parseAbh(*_sps, attr_aps, buf, &abhSize);
+
+      // TODO: this is not ok if more than one attribute, fix it:
+      attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled && !abh.disableAttrInterPred;
+
+      clock_user_attr[attrIdx] = pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>();
+
+      _attrDecoder[attrIdx] = makeAttributeDecoder();
+
+      auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
+      _attrDecoder[attrIdx]->startDecode(
+        *_sps, *_gps, attr_sps, attr_aps, abh,
+        buf.data() + abhSize, buf.size() - abhSize, ctxtMemAttr);
+    }
+  }
+
   EntropyDecoder aec;
   aec.setBuffer(bufGeom.size() - gbhSize - gbfSize, bufGeom.data() + gbhSize);
   aec.enableBypassStream(_sps->cabac_bypass_stream_enabled_flag);
@@ -516,16 +582,16 @@ PCCTMC3Decoder3::decodeCurrentBrick()
     if (!_params.minGeomNodeSizeLog2) {
       decodeGeometryOctree(
         *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
-        _sps->seqBoundingBoxOrigin, attrInterPredParams);
+        *_sps, _sps->seqBoundingBoxOrigin, attrInterPredParams, *this);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
-        *_ctxtMemOctreeGeom, aec, _refFrame);
+        *_ctxtMemOctreeGeom, aec, _refFrame, *_sps, *this);
     }
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams);
+      _refFrame, *_sps, attrInterPredParams, *this);
   }
 
   // At least the first slice's geometry has been decoded
@@ -539,65 +605,60 @@ PCCTMC3Decoder3::decodeCurrentBrick()
             << total_user.count() / 1000.0 << " s\n";
   std::cout << std::endl;
 
-  // for now, apply attributes after geometry
+  if (!_sps->localized_attributes_enabled_flag) {
+    // for now, apply attributes after geometry
+    int attrIdx = -1;
+    for (auto& buf: _payloadsBrick.attributes) {
+      ++attrIdx;
+      assert(buf.type == PayloadType::kAttributeBrick);
+      // todo(df): replace assertions with error handling
+      assert(_sps);
+      assert(_gps);
 
+      auto& abh = _abh[attrIdx];
+
+      const auto it_attr_aps = _apss.find(abh.attr_attr_parameter_set_id);
+      const auto& attr_aps = it_attr_aps->second;
+      const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
+      const auto& label = attr_sps.attributeLabel;
+
+      auto& clock_user = clock_user_attr[attrIdx];
+      clock_user.start();
+
+      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+        attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, _currentPointCloud);
+
+      _attrDecoder[attrIdx]->decode(
+        *_sps, *_gps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
+        _params.minGeomNodeSizeLog2, nullptr, 0, _currentPointCloud,
+        attrInterPredParams, predDecoder);
+
+      clock_user.stop();
+    }
+  }
+  int attrIdx = -1;
   for (auto& buf: _payloadsBrick.attributes) {
+    ++attrIdx;
     assert(buf.type == PayloadType::kAttributeBrick);
     // todo(df): replace assertions with error handling
     assert(_sps);
     assert(_gps);
 
-    // verify that this corresponds to the correct geometry slice
-    AttributeBrickHeader abh = parseAbhIds(buf);
-    assert(abh.attr_geom_slice_id == _sliceId);
+    auto& abh = _abh[attrIdx];
 
-    // todo(df): validate that sps activation is not changed via the APS
     const auto it_attr_aps = _apss.find(abh.attr_attr_parameter_set_id);
-
-    assert(it_attr_aps != _apss.cend());
     const auto& attr_aps = it_attr_aps->second;
-
-    assert(abh.attr_sps_attr_idx < _sps->attributeSets.size());
     const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
     const auto& label = attr_sps.attributeLabel;
 
-    // sanity check for loss detection
-    if (_gbh.entropy_continuation_flag)
-      assert(_gbh.prev_slice_id == _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx]);
-
-    // Ensure context arrays are allocated context arrays
-    // todo(df): move this to sps activation
-    _ctxtMemAttrSliceIds.resize(_sps->attributeSets.size());
-    _ctxtMemAttrs.resize(_sps->attributeSets.size());
-
-    // In order to determinet hat the attribute decoder is reusable, the abh
-    // must be inspected.
-    int abhSize;
-    abh = parseAbh(*_sps, attr_aps, buf, &abhSize);
-
-    attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled && !abh.disableAttrInterPred;
-
-    pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
-
-    // replace the attribute decoder if not compatible
-    if (!_attrDecoder)
-      _attrDecoder = makeAttributeDecoder();
-
-    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-      attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, _currentPointCloud);
-
-    clock_user.start();
-
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
-    _attrDecoder->decode(
-      *_sps, *_gps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
-      _params.minGeomNodeSizeLog2, buf.data() + abhSize, buf.size() - abhSize,
-      ctxtMemAttr, _currentPointCloud, attrInterPredParams, predDecoder);
+    _attrDecoder[attrIdx]->finishDecode(
+      *_sps, *_gps, attr_sps, attr_aps, abh, ctxtMemAttr);
 
     // Note the current sliceID for loss detection
     _ctxtMemAttrSliceIds[abh.attr_sps_attr_idx] = _sliceId;
 
-    clock_user.stop();
+    auto& clock_user = clock_user_attr[attrIdx];
 
     std::cout << label << "s bitstream size " << buf.size() << " B\n";
 
@@ -616,6 +677,7 @@ PCCTMC3Decoder3::decodeCurrentBrick()
 //==========================================================================
 // Initialise the point cloud storage and decode a single geometry slice.
 
+#if 0
 int
 PCCTMC3Decoder3::decodeGeometryBrick(
   const PayloadBuffer& buf,
@@ -639,6 +701,8 @@ PCCTMC3Decoder3::decodeGeometryBrick(
 
   attrInterPredParams.compensatedPointCloud.clear();
   attrInterPredParams.compensatedPointCloud.addRemoveAttributes(hasColour, hasReflectance);
+  attrInterPredParams.mortonCode_mc.clear();
+  attrInterPredParams.attributes_mc.clear();
   _currentPointCloud.clear();
   _currentPointCloud.addRemoveAttributes(hasColour, hasReflectance);
 
@@ -743,16 +807,16 @@ PCCTMC3Decoder3::decodeGeometryBrick(
     if (!_params.minGeomNodeSizeLog2) {
       decodeGeometryOctree(
         *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec, _refFrame,
-        _sps->seqBoundingBoxOrigin, attrInterPredParams);
+        *_sps, _sps->seqBoundingBoxOrigin, attrInterPredParams, *this);
     } else {
       decodeGeometryOctreeScalable(
         *_gps, _gbh, _params.minGeomNodeSizeLog2, _currentPointCloud,
-        *_ctxtMemOctreeGeom, aec, _refFrame);
+        *_ctxtMemOctreeGeom, aec, _refFrame, *_sps, *this);
     }
   } else {
     decodeGeometryTrisoup(
       *_gps, _gbh, _currentPointCloud, *_ctxtMemOctreeGeom, aec,
-      _refFrame, _sps->seqBoundingBoxOrigin, attrInterPredParams);
+      _refFrame, *_sps, attrInterPredParams, *this);
   }
 
   // At least the first slice's geometry has been decoded
@@ -768,9 +832,11 @@ PCCTMC3Decoder3::decodeGeometryBrick(
 
   return 0;
 }
+#endif
 
 //--------------------------------------------------------------------------
 
+#if 0
 void
 PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
 {
@@ -839,6 +905,54 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
             << "s processing time (user): " << total_user.count() / 1000.0
             << " s\n";
   std::cout << std::endl;
+}
+#endif
+
+//----------------------------------------------------------------------------
+
+void
+PCCTMC3Decoder3::processNextSlabAttributes(
+  PCCPointSet3& slabPointCloud,
+  uint32_t xStartSlab,
+  bool isLast
+)
+{
+  if (!slabPointCloud.getPointCount())
+    return;
+
+  clock_user_geom.stop();
+
+  ++currSlabIdx;
+  int attrIdx = -1;
+  for (auto& buf: _payloadsBrick.attributes) {
+    ++attrIdx;
+    assert(buf.type == PayloadType::kAttributeBrick);
+    // todo(df): replace assertions with error handling
+    assert(_sps);
+    assert(_gps);
+
+    auto& abh = _abh[attrIdx];
+
+    const auto it_attr_aps = _apss.find(abh.attr_attr_parameter_set_id);
+    const auto& attr_aps = it_attr_aps->second;
+    const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
+    const auto& label = attr_sps.attributeLabel;
+
+    auto& clock_user = clock_user_attr[attrIdx];
+    clock_user.start();
+
+    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+      attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, slabPointCloud);
+
+    _attrDecoder[attrIdx]->decodeSlab(
+      *_sps, *_gps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
+      _params.minGeomNodeSizeLog2, nullptr, 0, slabPointCloud,
+      attrInterPredParams, predDecoder);
+
+    clock_user.stop();
+  }
+
+  clock_user_geom.start();
 }
 
 //--------------------------------------------------------------------------

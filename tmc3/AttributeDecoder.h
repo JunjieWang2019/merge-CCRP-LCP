@@ -65,10 +65,44 @@ public:
     int minGeomNodeSizeLog2,
     const char* payload,
     size_t payloadLen,
-    AttributeContexts& ctxtMem,
     PCCPointSet3& pointCloud,
     AttributeInterPredParams& attrInterPredParams,
     attr::ModeDecoder& predDecoder
+  ) override;
+
+  void decodeSlab(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& attr_desc,
+    const AttributeParameterSet& attr_aps,
+    AttributeBrickHeader& abh,
+    int geom_num_points_minus1,
+    int minGeomNodeSizeLog2,
+    const char* payload,
+    size_t payloadLen,
+    PCCPointSet3& slabPointCloud,
+    AttributeInterPredParams& attrInterPredParams,
+    attr::ModeDecoder& predDecoder
+  ) override;
+
+  void startDecode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& aps,
+    const AttributeBrickHeader& abh,
+    const char* payload,
+    size_t payloadLen,
+    const AttributeContexts& ctxtMem
+  ) override;
+
+  void finishDecode(
+    const SequenceParameterSet& sps,
+    const GeometryParameterSet& gps,
+    const AttributeDescription& desc,
+    const AttributeParameterSet& aps,
+    const AttributeBrickHeader& abh,
+    AttributeContexts& ctxtMem
   ) override;
 
 protected:
@@ -103,6 +137,10 @@ protected:
     PCCPointSet3& pointCloud,
     attr::ModeDecoder& predDecoder,
     const AttributeInterPredParams& attrInterPredParams);
+private:
+  // for local attributes
+  std::unique_ptr<PCCResidualsDecoder> _pDecoder;
+  QpSet _qpSet;
 };
 
 //============================================================================

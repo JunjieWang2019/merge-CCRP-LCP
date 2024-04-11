@@ -739,68 +739,57 @@ PCCTMC3Encoder3::compressPartition(
 
   // geometry encoding
   attrInterPredParams.compensatedPointCloud.clear();
-  if (1) {
-    PayloadBuffer payload(PayloadType::kGeometryBrick);
+  attrInterPredParams.mortonCode_mc.clear();
+  attrInterPredParams.attributes_mc.clear();
 
-    pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
-    clock_user.start();
+  payload_geom = PayloadBuffer(PayloadType::kGeometryBrick);
 
-    encodeGeometryBrick(params, &payload, attrInterPredParams);
+  payload_attr = std::vector<PayloadBuffer>(
+      params->attributeIdxMap.size(), PayloadType::kAttributeBrick);
 
-    clock_user.stop();
+  clock_user_geom = pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>();
 
-    double bpp = double(8 * payload.size()) / inputPointCloud.getPointCount();
-    std::cout << "positions bitstream size " << payload.size() << " B (" << bpp
-              << " bpp)\n";
+  clock_user_attr =
+    std::vector<pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>>(
+      params->attributeIdxMap.size());
 
-    auto total_user = std::chrono::duration_cast<std::chrono::milliseconds>(
-      clock_user.count());
-    std::cout << "positions processing time (user): "
-              << total_user.count() / 1000.0 << " s" << std::endl;
+  _abh = std::vector<AttributeBrickHeader>(params->attributeIdxMap.size());
 
-    callback->onOutputBuffer(payload);
+  attrEncoder =
+    std::vector<decltype(makeAttributeEncoder())>(params->attributeIdxMap.size());
+
+  type = params->sps.localized_attributes_enabled_flag
+    ? params->localized_attributes_encoding
+      ? Type::kLocalEncoder
+      : Type::kGlobalEncoder
+    : Type::kNone;
+  currSlabIdx = -1;
+  slabThickness = params->sps.localized_attributes_slab_thickness_minus1 + 1;
+
+  numPointsPerSlab.clear();
+  origin = _originInCodingCoords + _sliceOrigin;
+  targetToSourceScaleFactor = 1.0 / _srcToCodingScale;
+  bBoxOrigin = originPartCloud.computeBoundingBox();
+  this->params = params;
+  this->originPartCloud = &originPartCloud;
+
+  // init
+
+  // some parameters used by attributes may be derived...
+  startEncodeGeometryBrick(params);
+
+  for (int i = 0; i < params->attributeIdxMap.size(); ++i) {
+    attrEncoder[i] = makeAttributeEncoder();
   }
 
-  // verify that the per-level slice constraint has been met
-  // todo(df): avoid hard coded value here (should be level dependent)
-  if (params->enforceLevelLimits)
-    if (pointCloud.getPointCount() > 5000000)
-      throw std::runtime_error(
-        std::string("level slice point count limit (5000000) exceeded: ")
-        + std::to_string(pointCloud.getPointCount()));
-
-  // recolouring
-  // NB: recolouring is required if points are added / removed
-  if (_gps->geom_unique_points_flag || _gps->trisoup_enabled_flag) {
-    for (const auto& attr_sps : _sps->attributeSets) {
-      recolour(
-        attr_sps, params->recolour, originPartCloud, _srcToCodingScale,
-        _originInCodingCoords + _sliceOrigin, &pointCloud);
-    }
-  }
-
-  // dump recoloured point cloud
-  // todo(df): this needs to work with partitioned clouds
-  callback->onPostRecolour(pointCloud);
-
-  // attributeCoding
-  auto attrEncoder = makeAttributeEncoder();
-
-  // for each attribute
-  for (const auto& it : params->attributeIdxMap) {
-    int attrIdx = it.second;
+  for (const auto& attributeIdxMap : params->attributeIdxMap) {
+    int attrIdx = attributeIdxMap.second;
     const auto& attr_sps = _sps->attributeSets[attrIdx];
     const auto& attr_aps = *_aps[attrIdx];
     const auto& attr_enc = params->attr[attrIdx];
     const auto& label = attr_sps.attributeLabel;
-
-    PayloadBuffer payload(PayloadType::kAttributeBrick);
-
-    pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock> clock_user;
-    clock_user.start();
-
     // todo(df): move elsewhere?
-    AttributeBrickHeader abh;
+    AttributeBrickHeader& abh = _abh[attrIdx];
     abh.attr_attr_parameter_set_id = attr_aps.aps_attr_parameter_set_id;
     abh.attr_sps_attr_idx = attrIdx;
     abh.attr_geom_slice_id = _sliceId;
@@ -827,21 +816,131 @@ PCCTMC3Encoder3::compressPartition(
     assert(abh.qpRegions.size() <= 1);
 
     abh.disableAttrInterPred = !_gbh.interPredictionEnabledFlag;
+    // TODO: this is not ok if more than one attribute, fix it:
     attrInterPredParams.enableAttrInterPred = attr_aps.attrInterPredictionEnabled & !abh.disableAttrInterPred;
 
-    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-      attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, pointCloud);
-
     auto& ctxtMemAttr = _ctxtMemAttrs.at(abh.attr_sps_attr_idx);
-    attrEncoder->encode(
-      *_sps, *_gps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud,
-      &payload, attrInterPredParams, predCoder);
+    attrEncoder[attrIdx]->startEncode(*_sps,*_gps, attr_sps, attr_aps, abh, ctxtMemAttr, pointCloud.getPointCount());
+  }
 
-    {
-      attrInterPredParams.referencePointCloud.clear();
-    }
+  // geometry encoding
+  if (1) {
+    PayloadBuffer& payload = payload_geom;
+
+    auto& clock_user = clock_user_geom;
+    clock_user.start();
+
+    encodeGeometryBrick(params, &payload, attrInterPredParams);
 
     clock_user.stop();
+
+    double bpp = double(8 * payload.size()) / inputPointCloud.getPointCount();
+    std::cout << "positions bitstream size " << payload.size() << " B (" << bpp
+              << " bpp)\n";
+
+    auto total_user = std::chrono::duration_cast<std::chrono::milliseconds>(
+      clock_user.count());
+    std::cout << "positions processing time (user): "
+              << total_user.count() / 1000.0 << " s" << std::endl;
+
+    callback->onOutputBuffer(payload);
+  }
+
+  // verify that the per-level slice constraint has been met
+  // todo(df): avoid hard coded value here (should be level dependent)
+  if (params->enforceLevelLimits)
+    if (pointCloud.getPointCount() > 5000000)
+      throw std::runtime_error(
+        std::string("level slice point count limit (5000000) exceeded: ")
+        + std::to_string(pointCloud.getPointCount()));
+
+  // non local attributes encoding
+  if (!params->localized_attributes_encoding) {
+    // global recolouring
+    // NB: recolouring is required if points are added / removed
+    if (_gps->geom_unique_points_flag || _gps->trisoup_enabled_flag) {
+      for (const auto& attr_sps : _sps->attributeSets) {
+        recolour(
+          attr_sps, params->recolour, originPartCloud, _srcToCodingScale,
+          _originInCodingCoords + _sliceOrigin, &pointCloud);
+      }
+    }
+
+    // dump recoloured point cloud
+    // todo(df): this needs to work with partitioned clouds
+    callback->onPostRecolour(pointCloud);
+
+    // attributeCoding
+
+    // for localized attributes
+    uint32_t startIdx = 0;
+    PCCPointSet3 slabPointCloud;
+    if (!params->sps.localized_attributes_enabled_flag) {
+      assert(numPointsPerSlab.empty());
+      numPointsPerSlab.push_back(pointCloud.getPointCount());
+    }
+
+    for (auto numPts : numPointsPerSlab) {
+      if (params->sps.localized_attributes_enabled_flag) {
+        slabPointCloud.clear();
+        slabPointCloud.appendPartition(pointCloud, startIdx, startIdx+numPts);
+      }
+      // for each attribute
+      for (const auto& it : params->attributeIdxMap) {
+        int attrIdx = it.second;
+        const auto& attr_sps = _sps->attributeSets[attrIdx];
+        const auto& attr_aps = *_aps[attrIdx];
+        const auto& attr_enc = params->attr[attrIdx];
+        const auto& label = attr_sps.attributeLabel;
+
+        PayloadBuffer& payload = payload_attr[attrIdx];
+
+        auto& clock_user = clock_user_attr[attrIdx];
+        clock_user.start();
+
+        if (!params->sps.localized_attributes_enabled_flag) {
+          // local motion search performed on the whole frame
+          if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
+            attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, pointCloud);
+          }
+          attrEncoder[attrIdx]->encode(
+            *_sps, *_gps, attr_sps, attr_aps, pointCloud, &payload,
+            attrInterPredParams, predCoder);
+        } else {
+          // local motion search performed by slab
+          if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
+            attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, slabPointCloud);
+          }
+          // local attributes coding
+          attrEncoder[attrIdx]->encodeSlab(
+            *_sps, *_gps, attr_sps, attr_aps, slabPointCloud, nullptr,
+            attrInterPredParams, predCoder);
+        }
+
+        clock_user.stop();
+      }
+      if (params->sps.localized_attributes_enabled_flag) {
+        // set reconstructed colors values
+        pointCloud.setFromPartition(slabPointCloud, 0, numPts, startIdx);
+
+        startIdx += numPts;
+      }
+    }
+  }
+  for (const auto& it : params->attributeIdxMap) {
+    int attrIdx = it.second;
+    const auto& attr_sps = _sps->attributeSets[attrIdx];
+    const auto& attr_aps = *_aps[attrIdx];
+    const auto& attr_enc = params->attr[attrIdx];
+    const auto& label = attr_sps.attributeLabel;
+
+    PayloadBuffer& payload = payload_attr[attrIdx];
+
+    auto& clock_user = clock_user_attr[attrIdx];
+
+    auto& ctxtMemAttr = _ctxtMemAttrs.at(_abh[attrIdx].attr_sps_attr_idx);
+    attrEncoder[attrIdx]->finishEncode(
+      *_sps, *_gps, attr_sps, attr_aps, ctxtMemAttr, &payload);
 
     int coded_size = int(payload.size());
     double bpp = double(8 * coded_size) / inputPointCloud.getPointCount();
@@ -872,12 +971,105 @@ PCCTMC3Encoder3::compressPartition(
 //----------------------------------------------------------------------------
 
 void
-PCCTMC3Encoder3::encodeGeometryBrick(
-  const EncoderParams* params,
-  PayloadBuffer* buf,
-  AttributeInterPredParams& attrInterPredParams)
+PCCTMC3Encoder3::processNextSlabAttributes(
+  PCCPointSet3& slabPointCloud,
+  uint32_t xStartSlab,
+  bool isLast
+)
 {
-  GeometryBrickHeader gbh;
+  if (!slabPointCloud.getPointCount())
+    return;
+
+  clock_user_geom.stop();
+  ++currSlabIdx;
+  if (type == Type::kLocalEncoder) { // encoder
+    PCCPointSet3 localOriginPartCloud;
+    std::vector<int> index_local_part;
+    if ((_gps->geom_unique_points_flag || _gps->trisoup_enabled_flag) && originPartCloud->size()) {
+      localOriginPartCloud.reserve(originPartCloud->size());
+      index_local_part.reserve(originPartCloud->size());
+      // extract slab from original point cloud for recoloring
+      const int _margin = 0;
+      const int xStart = xStartSlab;
+      const int xEnd = xStartSlab + slabThickness;
+      int xStartOrigin = currSlabIdx == 0 ? bBoxOrigin.min[0] :
+        std::round((xStart + origin[0] - _margin) * targetToSourceScaleFactor);
+      int xEndOrigin = isLast ? bBoxOrigin.max[0] + 1 :
+        std::round((xEnd + origin[0] + _margin) * targetToSourceScaleFactor);
+
+      do {
+        localOriginPartCloud.clear();
+        index_local_part.clear();
+
+        for (int i = 0; i < originPartCloud->size(); ++i) {
+          const auto& pt = (*originPartCloud)[i];
+          if(pt[0] >= xStartOrigin && pt[0] < xEndOrigin) {
+            index_local_part.push_back(i);
+          }
+        }
+        --xStartOrigin;
+        ++xEndOrigin;
+      }
+      while(index_local_part.size() < 1);
+
+      localOriginPartCloud.appendPartition(*originPartCloud, index_local_part, true);
+    }
+
+    for (const auto& attributeIdxMap : params->attributeIdxMap) {
+      int attrIdx = attributeIdxMap.second;
+      const auto& attr_sps = _sps->attributeSets[attrIdx];
+      const auto& attr_aps = *_aps[attrIdx];
+      const auto& attr_enc = params->attr[attrIdx];
+      const auto& label = attr_sps.attributeLabel;
+
+      if (! (label == KnownAttributeLabel::kColour
+          || label == KnownAttributeLabel::kReflectance))
+        continue;
+
+      // local recolor
+      // NB: recolouring is required if points are added / removed
+      if (_gps->geom_unique_points_flag || _gps->trisoup_enabled_flag) {
+        recolour(
+          attr_sps, params->recolour, localOriginPartCloud, _srcToCodingScale,
+          origin, &slabPointCloud);
+      }
+
+      // TODO: store local recolored point cloud for later
+      //    dump of recoloured point cloud
+      //    using: callback->onPostRecolour(recoloredPointCloud);
+
+      // recoloring was not part of the color processing time but motion search
+      clock_user_attr[attrIdx].start();
+
+      // local motion search performed by slab
+      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
+        attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, slabPointCloud);
+      }
+      // local attributes coding
+      attrEncoder[attrIdx]->encodeSlab(
+        *_sps, *_gps, attr_sps, attr_aps, slabPointCloud, nullptr,
+        attrInterPredParams, predCoder);
+
+      clock_user_attr[attrIdx].stop();
+    }
+  } else if (type == Type::kGlobalEncoder) { // encoder
+    // assume point order will not change before attributes processing
+    // register slab for size for later processing
+    numPointsPerSlab.push_back(slabPointCloud.getPointCount());
+  }
+  clock_user_geom.start();
+}
+
+//----------------------------------------------------------------------------
+
+void
+PCCTMC3Encoder3::startEncodeGeometryBrick(
+  const EncoderParams* params)
+{
+  GeometryBrickHeader& gbh = _gbh; /* put directly into _gbh which is also
+    used by local attributes */
+  gbh = GeometryBrickHeader(); // reset content
+
   gbh.geom_geom_parameter_set_id = _gps->gps_geom_parameter_set_id;
   gbh.geom_slice_id = _sliceId;
   gbh.prev_slice_id = _prevSliceId;
@@ -942,6 +1134,26 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   if (!_gps->qtbt_enabled_flag)
     gbh.rootNodeSizeLog2 = gbh.maxRootNodeDimLog2;
 
+  // forget (reset) all saved context state at boundary
+  if (!gbh.entropy_continuation_flag) {
+    if (
+      !_gps->gof_geom_entropy_continuation_enabled_flag
+      || !gbh.interPredictionEnabledFlag) {
+      _ctxtMemOctreeGeom->reset();
+    }
+    for (auto& ctxtMem : _ctxtMemAttrs)
+      ctxtMem.reset();
+  }
+}
+
+void
+PCCTMC3Encoder3::encodeGeometryBrick(
+  const EncoderParams* params,
+  PayloadBuffer* buf,
+  AttributeInterPredParams& attrInterPredParams)
+{
+  GeometryBrickHeader& gbh = _gbh;
+
   // todo(df): remove estimate when arithmetic codec is replaced
   int maxAcBufLen = int(pointCloud.getPointCount()) * 3 * 4 + 1024;
 
@@ -955,21 +1167,10 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     aec->start();
   }
 
-  // forget (reset) all saved context state at boundary
-  if (!gbh.entropy_continuation_flag) {
-    if (
-      !_gps->gof_geom_entropy_continuation_enabled_flag
-      || !gbh.interPredictionEnabledFlag) {
-      _ctxtMemOctreeGeom->reset();
-    }
-    for (auto& ctxtMem : _ctxtMemAttrs)
-      ctxtMem.reset();
-  }
-
   if (!_gps->trisoup_enabled_flag) {
     encodeGeometryOctree(
       *params, *_gps, gbh, pointCloud, *_ctxtMemOctreeGeom,
-      arithmeticEncoders, _refFrame, *_sps, attrInterPredParams);
+      arithmeticEncoders, _refFrame, *_sps, attrInterPredParams, *this);
   }
   else
   {
@@ -979,7 +1180,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     encodeGeometryTrisoup(
       *params, *_gps, gbh, pointCloud,
       *_ctxtMemOctreeGeom, arithmeticEncoders, _refFrame,
-      *_sps, attrInterPredParams);
+      *_sps, attrInterPredParams, *this);
   }
 
   // signal the actual number of points coded
@@ -1012,9 +1213,6 @@ PCCTMC3Encoder3::encodeGeometryBrick(
 
   // append the footer
   write(*_gps, gbh, gbh.footer, buf);
-
-  // Cache gbh for later reference
-  _gbh = gbh;
 }
 
 //----------------------------------------------------------------------------

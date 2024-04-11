@@ -92,6 +92,8 @@ public:
 
   //==========================================================================
 
+  void processNextSlabAttributes(PCCPointSet3& slabPointCloud, uint32_t xStartSlab, bool isLast);
+
 private:
   void activateParameterSets(const AttributeParamInventoryHdr& gbh);
   void activateParameterSets(const GeometryBrickHeader& gbh);
@@ -195,12 +197,34 @@ private:
   std::vector<AttributeContexts> _ctxtMemAttrs;
   std::vector<int> _ctxtMemAttrSliceIds;
 
-  // Attribute decoder for reuse between attributes of same slice
-  std::unique_ptr<AttributeDecoderIntf> _attrDecoder;
+  // // Attribute decoder for reuse between attributes of same slice
+  // std::unique_ptr<AttributeDecoderIntf> _attrDecoder;
 
   AttributeInterPredParams attrInterPredParams;
 
   pcc::point_t minPos_ref;
+
+  // For local decoding
+
+  pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>
+    clock_user_geom;
+
+  std::vector<pcc::chrono::Stopwatch<pcc::chrono::utime_inc_children_clock>>
+    clock_user_attr;
+
+  std::vector<AttributeBrickHeader>
+    _abh;
+
+  std::vector<decltype(makeAttributeDecoder())>
+    _attrDecoder;
+
+  // LocalizedAttributes
+
+  uint32_t slabThickness;
+
+  bool isInter;
+
+  int currSlabIdx;
 };
 
 //----------------------------------------------------------------------------

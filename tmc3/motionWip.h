@@ -235,6 +235,9 @@ struct InterPredParams {
   PCCPointSet3 referencePointCloud;
   MSOctree mSOctreeRef;
   PCCPointSet3 compensatedPointCloud;
+  // TMP hack
+  mutable std::vector<int64_t> mortonCode_mc;
+  mutable std::vector<int> attributes_mc;
 };
 
 //============================================================================

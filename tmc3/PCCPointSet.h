@@ -579,6 +579,24 @@ public:
     }
   }
 
+  void setFromPartition(const PCCPointSet3& src, uint32_t begin, uint32_t end, uint32_t dstBegin) {
+    uint32_t srcSize = end - begin;
+    for (int i = 0; i < srcSize; i++) {
+      int inputIdx = begin + i;
+      int outputIdx = dstBegin + i;
+      positions[outputIdx] = src.positions[inputIdx];
+
+      if (hasColors() && src.hasColors())
+        setColor(outputIdx, src.getColor(inputIdx));
+
+      if (hasReflectances() && src.hasReflectances())
+        setReflectance(outputIdx, src.getReflectance(inputIdx));
+
+      if (hasLaserAngles() && src.hasLaserAngles())
+        setLaserAngle(outputIdx, src.getLaserAngle(inputIdx));
+    }
+  }
+
   void swapPoints(const size_t index1, const size_t index2)
   {
     assert(index1 < getPointCount());

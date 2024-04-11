@@ -728,9 +728,21 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.enforceLevelLimits, true,
     "Abort if level limits exceeded")
 
-   ("fasterMotionSearch",
+  ("fasterMotionSearch",
     params.encoder.motion.approximate_nn, false,
     "Enable approximate nearest neighbor for faster motion search")
+
+  ("localizedAttributesEnabled",
+    params.encoder.sps.localized_attributes_enabled_flag, false,
+    "Assure the possibility to use localized attributes decoding")
+
+  ("localizedAttributesEncoding",
+    params.encoder.localized_attributes_encoding, false,
+    "Enforce the possibility to use localized attributes decoding")
+
+  ("localizedAttributesSlabThickness",
+    params.encoder.localized_attributes_slab_thickness, 1,
+    "Thickness of localized attributes' slab")
 
   (po::Section("Geometry"))
 
@@ -1236,6 +1248,24 @@ sanitizeEncoderOpts(
   // Disable partitionning changes for Trisoup if Trisoup is not used
   if (!params.encoder.gps.trisoup_enabled_flag) {
     params.encoder.partition.safeTrisoupPartionning = false;
+  }
+
+  if (params.encoder.localized_attributes_encoding) {
+    if (!params.encoder.sps.localized_attributes_enabled_flag) {
+      err.warn() << "Localized attributes encoding will enable localized attributes\n";
+      params.encoder.sps.localized_attributes_enabled_flag = true;
+    }
+  }
+
+  params.encoder.sps.localized_attributes_slab_thickness_minus1
+    = 0;
+  if (params.encoder.sps.localized_attributes_enabled_flag) {
+    if (params.encoder.localized_attributes_slab_thickness <= 0) {
+      err.warn() << "Localized attributes slab thickness must be greater than 0\n";
+      params.encoder.localized_attributes_slab_thickness = 1;
+    }
+    params.encoder.sps.localized_attributes_slab_thickness_minus1
+      = params.encoder.localized_attributes_slab_thickness - 1;
   }
 
   // tweak qtbt generation when trisoup is /isn't enabled
