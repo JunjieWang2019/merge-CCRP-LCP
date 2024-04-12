@@ -725,6 +725,34 @@ divApprox(const int64_t a, const uint64_t b, const int32_t log2Scale)
 
 //---------------------------------------------------------------------------
 
+class ApproxNormalize {
+private:
+  uint32_t divisor;
+  uint32_t shift;
+
+public:
+  // Equivalent to divInvDivisorApprox
+  ApproxNormalize(uint64_t div)
+  {
+    assert(div > 0);
+    const int32_t lutSizeLog2 = 8;
+
+    const auto n = std::max(0, ilog2(div) + 1 - lutSizeLog2);
+    const auto index = (div + ((1ull << n) >> 1)) >> n;
+    assert(unsigned(index) <= (1 << lutSizeLog2));
+    shift = n + (lutSizeLog2 << 1);
+    divisor = kDivApproxDivisor[index - 1] + 1;
+  }
+
+  void operator()(int64_t& val)
+  {
+    val *= divisor;
+    val >>= shift;
+  }
+};
+
+//---------------------------------------------------------------------------
+
 template<unsigned NIter = 1>
 inline int64_t
 recipApprox(int64_t b, int32_t& log2Scale)

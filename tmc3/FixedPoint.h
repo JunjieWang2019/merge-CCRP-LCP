@@ -36,6 +36,7 @@
 #pragma once
 
 #include <cstdint>
+#include "PCCMath.h"
 
 namespace pcc {
 
@@ -72,10 +73,17 @@ public:
   void operator*=(const FixedPoint& that);
   void operator/=(const FixedPoint& that);
 
+  void divApprox(int div);
+
   FixedPoint operator+(const FixedPoint& that) const;
   FixedPoint operator-(const FixedPoint& that) const;
   FixedPoint operator*(const FixedPoint& that) const;
   FixedPoint operator/(const FixedPoint& that) const;
+
+  bool operator<(const FixedPoint& that) const { return this->val < that.val; }
+  bool operator>(const FixedPoint& that) const { return this->val > that.val; }
+  bool operator<=(const FixedPoint& that) const { return this->val <= that.val; }
+  bool operator>=(const FixedPoint& that) const { return this->val >= that.val; }
 
   void fixAfterMultiplication();
 
@@ -130,6 +138,21 @@ FixedPoint::operator*=(const FixedPoint& that)
 {
   this->val *= that.val;
   fixAfterMultiplication();
+}
+
+//----------------------------------------------------------------------------
+
+inline void
+FixedPoint::divApprox(int div)
+{
+  if (div > 0) {
+    ApproxNormalize norm(div);
+    norm(val);
+  } else {
+    ApproxNormalize norm(-div);
+    norm(val);
+    val = -val;
+  }
 }
 
 //----------------------------------------------------------------------------
