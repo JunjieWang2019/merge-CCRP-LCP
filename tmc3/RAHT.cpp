@@ -481,16 +481,7 @@ intraDcPred(
 
   const auto& predWeightParent = rahtPredParams.predWeightParent;
   const auto& predWeightChild = rahtPredParams.predWeightChild;
-
-  static const int kDivisors[64] = {
-    32768, 16384, 10923, 8192, 6554, 5461, 4681, 4096, 3641, 3277, 2979,
-    2731,  2521,  2341,  2185, 2048, 1928, 1820, 1725, 1638, 1560, 1489,
-    1425,  1365,  1311,  1260, 1214, 1170, 1130, 1092, 1057, 1024, 993,
-    964,   936,   910,   886,  862,  840,  819,  799,  780,  762,  745,
-    728,   712,   697,   683,  669,  655,  643,  630,  618,  607,  596,
-    585,   575,   565,   555,  546,  537,  529,  520,  512};
-
-  int weightSum[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+  int weightSum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
   std::fill_n(&predBuf[0][0], 8 * numAttrs, FixedPoint(0));
 
@@ -610,15 +601,17 @@ intraDcPred(
   }
 
   // normalise
-  FixedPoint div;
   for (int i = 0; i < 8; i++, occupancy >>= 1) {
     if (occupancy & 1) {
-      div.val = kDivisors[weightSum[i]];
-      for (int k = 0; k < numAttrs; k++) {
-        predBuf[k][i] *= div;
-        if (isEncoder && enableLayerCoding) {
-          intraLayerPredBuf[k][i] *= div;
-          interLayerPredBuf[k][i] *= div;
+      int w = weightSum[i];
+      if (w > 1) {
+        ApproxNormalize div(w);
+        for (int k = 0; k < numAttrs; k++) {
+          div(predBuf[k][i].val);
+          if (isEncoder && enableLayerCoding) {
+            div(intraLayerPredBuf[k][i].val);
+            div(interLayerPredBuf[k][i].val);
+          }
         }
       }
       if (rahtPredParams.integer_haar_enable_flag) {
@@ -685,63 +678,6 @@ mkWeightTree(int64_t weights[8 + 8 + 8 + 8 + 24], bool skipkernel = false)
   }
 }
 
-//============================================================================
-// LUT of the divison of prediction weights sum
-int16_t
-divisionPredictionVotesLUT(int16_t votesum)
-{
-  static const int16_t voteSumDivisionMinus33[] = {
-    2307, 2151, 2015, 1894, 1787, 1691, 1605, 1527, 1456, 1391, 1332, 1277, 1227, 1180, 1137, 1096, 1059, 1024, 991, 959,
-    930, 903, 877, 852, 829, 807, 786, 766, 747, 729, 711, 695, 679, 664, 649, 635, 622, 609, 597, 585,
-    573, 562, 552, 541, 531, 522, 513, 504, 495, 487, 479, 471, 463, 456, 448, 441, 435, 428, 422, 415,
-    409, 403, 398, 392, 387, 381, 376, 371, 366, 361, 357, 352, 348, 343, 339, 335, 331, 327, 323, 319,
-    315, 311, 308, 304, 301, 297, 294, 291, 288, 285, 282, 279, 276, 273, 270, 267, 264, 262, 259, 256,
-    254, 251, 249, 247, 244, 242, 240, 237, 235, 233, 231, 229, 227, 225, 223, 221, 219, 217, 215, 213,
-    211, 209, 207, 206, 204, 202, 201, 199, 197, 196, 194, 192, 191, 189, 188, 186, 185, 184, 182, 181,
-    179, 178, 177, 175, 174, 173, 171, 170, 169, 168, 166, 165, 164, 163, 162, 160, 159, 158, 157, 156,
-    155, 154, 153, 152, 151, 150, 149, 148, 147, 146, 145, 144, 143, 142, 141, 140, 139, 138, 137, 136,
-    135, 135, 134, 133, 132, 131, 130, 130, 129, 128, 127, 126, 126, 125, 124, 123, 123, 122, 121, 120,
-    120, 119, 118, 118, 117, 116, 115, 115, 114, 113, 113, 112, 111, 111, 110, 110, 109, 108, 108, 107,
-    107, 106, 105, 105, 104, 104, 103, 102, 102, 101, 101, 100, 100, 99, 99, 98, 98, 97, 97, 96,
-    96, 95, 95, 94, 94, 93, 93, 92, 92, 91, 91, 90, 90, 89, 89, 88, 88, 87, 87, 87,
-    86, 86, 85, 85, 84, 84, 84, 83, 83, 82, 82, 81, 81, 81, 80, 80, 79, 79, 79, 78,
-    78, 78, 77, 77, 76, 76, 76, 75, 75, 75, 74, 74, 74, 73, 73, 73, 72, 72, 72, 71,
-    71, 71, 70, 70, 70, 69, 69, 69, 68, 68, 68, 67, 67, 67, 66, 66, 66, 65, 65, 65,
-    65, 64, 64, 64, 63, 63, 63, 63, 62, 62, 62, 61, 61, 61, 61, 60, 60, 60, 60, 59,
-    59, 59, 59, 58, 58, 58, 58, 57, 57, 57, 57, 56, 56, 56, 56, 55, 55, 55, 55, 54,
-    54, 54, 54, 53, 53, 53, 53, 53, 52, 52, 52, 52, 51, 51, 51, 51, 51, 50, 50, 50,
-    50, 49, 49, 49, 49, 49, 48, 48, 48, 48, 48, 47, 47, 47, 47, 47, 46, 46, 46, 46,
-    46, 45, 45, 45, 45, 45, 45, 44, 44, 44, 44, 44, 43, 43, 43, 43, 43, 43, 42, 42,
-    42, 42, 42, 41, 41, 41, 41, 41, 41, 40, 40, 40, 40, 40, 40, 39, 39, 39, 39, 39,
-    39, 39, 38, 38, 38, 38, 38, 38, 37, 37, 37, 37, 37, 37, 37, 36, 36, 36, 36, 36,
-    36, 35, 35, 35, 35, 35, 35, 35, 34, 34, 34, 34, 34, 34, 34, 34, 33, 33, 33, 33,
-    33, 33, 33, 32, 32, 32, 32, 32, 32, 32, 32, 31, 31, 31, 31, 31, 31, 31, 31, 30,
-    30, 30, 30, 30, 30, 30, 30, 29, 29, 29, 29, 29, 29, 29, 29, 28, 28, 28, 28, 28,
-    28, 28, 28, 28, 27, 27, 27, 27, 27, 27, 27, 27, 27, 26, 26, 26, 26, 26, 26, 26,
-    26, 26, 25, 25, 25, 25, 25, 25, 25, 25, 25, 24, 24, 24, 24, 24, 24, 24, 24, 24,
-    24, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 22, 22, 22, 22, 22, 22, 22, 22,
-    22, 22, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 20, 20, 20, 20, 20, 20, 20,
-    20, 20, 20, 20, 20, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 18, 18, 18,
-    18, 18, 18, 18, 18, 18, 18, 18, 18, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-    17, 17, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15, 15, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-    14, 14, 14, 14, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 12,
-    12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11,
-    11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-    10, 10, 10, 10, 10, 10, 10, 10, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-    9, 9, 9, 9, 9, 9, 9, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-    8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-    7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-    6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-    5, 5, 5, 5, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3,
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-  };
-  return voteSumDivisionMinus33[votesum - 14];
-}
 //============================================================================
 // Invoke mapFn(coefIdx) for each present coefficient in the transform
 
@@ -1486,8 +1422,8 @@ uraht_process(
       const bool enableAverageLayerPrediction =
         curLevelEnableLayerModeCoding && enableInterLayerPrediction
         && enableIntraLayerPrediction && enableInterPrediction;
-      int64_t weightIntra, weightInter;
-      int64_t weightIntraLayer, weightInterLayer;
+      FixedPoint weightIntra, weightInter;
+      FixedPoint weightIntraLayer, weightInterLayer;
 
       if (enableAveragePrediction) {
         if (isInter(weightsParentIt->mode))
@@ -1499,10 +1435,10 @@ uraht_process(
           voteInterWeight += 6;
         }
 
-        int16_t divisionVoteSum = divisionPredictionVotesLUT(voteInterWeight + voteIntraWeight);
-
-        weightIntra = voteIntraWeight * (divisionVoteSum + 33);
-        weightInter = (1 << 15) - weightIntra;
+        weightIntra = voteIntraWeight;
+        weightInter = 1;
+        weightIntra.divApprox(voteInterWeight + voteIntraWeight);
+        weightInter -= weightIntra;
 
         if (typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
 
@@ -1518,32 +1454,32 @@ uraht_process(
               voteInterLayerWeight += 6;
             }
 
-            divisionVoteSum = divisionPredictionVotesLUT(voteInterLayerWeight + voteIntraLayerWeight);
-
-            weightIntraLayer = voteIntraLayerWeight * (divisionVoteSum + 33);
-            weightInterLayer = (1 << 15) - weightIntraLayer;
+            weightIntraLayer = voteIntraLayerWeight;
+            weightInterLayer = 1;
+            weightIntraLayer.divApprox(voteInterLayerWeight + voteIntraLayerWeight);
+            weightInterLayer -= weightIntraLayer;
           }
 
           for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
             for (int k = 0; k < numAttrs; k++) {
               if (predCtxLevel < 0) {
-                attrPredIntra[k][nodeIdx].val = (attrPredIntra[k][nodeIdx].val * weightIntra + attrPredInter[k][nodeIdx].val * weightInter) >> 15;
-                attrPredIntraTransformIt[k][nodeIdx].val = (attrPredIntraTransformIt[k][nodeIdx].val * weightIntra + attrPredInterTransformIt[k][nodeIdx].val * weightInter) >> 15;
+                attrPredIntra[k][nodeIdx] = attrPredIntra[k][nodeIdx] * weightIntra + attrPredInter[k][nodeIdx] * weightInter;
+                attrPredIntraTransformIt[k][nodeIdx] = attrPredIntraTransformIt[k][nodeIdx] * weightIntra + attrPredInterTransformIt[k][nodeIdx] * weightInter;
                 if (rahtPredParams.integer_haar_enable_flag) {
                   attrPredIntra[k][nodeIdx].val &= FixedPoint::kIntMask;
                   attrPredIntraTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
                 }
               } else {
-                attrPredInter[k][nodeIdx].val = (attrPredIntra[k][nodeIdx].val * weightIntra + attrPredInter[k][nodeIdx].val * weightInter) >> 15;
-                attrPredInterTransformIt[k][nodeIdx].val = (attrPredIntraTransformIt[k][nodeIdx].val * weightIntra + attrPredInterTransformIt[k][nodeIdx].val * weightInter) >> 15;
+                attrPredInter[k][nodeIdx] = attrPredIntra[k][nodeIdx] * weightIntra + attrPredInter[k][nodeIdx] * weightInter;
+                attrPredInterTransformIt[k][nodeIdx] = attrPredIntraTransformIt[k][nodeIdx] * weightIntra + attrPredInterTransformIt[k][nodeIdx] * weightInter;
                 if (rahtPredParams.integer_haar_enable_flag) {
                   attrPredInter[k][nodeIdx].val &= FixedPoint::kIntMask;
                   attrPredInterTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
                 }
               }
               if (enableAverageLayerPrediction) {
-                attrPredInterLayer[k][nodeIdx].val = (attrPredInterLayer[k][nodeIdx].val * weightIntraLayer + attrOrgPredInterLayer[k][nodeIdx].val * weightInterLayer) >> 15;
-                attrPredInterLayerTransformIt[k][nodeIdx].val = (attrPredInterLayerTransformIt[k][nodeIdx].val * weightIntraLayer + attrOrgPredInterLayerTransformIt[k][nodeIdx].val * weightInterLayer) >> 15;
+                attrPredInterLayer[k][nodeIdx] = attrPredInterLayer[k][nodeIdx] * weightIntraLayer + attrOrgPredInterLayer[k][nodeIdx] * weightInterLayer;
+                attrPredInterLayerTransformIt[k][nodeIdx] = attrPredInterLayerTransformIt[k][nodeIdx] * weightIntraLayer + attrOrgPredInterLayerTransformIt[k][nodeIdx] * weightInterLayer;
                 if (rahtPredParams.integer_haar_enable_flag) {
                   attrPredInterLayer[k][nodeIdx].val &= FixedPoint::kIntMask;
                   attrPredInterLayerTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
@@ -1717,10 +1653,10 @@ uraht_process(
             for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++)
               for (int k = 0; k < numAttrs; k++) {
                 if (rahtPredParams.integer_haar_enable_flag) {
-                  attrBestPredTransformIt[k][nodeIdx].val = (attrPredInterTransformIt[k][nodeIdx].val * weightInter + attrBestPredTransformIt[k][nodeIdx].val * weightIntra) >> 15;
+                  attrBestPredTransformIt[k][nodeIdx] = attrPredInterTransformIt[k][nodeIdx] * weightInter + attrBestPredTransformIt[k][nodeIdx] * weightIntra;
                   attrBestPredTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
                 } else {
-                  attrBestPredIt[k][nodeIdx].val = (attrPredInter[k][nodeIdx].val * weightInter + attrBestPredIt[k][nodeIdx].val * weightIntra) >> 15;
+                  attrBestPredIt[k][nodeIdx] = attrPredInter[k][nodeIdx] * weightInter + attrBestPredIt[k][nodeIdx] * weightIntra;
                 }
               }
 
