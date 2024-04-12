@@ -616,10 +616,10 @@ intraDcPred(
       }
       if (rahtPredParams.integer_haar_enable_flag) {
         for (int k = 0; k < numAttrs; k++) {
-          predBuf[k][i].val &= FixedPoint::kIntMask;
+          predBuf[k][i] = predBuf[k][i].round();
           if (isEncoder && enableLayerCoding) {
-            intraLayerPredBuf[k][i].val &= FixedPoint::kIntMask;
-            interLayerPredBuf[k][i].val &= FixedPoint::kIntMask;
+            intraLayerPredBuf[k][i] = intraLayerPredBuf[k][i].round();
+            interLayerPredBuf[k][i] = interLayerPredBuf[k][i].round();
           }
         }
       }
