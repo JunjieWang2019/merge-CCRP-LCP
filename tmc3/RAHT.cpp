@@ -158,8 +158,8 @@ reduceUnique(
   int numAttrs,
   std::vector<UrahtNode>* weightsIn,
   std::vector<UrahtNode>* weightsOut,
-  std::vector<int64_t>* attrsIn,
-  std::vector<int64_t>* attrsOut,
+  std::vector<FixedPoint>* attrsIn,
+  std::vector<FixedPoint>* attrsOut,
   bool integer_haar_enable_flag)
 {
   // process a single level of the tree
@@ -187,8 +187,8 @@ reduceUnique(
       if (integer_haar_enable_flag) {
         attrsOut->push_back(
           *attrsInRdIt++ - *(attrsInWrIt - numAttrs + k));
-        *(attrsInWrIt - numAttrs + k) +=
-          attrsOut->back() >> 1;
+        (attrsInWrIt - numAttrs + k)->val +=
+          (attrsOut->back().val >> 1) & FixedPoint::kIntMask;
       } else {
         *(attrsInWrIt - numAttrs + k) += *attrsInRdIt;
         attrsOut->push_back(*attrsInRdIt++);
@@ -210,8 +210,8 @@ reduceLevel(
   int numAttrs,
   std::vector<UrahtNode>* weightsIn,
   std::vector<UrahtNode>* weightsOut,
-  std::vector<int64_t>* attrsIn,
-  std::vector<int64_t>* attrsOut,
+  std::vector<FixedPoint>* attrsIn,
+  std::vector<FixedPoint>* attrsOut,
   bool integer_haar_enable_flag)
 {
   // process a single level of the tree
@@ -238,7 +238,7 @@ reduceLevel(
       for (int k = 0; k < numAttrs; k++) {
         if (integer_haar_enable_flag) {
           attrsOut->push_back(*attrsInRdIt++ - *(attrsInWrIt - numAttrs + k));
-          *(attrsInWrIt - numAttrs + k) += attrsOut->back() >> 1;
+          (attrsInWrIt - numAttrs + k)->val += (attrsOut->back().val >> 1) & FixedPoint::kIntMask;
         } else {
           *(attrsInWrIt - numAttrs + k) += *attrsInRdIt;
           attrsOut->push_back(*attrsInRdIt++);
@@ -261,8 +261,8 @@ expandLevel(
   int numAttrs,
   std::vector<UrahtNode>* weightsIn,   // expand by numNodes before expand
   std::vector<UrahtNode>* weightsOut,  // shrink after expand
-  std::vector<int64_t>* attrsIn,
-  std::vector<int64_t>* attrsOut,
+  std::vector<FixedPoint>* attrsIn,
+  std::vector<FixedPoint>* attrsOut,
   bool integer_haar_enable_flag)
 {
   if (numNodes == 0)
@@ -301,7 +301,7 @@ expandLevel(
     for (int k = 0; k < numAttrs; k++) {
       *attrsInWrIt = *attrsInRdIt++;
       if (integer_haar_enable_flag) {
-        *attrsInWrIt -= *curAttrIt >> 1;
+        attrsInWrIt->val -= (curAttrIt->val >> 1) & FixedPoint::kIntMask;
         *curAttrIt++ += *attrsInWrIt++;
       } else {
         *attrsInWrIt++ -= *curAttrIt++;
@@ -844,7 +844,7 @@ uraht_process(
   }
 
   std::vector<UrahtNode> weightsLf, weightsHf;
-  std::vector<int64_t> attrsLf, attrsHf;
+  std::vector<FixedPoint> attrsLf, attrsHf;
 
   bool enableACInterPred =
     rahtPredParams.enable_inter_prediction && (numPoints_mc > 0);
