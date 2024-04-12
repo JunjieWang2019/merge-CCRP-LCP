@@ -80,7 +80,7 @@ computeParentDc(
 void
 translateLayer(
   std::vector<int64_t>& layerAttr,
-  size_t layerDepth,
+  size_t level,
   size_t attrCount,
   size_t count_rf,
   size_t count_mc,
@@ -90,7 +90,6 @@ translateLayer(
   bool integer_haar_enable_flag,
   size_t layerSize)
 {
-  size_t shift = layerDepth * 3;
   std::vector<int64_t> morton_layer;
   if (layerSize)
     morton_layer.reserve(layerSize / attrCount);
@@ -100,7 +99,7 @@ translateLayer(
   int64_t prev = -1;
   size_t i = 0;
   for (size_t n = 0; n < count_rf; n++) {
-    int64_t curr = morton_rf[n] >> shift;
+    int64_t curr = morton_rf[n] >> level;
     if (curr != prev) {
       prev = curr;
       morton_layer.push_back(curr);
@@ -115,7 +114,7 @@ translateLayer(
   while (i < count_rf && j < count_mc) {
     prev = morton_layer[i];
 
-    while (j < count_mc && prev > (morton_mc[j] >> shift))
+    while (j < count_mc && prev > (morton_mc[j] >> level))
       j++;
 
     int64_t weight = 0;
@@ -123,7 +122,7 @@ translateLayer(
     for (size_t k = 0; k < attrCount; k++)
       layer[k] = 0;
 
-    while (j < count_mc && prev == (morton_mc[j] >> shift)) {
+    while (j < count_mc && prev == (morton_mc[j] >> level)) {
       weight++;
       auto attr = &attr_mc[attrCount * j];
       for (size_t k = 0; k < attrCount; k++)

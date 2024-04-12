@@ -58,7 +58,7 @@ void computeParentDc(
 
 void translateLayer(
   std::vector<int64_t>& layerAttr,
-  size_t layerDepth,
+  size_t level,
   size_t attrCount,
   size_t count_rf,
   size_t count_mc,

@@ -49,6 +49,26 @@
 
 using pcc::attr::Mode;
 
+//============================================================================
+
+// Return the value of `level / 3`,
+// where `level` must satisfy: `0 <= level < 512`
+template<class T>
+inline T div3level(T level)
+{
+  assert(level >= 0 && level < 512);
+  return level * 171 >> 9;
+}
+
+// Return the value of `level % 3`, and compute the value `layer = level / 3`
+// where `level` must satisfy: `0 <= level < 512`
+template<class T>
+inline T rem3level(T level, T& layer)
+{
+  layer = div3level(level);
+  return level - layer * 3;
+}
+
 namespace pcc {
 
 //============================================================================
@@ -990,11 +1010,10 @@ uraht_process(
   weightsLf.resize(1);
   attrsLf.resize(numAttrs);
   int trainZeros = 0;
-  // NB: rootLevel = ceil((levelHfPos.size() - 1)/3.0)
-  int rootLevel = (levelHfPos.size() + 1) / 3;
+  // NB: rootLayer = ceil((levelHfPos.size() - 1)/3.0)
+  int rootLayer = div3level(levelHfPos.size() + 1);
   int8_t CccpCoeff = 0;
   PCCRAHTComputeCCCP curlevelCccp;
-
   int intraLayerTrainZeros = 0;
   int interLayerTrainZeros = 0;
   PCCRAHTACCoefficientEntropyEstimate intraLayerEstimate;
@@ -1023,13 +1042,14 @@ uraht_process(
     level--;
 
     // every three levels, perform transform
-    if (level % 3)
+    int layer;
+    if (rem3level(level, layer))
       continue;
 
     CccpCoeff = 0;
     curlevelCccp.reset();
 
-    int distanceToRoot = rootLevel - level / 3;
+    int distanceToRoot = rootLayer - layer;
     int layerD = RDOCodingDepth - distanceToRoot;
     int predCtxLevel = 0;
     if (rahtPredParams.enable_inter_prediction) {
@@ -1047,8 +1067,8 @@ uraht_process(
       && distanceToRoot < RDOCodingDepth - rahtPredParams.mode_level + 1;
 
     const bool enableAveragePredictionLevel = rahtPredParams.enable_average_prediction
-      && distanceToRoot >= (rootLevel - rahtPredParams.mode_level - rahtPredParams.upper_mode_level_for_average_prediction + 1)
-      && distanceToRoot < (rootLevel - rahtPredParams.mode_level + rahtPredParams.lower_mode_level_for_average_prediction + 1)
+      && distanceToRoot >= (rootLayer - rahtPredParams.mode_level - rahtPredParams.upper_mode_level_for_average_prediction + 1)
+      && distanceToRoot < (rootLayer - rahtPredParams.mode_level + rahtPredParams.lower_mode_level_for_average_prediction + 1)
       && !upperInferMode
       && coder.isInterEnabled();
 
@@ -1062,7 +1082,7 @@ uraht_process(
     // Motion compensation
     if (coder.isInterEnabled()) {
       translateLayer(
-        interTree, level / 3, numAttrs, numPoints, numPoints_mc, positions,
+        interTree, level, numAttrs, numPoints, numPoints_mc, positions,
         positions_mc, attributes_mc, rahtPredParams.integer_haar_enable_flag);
     }
 
