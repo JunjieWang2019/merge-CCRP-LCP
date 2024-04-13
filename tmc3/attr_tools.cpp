@@ -406,7 +406,7 @@ namespace attr {
     assert(childCount > 1);
 
     /* A value in the interval [3,5] seens good */
-    double lambda = rdo.getLambda(4);
+    double lambda = lossless ? 1. : rdo.getLambda(4);
 
     std::vector<double> costFun;
     costFun.resize(modes.size());
