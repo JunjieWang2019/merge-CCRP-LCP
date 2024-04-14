@@ -1727,14 +1727,17 @@ uraht_process(
 
         if (typeid(ModeCoder) == typeid(attr::ModeEncoder)
             && !rahtPredParams.integer_haar_enable_flag) {
+          int64_t recDist2 = 0;
           int64_t Dist2 = 0;
           int Ratecoeff = 0;
           int64_t lambda0;
           int64_t lambda;
 
+          int64_t intraLayerRecDist2 = 0;
           int64_t intraLayerDist2 = 0;
           int intraLayerRatecoeff = 0;
 
+          int64_t interLayerRecDist2 = 0;
           int64_t interLayerDist2 = 0;
           int interLayerRatecoeff = 0;
 
@@ -1745,6 +1748,11 @@ uraht_process(
             auto coeff = transformBuf[k][idx].round();
             Dist2 += coeff * coeff;
             auto Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
+
+            auto recCoeff =
+              divExp2RoundHalfUp(q.scale(Qcoeff), kFixedPointAttributeShift);
+            recDist2 += (coeff - recCoeff) * (coeff - recCoeff);
+
             sumCoeff += std::abs(Qcoeff);
             //Ratecoeff += !!Qcoeff; // sign
             Ratecoeff +=
@@ -1757,6 +1765,12 @@ uraht_process(
               interLayerDist2 += interLayerCoeff * interLayerCoeff;
               auto interLayerQcoeff =
                 q.quantize(interLayerCoeff << kFixedPointAttributeShift);
+
+              auto recInterCoeff =
+                divExp2RoundHalfUp(q.scale(interLayerQcoeff), kFixedPointAttributeShift);
+              interLayerRecDist2 +=
+                (interLayerCoeff - recInterCoeff) * (interLayerCoeff - recInterCoeff);
+
               interLayerSumCoeff += std::abs(interLayerQcoeff);
               interLayerRatecoeff +=
                 std::abs(interLayerQcoeff) < 15
@@ -1766,6 +1780,12 @@ uraht_process(
               intraLayerDist2 += intraLayerCoeff * intraLayerCoeff;
               auto intraLayerQcoeff =
                 q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
+
+              auto recIntraCoeff =
+                divExp2RoundHalfUp(q.scale(intraLayerQcoeff), kFixedPointAttributeShift);
+              intraLayerRecDist2 +=
+                (intraLayerCoeff - recIntraCoeff) * (intraLayerCoeff - recIntraCoeff);
+
               intraLayerSumCoeff += std::abs(intraLayerQcoeff);
               intraLayerRatecoeff +=
                 std::abs(intraLayerQcoeff) < 15
@@ -1776,20 +1796,22 @@ uraht_process(
           if (sumCoeff < 3) {
             int Rate = getRate(trainZeros);
             Rate += (Ratecoeff + 128) >> 8;
-            flagRDOQ = (Dist2 << 26) < lambda * Rate;
+            flagRDOQ = (Dist2 << 26) < (lambda * Rate + (recDist2 << 26));
           }
 
           if (enableACRDOInterPred) {
             if (intraLayerSumCoeff < 3) {
               int Rate = getRate(intraLayerTrainZeros);
               Rate += (intraLayerRatecoeff + 128) >> 8;
-              intraLayerFlagRDOQ = (intraLayerDist2 << 26) < lambda * Rate;
+              intraLayerFlagRDOQ =
+                (intraLayerDist2 << 26) < (lambda * Rate + (intraLayerRecDist2 << 26));
             }
 
             if (interLayerSumCoeff < 3) {
               int Rate = getRate(interLayerTrainZeros);
               Rate += (interLayerRatecoeff + 128) >> 8;
-              interLayerFlagRDOQ = (interLayerDist2 << 26) < lambda * Rate;
+              interLayerFlagRDOQ =
+                (interLayerDist2 << 26) < (lambda * Rate + (interLayerRecDist2 << 26));
             }
           }
         }
