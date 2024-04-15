@@ -239,10 +239,14 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgs(
       octreeNeighours, occupancy, ctx1, ctx2, Sparse);
 
     bool isInter2 = isInter && predOcc;
-    if (isInter2) {
-      int bitPred = (predOcc >> i) & 1;
-      int bitPred2 = (predOcc >> i + 8) & 1;
-      ctx1 = (ctx1 << 2) | bitPred | (bitPred2 << 1);
+    int ctxMapIdx;
+    if (!isInter2)
+      ctxMapIdx = Sparse;
+    else {
+      ctxMapIdx = 2 + ((predOcc >> i) & 1);
+      int strongIdx = ctxMapIdx;
+      if (ctxMapIdx == 3)
+        ctxMapIdx = 3 + ((predOcc >> i + 8) & 1);
     }
 
     // decode
@@ -250,12 +254,12 @@ GeometryOctreeDecoder::decodeOccupancyFullNeihbourgs(
     int bit;
     if (Sparse) {
       bit = ctx._MapOccupancySparse[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, ctx._CtxMapDynamicOBUF[isInter2], ctx2, ctx1,
+        _arithmeticDecoder, ctx._CtxMapDynamicOBUF[ctxMapIdx], ctx2, ctx1,
         &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
     }
     else {
       bit = ctx._MapOccupancy[isInter2][i].decodeEvolve(
-        _arithmeticDecoder, ctx._CtxMapDynamicOBUF[2 + isInter2], ctx2, ctx1,
+        _arithmeticDecoder, ctx._CtxMapDynamicOBUF[ctxMapIdx], ctx2, ctx1,
         &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
     }
 

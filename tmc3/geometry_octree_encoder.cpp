@@ -249,10 +249,14 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
     (*pointer2FunctionContext[i])(octreeNeighours, occupancy, ctx1, ctx2, Sparse);
 
     bool isInter2 = isInter && predOcc;
-    if (isInter2) {
-      int bitPred = (predOcc >> i) & 1;
-      int bitPred2 = (predOcc >> i + 8) & 1;
-      ctx1 = (ctx1 << 2) | bitPred | (bitPred2 << 1);
+    int ctxMapIdx;
+    if (!isInter2)
+      ctxMapIdx = Sparse;
+    else {
+      ctxMapIdx = 2 + ((predOcc >> i) & 1);
+      int strongIdx = ctxMapIdx;
+      if (ctxMapIdx == 3)
+        ctxMapIdx = 3 + ((predOcc >> i + 8) & 1);
     }
 
     // encode
@@ -261,15 +265,15 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
       auto obufIdx = ctx._MapOccupancySparse[isInter2][i].getEvolve(
         bit, ctx2, ctx1, &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
       _arithmeticEncoder->encode(
-        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[isInter2][obufIdx],
-        ctx._CtxMapDynamicOBUF[isInter2].obufSingleBound);
+        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[ctxMapIdx][obufIdx],
+        ctx._CtxMapDynamicOBUF[ctxMapIdx].obufSingleBound);
     }
     else {
       auto obufIdx = ctx._MapOccupancy[isInter2][i].getEvolve(
         bit, ctx2, ctx1, &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
       _arithmeticEncoder->encode(
-        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[2 + isInter2][obufIdx],
-        ctx._CtxMapDynamicOBUF[2 + isInter2].obufSingleBound);
+        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[ctxMapIdx][obufIdx],
+        ctx._CtxMapDynamicOBUF[ctxMapIdx].obufSingleBound);
     }
 
     // update partial occupancy of current node

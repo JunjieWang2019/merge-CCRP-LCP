@@ -227,7 +227,7 @@ void
 GeometryOctreeContexts::resetMap(bool forTrisoup)
 {
   for (int i = 0; i < 2; i++) {
-    int isInter = 2 * (i > 0);
+    int isInter = 0;
     const int n2 = 6;
     _MapOccupancy[i][0].reset(6 + n2 + 1, 18 - 6 - n2 + isInter);
     _MapOccupancy[i][1].reset(6 + n2 + 1, 18 - 6 - n2 + isInter);

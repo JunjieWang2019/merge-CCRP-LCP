@@ -812,7 +812,7 @@ struct GeometryOctreeContexts {
   std::vector<int8_t> refFrameCentroValue;
 
   // ctx and OBUF for Octree
-  CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
+  CtxModelDynamicOBUF _CtxMapDynamicOBUF[5];
   CtxMapDynamicOBUF _MapOccupancy[2][8];
   CtxMapDynamicOBUF _MapOccupancySparse[2][8];
   uint8_t _BufferOBUFleaves[kLeavesBufferSize];
