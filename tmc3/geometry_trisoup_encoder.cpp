@@ -78,6 +78,7 @@ encodeGeometryTrisoup(
     rste.slabThickness = sps.localized_attributes_slab_thickness_minus1 + 1;
   }
   rste.init();
+  rste.thVertexDetermination = encParams.trisoup.thVertexDetermination;
 
   // octree
   encodeGeometryOctree<true>(

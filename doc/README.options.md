@@ -519,6 +519,11 @@ Controls the activation of using vertices on faces in trisoup coding.
 Controls the activation of using halo around trisoup triangles for ray
 tracing.
 
+### `--trisoupVertexThreshold=INT-VALUE`
+(Encoder only)
+Controls the threshold on the number of neighbor points to be use to add
+a vertex.
+
 ### `--trisoupVertexMergeEnabled=0|1`
 Controls the activation of the merging of neighbor vertex to improve visual
 quality.

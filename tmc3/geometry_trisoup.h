@@ -610,6 +610,8 @@ struct RasterScanTrisoupEdges {
   int Qmax = 0;
   int NbitsQ = 0;
 
+  int thVertexDetermination = 0;
+
   // constructor
   RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, PCCPointSet3& pointCloud, bool isEncoder,
     int distanceSearchEncoder, bool isInter, const PCCPointSet3& compensatedPointCloud,
@@ -1728,8 +1730,6 @@ struct RasterScanTrisoupEdges {
         // for TriSoup Vertex by the encoder
         int countNearPoints = 0;
         int distanceSum = 0;
-        int countNearPoints2 = 0;
-        int distanceSum2 = 0;
         int dir0 = axisdirection[dir][0];
         int dir1 = axisdirection[dir][1];
         int dir2 = axisdirection[dir][2];
@@ -1773,10 +1773,6 @@ struct RasterScanTrisoupEdges {
                 if (voxel[dir1] == pos1 && voxel[dir2] == pos2) {
                   countNearPoints++;
                   distanceSum += voxel[dir0] - currWedgePos[dir0];
-                }
-                if (distanceSearchEncoder > 1 && std::abs(voxel[dir1] - pos1) < distanceSearchEncoder && std::abs(voxel[dir2] - pos2) < distanceSearchEncoder) {
-                  countNearPoints2++;
-                  distanceSum2 += voxel[dir0] - currWedgePos[dir0];
                 }
               }
             }
@@ -1833,8 +1829,8 @@ struct RasterScanTrisoupEdges {
           if (isEncoder)
           {
             int8_t vertexQ = 0;
-            if (countNearPoints > 0 || countNearPoints2 > 1) {
-              vertexQ = quantizeQP(2 * distanceSum + distanceSum2, 2 * countNearPoints + countNearPoints2);
+            if (countNearPoints > thVertexDetermination) {
+              vertexQ = quantizeQP(distanceSum, countNearPoints);
             }
             TriSoupVerticesQP.push_back(vertexQ);
             TriSoupVertices2bits.push_back(map2bits(vertexQ));  // map edge two to bits

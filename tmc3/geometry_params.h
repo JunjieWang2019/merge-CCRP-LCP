@@ -76,6 +76,9 @@ struct TrisoupEncOpts {
 
   // force align slices to a grid of trisoup node size
   bool alignToNodeGrid;
+
+  // minimum number of poitns near an edge to obtain a vertex on that edge
+  int thVertexDetermination;
 };
 
 //=============================================================================
