@@ -89,7 +89,8 @@ public:
     int planarMaskX,
     int planarMaskY,
     int planarMaskZ,
-    int predOccupancy,
+    int predOccupancy[8],
+    int predOUnComp[8],
     bool isInter);
 
   void encodeRasterScanOccupancy(
@@ -189,7 +190,9 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
   int planarMaskX,
   int planarMaskY,
   int planarMaskZ,
-  int predOcc, bool isInter)
+  int predOcc[8],
+  int predOccUnComp[8],
+  bool isInter)
 {
   // 3 planars => single child and we know its position
   if (planarMaskX && planarMaskY && planarMaskZ)
@@ -199,6 +202,12 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
   bool sure_planarityX = planarMaskX;
   bool sure_planarityY = planarMaskY;
   bool sure_planarityZ = planarMaskZ;
+
+  bool isPred = predOcc[0] || predOcc[1] || predOcc[2] || predOcc[3]
+    || predOcc[4] || predOcc[5] || predOcc[6] || predOcc[7]
+    || predOccUnComp[0] || predOccUnComp[1] || predOccUnComp[2]
+    || predOccUnComp[3] || predOccUnComp[4] || predOccUnComp[5]
+    || predOccUnComp[6] || predOccUnComp[7];
 
   //int  MaskConfig = !planarMaskX ? 0 : planarMaskX == 15 ? 1 : 2;
   //MaskConfig += !planarMaskY ? 0 : planarMaskY == 51 ? 3 : 6;
@@ -248,16 +257,16 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
     bool Sparse;
     (*pointer2FunctionContext[i])(octreeNeighours, occupancy, ctx1, ctx2, Sparse);
 
-    bool isInter2 = isInter && predOcc;
-    int ctxMapIdx;
-    if (!isInter2)
-      ctxMapIdx = Sparse;
-    else {
-      ctxMapIdx = 2 + ((predOcc >> i) & 1);
-      int strongIdx = ctxMapIdx;
-      if (ctxMapIdx == 3)
-        ctxMapIdx = 3 + ((predOcc >> i + 8) & 1);
-    }
+    bool isInter2 = isInter && isPred;
+
+    int ctxTable = 0;
+    if (!isInter2) // INTRA
+      ctxTable = Sparse;
+    else  //  INTER
+      ctxTable = 2 + predOcc[i];
+
+    if (isInter2)
+      ctx1 = (ctx1 << 1) | predOccUnComp[i]>0;
 
     // encode
     int bit = (occupancy >> i) & 1;
@@ -265,15 +274,15 @@ GeometryOctreeEncoder::encodeOccupancyFullNeihbourgs(
       auto obufIdx = ctx._MapOccupancySparse[isInter2][i].getEvolve(
         bit, ctx2, ctx1, &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
       _arithmeticEncoder->encode(
-        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[ctxMapIdx][obufIdx],
-        ctx._CtxMapDynamicOBUF[ctxMapIdx].obufSingleBound);
+        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[ctxTable][obufIdx],
+        ctx._CtxMapDynamicOBUF[ctxTable].obufSingleBound);
     }
     else {
       auto obufIdx = ctx._MapOccupancy[isInter2][i].getEvolve(
         bit, ctx2, ctx1, &ctx._OBUFleafNumber, ctx._BufferOBUFleaves);
       _arithmeticEncoder->encode(
-        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[ctxMapIdx][obufIdx],
-        ctx._CtxMapDynamicOBUF[ctxMapIdx].obufSingleBound);
+        bit, obufIdx >> 3, ctx._CtxMapDynamicOBUF[ctxTable][obufIdx],
+        ctx._CtxMapDynamicOBUF[ctxTable].obufSingleBound);
     }
 
     // update partial occupancy of current node
@@ -1078,6 +1087,8 @@ encodeGeometryOctree(
       posInParent |= (node0.pos[2] & 1) << 0;
       posInParent &= codedAxesPrevLvl;
 
+      std::array<int32_t, 8> predUnCompCounts = {};
+
       if (!tubeIndex && !nodeSliceIndex) {
         //local motion : determine PU tree by motion search and RDO
         if (isInter && nodeSizeLog2[0] == log2MotionBlockSize) {
@@ -1139,6 +1150,16 @@ encodeGeometryOctree(
               }
             }
           }
+          if (depth < mSOctree.depth && node0.mSONodeIdx >= 0) {
+            const auto & msoNode = mSOctree.nodes[node0.mSONodeIdx];
+            for (int i = 0; i < 8; ++i) {
+              uint32_t msoChildIdx = msoNode.child[i];
+              if (msoChildIdx) {
+                const auto & msoChild = mSOctree.nodes[msoChildIdx];
+                predUnCompCounts[i] = msoChild.end - msoChild.start;
+              }
+            }
+          }
         }
 
         // generate the bitmap of child occupancy and count
@@ -1155,16 +1176,29 @@ encodeGeometryOctree(
       }
 
       // inter information
-      int predOccupancy = 0;
-      int predOccupancyStrong = 0;
+      //int predOccupancy = 0;
       //int predFailureCount = 0;
+
+      // occupancy inter predictor
+      int predOccupancy[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+      int predOccupancyUnComp[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+      const int L = 1 << nodeSizeLog2[0];
 
       // TODO avoid computing it at each pass?
       for (int i = 0; i < 8; i++) {
         //bool childOccupiedTmp = !!node0.childCounts[i];
-        predOccupancy |= (node0.predCounts[i] > 0) << i;
-        predOccupancyStrong |= (node0.predCounts[i] > 2) << i;
+        //predOccupancy |= (node0.predCounts[i] > 0) << i;
         //predFailureCount += childOccupiedTmp != childPredicted;
+        predOccupancy[i] += node0.predCounts[i] > std::max(0, L >> 8);
+        predOccupancy[i] += node0.predCounts[i] > std::max(2, L >> 4);
+        predOccupancy[i] += node0.predCounts[i] >
+          (forTrisoup ? std::max(16, L) : std::max(8, L >> 2));
+      }
+
+      for (int i = 0; i < 8; i++) {
+        predOccupancyUnComp[i] += predUnCompCounts[i] > std::max(0, L >> 8);
+        predOccupancyUnComp[i] += predUnCompCounts[i] > std::max(2, L >> 4);
+        predOccupancyUnComp[i] += predUnCompCounts[i] > std::max(8, L >> 2);
       }
 
       //bool occupancyIsPredictable =
@@ -1253,8 +1287,7 @@ encodeGeometryOctree(
 
         encoder.encodeOccupancyFullNeihbourgs(
           contextualOccupancy, node0.childOccupancy, planarMask[0], planarMask[1],
-          planarMask[2],
-          predOccupancy | (predOccupancyStrong << 8), isInter);
+          planarMask[2], predOccupancy, predOccupancyUnComp,isInter);
       }
 
       // calculating the number of subnodes for determining eligibility
