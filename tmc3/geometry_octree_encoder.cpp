@@ -1,4 +1,4 @@
-/* The copyright in this software is being made available under the BSD
+﻿/* The copyright in this software is being made available under the BSD
  * Licence, included below.  This software may be subject to other third
  * party and contributor rights, including patent rights, and no such
  * rights are granted under this licence.
@@ -744,6 +744,7 @@ encodeGeometryOctree(
   PCCPointSet3& refPointCloud = interPredParams.referencePointCloud;
   refPointCloud = refFrame.cloud;
   PCCPointSet3& predPointCloud = refPointCloud;
+  auto& mvField = interPredParams.mvField;
 
   int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size - 1)) + 1;
   MSOctree& mSOctree = interPredParams.mSOctreeRef;
@@ -772,13 +773,14 @@ encodeGeometryOctree(
   // variables for local motion
 
   int log2MotionBlockSize = 0;
+  int log2MotionBlockSizeMin = 0;
 
   // local motion prediction structure -> LPUs from predPointCloud
   if (isInter) {
     log2MotionBlockSize =
       ilog2(uint32_t(gps.motion.motion_block_size - 1)) + 1;
     if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
-      int log2MotionBlockSizeMin =
+      log2MotionBlockSizeMin =
         ilog2(uint32_t(gps.motion.motion_min_pu_size - 1)) + 1;
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
@@ -1008,6 +1010,19 @@ encodeGeometryOctree(
       encoder._arithmeticEncoder = (++arithmeticEncoderIt)->get();
     }
 
+    int currPUIdx = 0;
+    if (isInter) {
+      if (nodeSizeLog2[0] == log2MotionBlockSize) {
+        // TODO: allocate motion field according to number of nodes
+        uint32_t numNodes = fifo.end() - fifo.begin();
+        mvField.puNodes.reserve(numNodes * 8); // arbitrary value.
+        mvField.mvPool.reserve(numNodes * 8); // arbitrary value.
+        // allocate all the PU roots
+        mvField.numRoots = numNodes;
+        mvField.puNodes.resize(numNodes);
+      }
+    }
+
     //// reset the idcm eligibility mask at the start of each level to
     //// support multiple streams
     //auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
@@ -1121,20 +1136,18 @@ encodeGeometryOctree(
       if (!tubeIndex && !nodeSliceIndex) {
         //local motion : determine PU tree by motion search and RDO
         if (isInter && nodeSizeLog2[0] == log2MotionBlockSize) {
-          std::unique_ptr<PUtree> PU_tree(new PUtree);
-
           node0.hasMotion = motionSearchForNode(
             mSOctreeCurr, mSOctree, &node0, encParams.motion,
             encParams.gps.motion, nodeSize, encoder._arithmeticEncoder,
-            PU_tree.get(), flagNonPow2, S, S2);
-          node0.PU_tree = std::move(PU_tree);
+            mvField, currPUIdx, flagNonPow2, S, S2);
+          node0.mvFieldNodeIdx = currPUIdx++;
         }
 
         // code split PU flag. If not split, code  MV and apply MC
         // results of MC are stacked in compensatedPointCloud that starts empty
-        if (node0.PU_tree != nullptr) {
+        if (node0.mvFieldNodeIdx != -1) {
           encode_splitPU_MV_MC(mSOctree,
-            &node0, node0.PU_tree.get(), gps.motion, nodeSize,
+            &node0, mvField, node0.mvFieldNodeIdx, gps.motion, nodeSize,
             encoder._arithmeticEncoder, &compensatedPointCloud,
             flagNonPow2, S, S2);
         }
@@ -1199,9 +1212,6 @@ encodeGeometryOctree(
         }
         node0.childOccupancy = occupancy;
         node0.predPointsStartIdx = node0.predStart;
-        node0.pos_fs = 1;  // first split falg is popped
-        node0.pos_fp = 0;
-        node0.pos_MV = 0;
       }
 
       // inter information
@@ -1386,9 +1396,6 @@ encodeGeometryOctree(
       if (!isLeafNode(effectiveChildSizeLog2)) {
         // push child nodes to fifo
         for (int i = 0; i < 2; ++i) {
-          if (node0.hasMotion && !node0.isCompensated)
-            node0.pos_fp++;  // pop occupancy flag from PU_tree
-
           int childIndex = (nodeSliceIndex << 2) + (tubeIndex << 1) + i;
           bool occupiedChild = node0.childCounts[childIndex] > 0;
           if (!occupiedChild) {
@@ -1439,13 +1446,13 @@ encodeGeometryOctree(
             child.isCompensated = node0.isCompensated;
 
             if (node0.hasMotion && !node0.isCompensated) {
-              std::unique_ptr<PUtree> child_PU_tree(new PUtree);
-
-              extracPUsubtree(
-                gps.motion, node0.PU_tree.get(), nodeSize >> 1, node0.pos_fs,
-                node0.pos_fp, node0.pos_MV, child_PU_tree.get());
-
-              child.PU_tree = std::move(child_PU_tree);
+              auto& puNode = mvField.puNodes[node0.mvFieldNodeIdx];
+              assert(puNode._childsMask);
+              assert(puNode._firstChildIdx != MVField::kNotSetMVIdx);
+              child.mvFieldNodeIdx = puNode._firstChildIdx;
+              for (int j = 0; j < childIndex; ++j)
+                if (puNode._childsMask & (1 << j))
+                  ++child.mvFieldNodeIdx;
             }
 
             if (isInter) {

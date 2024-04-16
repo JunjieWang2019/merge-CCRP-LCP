@@ -324,7 +324,7 @@ private:
   const EncoderParams* params;
 
   // This is for global encoder
-  std::vector<int> numPointsPerSlab;
+  std::vector<std::pair<int/*startx*/,int/*numPoints*/>> startXAndNumPointsPerSlab;
 };
 
 //----------------------------------------------------------------------------

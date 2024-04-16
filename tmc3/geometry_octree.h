@@ -73,7 +73,7 @@ using RasterScanTrisoupEdgesDecoder = RasterScanTrisoupEdges<false, TrisoupNodeD
 struct PCCOctree3Node {
   PCCOctree3Node() = default;
   PCCOctree3Node(const PCCOctree3Node& cp)
-  : PU_tree(cp.PU_tree ? new PUtree(*cp.PU_tree.get()) : nullptr)
+  : mvFieldNodeIdx(cp.mvFieldNodeIdx)
   , pos(cp.pos)
   , start(cp.start), end(cp.end)
   //, numSiblingsPlus1(cp.numSiblingsPlus1)
@@ -109,9 +109,6 @@ struct PCCOctree3Node {
   // Note: there is probably better way to do that
   // This is for quick porting of the existing code with raster scan order
   int predPointsStartIdx;
-  int pos_fs;
-  int pos_fp;
-  int pos_MV;
 
   // The current node's number of siblings plus one.
   // ie, the number of child nodes present in this node's parent.
@@ -125,9 +122,8 @@ struct PCCOctree3Node {
   //int8_t numSiblingsMispredicted;
 
   // local motion tracking; encoder only
-  std::unique_ptr<PUtree> PU_tree;
+  int32_t mvFieldNodeIdx = - 1;
 
-  //PUtree* PU_tree = nullptr; // Prediction Unit tree (encoder only) attached to node
   bool isCompensated : 1; // prediction ranges refer to compensated reference
   bool hasMotion : 1;
 

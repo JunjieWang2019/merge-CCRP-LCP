@@ -343,16 +343,22 @@ AttributeDecoder::decodeSlab(
 
   PCCPointSet3 tmp;
   if (attrInterPredParams.enableAttrInterPred
-      && attr_aps.dual_motion_field_flag
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
     // compensatedPointCloud is needed by geometry
     tmp.swap(attrInterPredParams.compensatedPointCloud);
     attrInterPredParams.mortonCode_mc.clear();
     attrInterPredParams.attributes_mc.clear();
-    if (attr_aps.mcap_to_rec_geom_flag)
-      attrInterPredParams.compensatedPointCloud = slabPointCloud;
-    attrInterPredParams.decodeMotionAndBuildCompensated(
-      attr_aps.motion, _pDecoder->arithmeticDecoder, attr_aps.mcap_to_rec_geom_flag);
+    if (attr_aps.dual_motion_field_flag) {
+      if (attr_aps.mcap_to_rec_geom_flag)
+        attrInterPredParams.compensatedPointCloud = slabPointCloud;
+      attrInterPredParams.decodeMotionAndBuildCompensated(
+        attr_aps.motion, _pDecoder->arithmeticDecoder, attr_aps.mcap_to_rec_geom_flag);
+    } else {
+      //if (attr_aps.mcap_to_rec_geom_flag)
+      //  attrInterPredParams.compensatedPointCloud = slabPointCloud;
+      attrInterPredParams.buildCompensated(
+        gps.motion, false/*attr_aps.mcap_to_rec_geom_flag*/);
+    }
   }
   if (attr_desc.attr_num_dimensions_minus1 == 0) {
     switch (attr_aps.attr_encoding) {
@@ -390,7 +396,6 @@ AttributeDecoder::decodeSlab(
       || attr_desc.attr_num_dimensions_minus1 == 2);
   }
   if (attrInterPredParams.enableAttrInterPred
-      && attr_aps.dual_motion_field_flag
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
     tmp.swap(attrInterPredParams.compensatedPointCloud);
   }

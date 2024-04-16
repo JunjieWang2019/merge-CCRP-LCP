@@ -536,16 +536,23 @@ void AttributeEncoder::encodeSlab(
 
   PCCPointSet3 tmp;
   // local motion encoding and compensation performed by slab
-  if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag
+  if (attrInterPredParams.enableAttrInterPred
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
     // compensatedPointCloud is needed by geometry
     tmp.swap(attrInterPredParams.compensatedPointCloud);
     attrInterPredParams.mortonCode_mc.clear();
     attrInterPredParams.attributes_mc.clear();
-    if (attr_aps.mcap_to_rec_geom_flag)
-      attrInterPredParams.compensatedPointCloud = slabPointCloud;
-    attrInterPredParams.encodeMotionAndBuildCompensated(
-      attr_aps.motion, _pEncoder->arithmeticEncoder, attr_aps.mcap_to_rec_geom_flag);
+    if (attr_aps.dual_motion_field_flag) {
+      if (attr_aps.mcap_to_rec_geom_flag)
+        attrInterPredParams.compensatedPointCloud = slabPointCloud;
+      attrInterPredParams.encodeMotionAndBuildCompensated(
+        attr_aps.motion, _pEncoder->arithmeticEncoder, attr_aps.mcap_to_rec_geom_flag);
+    } else {
+      //if (attr_aps.mcap_to_rec_geom_flag)
+      //  attrInterPredParams.compensatedPointCloud = slabPointCloud;
+      attrInterPredParams.buildCompensated(
+        gps.motion, false/*attr_aps.mcap_to_rec_geom_flag*/);
+    }
   }
   if (desc.attr_num_dimensions_minus1 == 0) {
     switch (attr_aps.attr_encoding) {
@@ -587,7 +594,6 @@ void AttributeEncoder::encodeSlab(
       || desc.attr_num_dimensions_minus1 == 2);
   }
   if (attrInterPredParams.enableAttrInterPred
-      && attr_aps.dual_motion_field_flag
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
     tmp.swap(attrInterPredParams.compensatedPointCloud);
   }

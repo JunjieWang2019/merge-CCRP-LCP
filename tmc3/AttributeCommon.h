@@ -81,6 +81,11 @@ struct AttributeInterPredParams: InterPredParams {
     bool mcap_to_rec_geom_flag
   );
 
+  void buildCompensated(
+    const ParameterSetMotion& mvPS,
+    bool mcap_to_rec_geom_flag
+  );
+
   void prepareDecodeMotion(
     const ParameterSetMotion& mvPS,
     const GeometryParameterSet& gps,
@@ -93,9 +98,18 @@ struct AttributeInterPredParams: InterPredParams {
     EntropyDecoder& arithmeticDecoder,
     bool mcap_to_rec_geom_flag
   );
+
+  void extractMotionForSlab(int startX, int thickness)
+  {
+    dualMotion = MVField(
+        mvField,
+        point_t(startX, 0, 0),
+        point_t(startX + thickness, INT32_MAX, INT32_MAX));
+  }
 protected:
+  MVField  dualMotion;
   MSOctree mSOctreeCurr;
-  std::vector<std::pair<PUtree, int> > motionPUTrees;
+  std::vector<std::pair<int/*dualMotion's puNodeIdx*/, int/*mSOctreeCurr's nodeIdx*/> > motionPUTrees;
 };
 
 //----------------------------------------------------------------------------

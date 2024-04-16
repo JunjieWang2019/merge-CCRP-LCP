@@ -69,10 +69,106 @@ struct EncodeMotionSearchParams;
 int roundIntegerHalfInf(const double x);
 
 //----------------------------------------- LOCAL MOTION -------------------
-struct PUtree {
-  std::vector<bool> popul_flags;
-  std::vector<bool> split_flags;
-  std::vector<point_t> MVs;
+struct MVField {
+  static constexpr uint64_t kMaskX = 0x0FFFFF0000000000ULL;
+  static constexpr uint64_t kMaskY = 0x000000FFFFF00000ULL;
+  static constexpr uint64_t kMaskZ = 0x00000000000FFFFFULL;
+  static constexpr int kOffsetX = 40;
+  static constexpr int kOffsetY = 20;
+  static constexpr int kOffsetZ = 0;
+
+  static constexpr uint32_t kNotSetMVIdx = 0xFFFFFF;
+
+  struct PUNode {
+    PUNode()
+      : _mvIdx(kNotSetMVIdx)
+      , _childsMask(0)
+    {}
+    // should be 16 bytes aligned
+    // TODO: use masks getter/setters to ensure bit order
+    struct {
+      union {
+        uint32_t _firstChildIdx:24; // if _childsMask != 0
+        uint32_t _mvIdx:24; // if _childsMask == 0, kNotSetMVIdx means not set
+      };
+      uint32_t _childsMask:8; // 0 means leaf node or not set
+    };
+    struct {
+      uint32_t _reserved:27;
+      uint32_t _puSizeLog2:5;
+    };
+    uint64_t _packedPos0; // z | y << 20 | x << 40
+
+    point_t pos0() const
+    { return point_t {
+        int32_t((_packedPos0 & kMaskX) >> kOffsetX),
+        int32_t((_packedPos0 & kMaskY) >> kOffsetY),
+        int32_t((_packedPos0 & kMaskZ) >> kOffsetZ)};
+    }
+
+    void set_pos0(point_t _pos)
+    {
+      _packedPos0 =
+        (int64_t(_pos[0]) << kOffsetX)
+        + (int64_t(_pos[1]) << kOffsetY)
+        + (int64_t(_pos[2]) << kOffsetZ);
+    }
+  };
+  //uint32_t puSizeLog2;
+  uint32_t numRoots;
+  // (numRoots PUs in first layer)
+  std::vector<PUNode> puNodes;
+  // mvPool stores the motion vectors for child Nodes
+  std::vector<point_t> mvPool;
+
+  MVField() = default;
+  MVField(const MVField&) = default;
+  MVField(MVField&&) = default;
+  MVField(const MVField& from, point_t begin, point_t end)
+  {
+    puNodes.reserve(from.puNodes.size());
+    mvPool.reserve(from.mvPool.size());
+
+    auto pos1 = end - 1;
+    auto pos0 = begin;
+    // For now taking entire node
+    // TODO: generate new by only take the intersection ? => not so easy
+    for (int i = 0; i < from.numRoots; ++i) {
+      const auto& nodeFrom = from.puNodes[i];
+      auto nodePos0 = nodeFrom.pos0();
+      auto nodePos1 = nodePos0 + ((1 << nodeFrom._puSizeLog2) - 1);
+      int intersect = 0;
+      for (int k=0; k < 3; ++k) {
+        intersect |= std::min(nodePos1[k], pos1[k]) - std::max(nodePos0[k], pos0[k]);
+      }
+      if (intersect >= 0)
+        puNodes.push_back(nodeFrom);
+    }
+    numRoots = puNodes.size();
+
+    int N = puNodes.size();
+    // TODO: depth first would be better
+    for (int i = 0; i < N; ++i) {
+      auto& node = puNodes[i];
+      if (node._childsMask) {
+        uint32_t childIdxFrom = node._firstChildIdx;
+        node._firstChildIdx = N;
+        for (int c = 0; c < 8; ++c) {
+          if (node._childsMask & (1 << c)) {
+            const auto& childNodeFrom =  from.puNodes[childIdxFrom++];
+            puNodes.push_back(childNodeFrom);
+            ++N;
+          }
+        }
+      } else {
+        uint32_t mvIdxFrom = node._mvIdx;
+        node._mvIdx = mvPool.size();
+        mvPool.push_back(from.mvPool[mvIdxFrom]);
+      }
+    }
+  }
+  MVField & operator =(const MVField&) = default;
+  MVField & operator =(MVField&&) = default;
 };
 
 int deriveMotionMaxPrefixBits(int window_size);
@@ -84,10 +180,21 @@ struct LPUwindow {
 };
 
 
+void splitPU_MC(
+  const MSOctree& mSOctree,
+  PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
+  const ParameterSetMotion& param,
+  point_t nodeSizeLog2,
+  PCCPointSet3* compensatedPointCloud,
+  bool recolor = false);
+
 void encode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
-  PUtree* local_PU_tree,
+  MVField& mvField,
+  uint32_t puNodeIdx,
   const ParameterSetMotion& param,
   int nodeSize,
   EntropyEncoder* arithmeticEncoder,
@@ -97,20 +204,13 @@ void encode_splitPU_MV_MC(
   int S2 = -1,
   bool recolor = false);
 
-void extracPUsubtree(
-  const ParameterSetMotion& param,
-  PUtree* local_PU_tree,
-  int block_size,
-  int& pos_fs,
-  int& pos_fp,
-  int& pos_MV,
-  PUtree* destination_tree);
-
 // motion decoder
 
 void decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
   const ParameterSetMotion& param,
   int nodeSize,
   EntropyDecoder* arithmeticDecoder,
@@ -175,15 +275,14 @@ struct MSOctree {
 
   double
   find_motion(
-    const EncodeMotionSearchParams& msParams,
+    const EncodeMotionSearchParams& param,
     const ParameterSetMotion& mvPS,
     const MotionEntropyEstimate& motionEntropy,
-    const MSOctree& mSOctreeOrig,
-    uint32_t mSOctreeOrigNodeIdx,
     const PCCPointSet3& Block0,
     const point_t& xyz0,
     int local_size,
-    PUtree* local_PU_tree
+    MVField& mvField,
+    uint32_t puNodeIdx // node Idx in mvField
   ) const;
 
   void
@@ -223,7 +322,8 @@ motionSearchForNode(
   const ParameterSetMotion& mvPS,
   int nodeSize,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree,
+  MVField& mvField,
+  uint32_t puNodeIdx, // node Idx in mvField
   bool flagNonPow2 = false,
   int S = -1,
   int S2 = -1
@@ -235,6 +335,8 @@ struct InterPredParams {
   PCCPointSet3 referencePointCloud;
   MSOctree mSOctreeRef;
   PCCPointSet3 compensatedPointCloud;
+  // Motion
+  MVField mvField;
   // TMP hack
   mutable std::vector<int64_t> mortonCode_mc;
   mutable std::vector<int> attributes_mc;

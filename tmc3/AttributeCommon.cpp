@@ -94,10 +94,14 @@ AttributeInterPredParams::findMotion(
     fifo_next.clear();
   }
 
+  dualMotion.puNodes.reserve(fifo.size() * 8);
+  dualMotion.mvPool.reserve(fifo.size() * 8);
+  dualMotion.numRoots = fifo.size();
+  dualMotion.puNodes.resize(fifo.size());
   motionPUTrees.resize(fifo.size());
   // build root PU_trees
   const int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
-  int i = 0;
+  int currPUIdx = 0;
   while (!fifo.empty()) {
     auto& node = mSOctreeCurr.nodes[fifo.front()];
 
@@ -108,11 +112,12 @@ AttributeInterPredParams::findMotion(
     node0.mSOctreeNodeIdx = mSOctreeCurr.nodeIdx(node.pos0, nodeSizeLog2);//fifo.front();
     node0.hasMotion = motionSearchForNode(mSOctreeCurr, mSOctree, &node0,
       msParams, mvPS, 1 << nodeSizeLog2, &arithmeticEncoder,
-      &motionPUTrees[i].first);
-    motionPUTrees[i].second = fifo.front();
+      dualMotion, currPUIdx);
+    motionPUTrees[currPUIdx].first = currPUIdx;
+    motionPUTrees[currPUIdx].second = fifo.front();
 
     fifo.pop_front();
-    ++i;
+    ++currPUIdx;
   }
 }
 
@@ -147,28 +152,87 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
       node0.pos = node.pos0 >> nodeSizeLog2;
       node0.isCompensated = false;
       assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
-      auto& local_PU_tree = currentPUTrees[i].first;
+      int puNodeIdx = currentPUTrees[i].first;
 
       encode_splitPU_MV_MC(mSOctree,
-        &node0, &local_PU_tree, mvPS, 1 << nodeSizeLog2,
+        &node0, dualMotion, puNodeIdx, mvPS, 1 << nodeSizeLog2,
         &arithmeticEncoder, &compensatedPointCloud,
         false, -1, -1, mcap_to_rec_geom_flag);
 
       if (!node0.isCompensated && 1 << nodeSizeLog2 > mvPS.motion_min_pu_size) {
-        node0.pos_fs = 1;
-        node0.pos_fp = 0;
-        node0.pos_MV = 0;
+        auto& puNode = dualMotion.puNodes[puNodeIdx];
+        int childPUIdx = puNode._firstChildIdx;
         for (int j = 0; j < 8; ++j) {
-          //assert(local_PU_tree.popul_flags[node0.pos_fp] && it->child[j]
-          //        || !local_PU_tree.popul_flags[node0.pos_fp] && !it->child[j]);
-          if (local_PU_tree.popul_flags[node0.pos_fp++]) {
+          if (puNode._childsMask & (1<<j)) {
             assert(1 << childSizeLog2 >= mvPS.motion_min_pu_size);
             // populated
             nextLevelPUTrees.emplace_back(
-              std::make_pair(PUtree(), int(node.child[j])));
-            extracPUsubtree(
-              mvPS, &local_PU_tree, 1 << childSizeLog2, node0.pos_fs,
-              node0.pos_fp, node0.pos_MV, &nextLevelPUTrees.back().first);
+              std::make_pair(childPUIdx++, int(node.child[j])));
+          }
+        }
+      }
+    }
+    currentPUTrees.clear();
+    std::swap(currentPUTrees, nextLevelPUTrees);
+    nodeSizeLog2--;
+  }
+}
+
+//----------------------------------------------------------------------------
+
+void
+AttributeInterPredParams::buildCompensated(
+  const ParameterSetMotion& mvPS,
+  bool mcap_to_rec_geom_flag
+) {
+  const MSOctree& mSOctree = mSOctreeRef;
+
+  if (!mcap_to_rec_geom_flag) {
+    compensatedPointCloud.clear();
+    mortonCode_mc.clear();
+    attributes_mc.clear();
+  }
+
+  int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
+  decltype(motionPUTrees) currentPUTrees;
+  currentPUTrees.reserve(dualMotion.numRoots);
+  for (int i = 0; i < dualMotion.numRoots; ++i) {
+    currentPUTrees.emplace_back(std::make_pair(i, -1/*not used when not mcap*/));
+  }
+  // Note : CurrentPUTrees might not be necessary and all nodes
+  //   be processed with successive node indexes (because of breadth first
+  //   creation and traversal)  -> TODO: to be checked...
+  while (currentPUTrees.size()) {
+    // coding (in morton order for simpler test)
+    decltype(currentPUTrees) nextLevelPUTrees;
+    nextLevelPUTrees.reserve(currentPUTrees.size());
+    int childSizeLog2 = nodeSizeLog2 - 1;
+    for (int i = 0; i < currentPUTrees.size(); ++i) {
+      int puNodeIdx = currentPUTrees[i].first;
+      auto& node = dualMotion.puNodes[puNodeIdx];
+      PCCOctree3Node node0;
+      node0.start = -1;
+      node0.end = -1;
+      node0.pos = node.pos0() >> nodeSizeLog2;
+      node0.isCompensated = false;
+      //assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
+      assert(nodeSizeLog2 == node._puSizeLog2);
+
+      splitPU_MC(mSOctree,
+        &node0, dualMotion, puNodeIdx, mvPS, nodeSizeLog2,
+        &compensatedPointCloud,
+        mcap_to_rec_geom_flag);
+
+      if (!node0.isCompensated && 1 << childSizeLog2 >= mvPS.motion_min_pu_size) {
+        auto& puNode = dualMotion.puNodes[puNodeIdx];
+        assert(puNode._childsMask);
+        int childPUIdx = puNode._firstChildIdx;
+        for (int j = 0; j < 8; ++j) {
+          if (puNode._childsMask & (1<<j)) {
+            assert(1 << childSizeLog2 >= mvPS.motion_min_pu_size);
+            // populated
+            nextLevelPUTrees.emplace_back(
+              std::make_pair(childPUIdx++, -1/*not used when not mcap*/));
           }
         }
       }
@@ -235,8 +299,15 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
     fifo_next.clear();
   }
 
+  dualMotion.puNodes.reserve(fifo.size() * 8);
+  dualMotion.mvPool.reserve(fifo.size() * 8);
+  dualMotion.numRoots = fifo.size();
+  dualMotion.puNodes.resize(fifo.size());
+  motionPUTrees.resize(fifo.size());
+
   int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
 
+  int currPUIdx = 0;
   while(1 << (nodeSizeLog2 + 1) > mvPS.motion_min_pu_size) {
     while (!fifo.empty()) {
       // coding (in morton order for simpler test)
@@ -250,19 +321,32 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
       assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
 
       decode_splitPU_MV_MC(mSOctree,
-        &node0, mvPS, 1 << nodeSizeLog2,
+        &node0, dualMotion, currPUIdx, mvPS, 1 << nodeSizeLog2,
         &arithmeticDecoder, &compensatedPointCloud,
         false, -1, -1, mcap_to_rec_geom_flag);
 
       if (!node0.isCompensated && 1 << nodeSizeLog2 > mvPS.motion_min_pu_size) {
+        uint32_t occupancy = 0;
         for (int i = 0; i < 8; ++i) {
           if (node.child[i]) {
             // populated
+            occupancy |= 1 << i;
             fifo_next.push_back(node.child[i]);
           }
         }
+        assert(occupancy);
+        auto& puNode = dualMotion.puNodes[currPUIdx];
+        puNode._childsMask = occupancy;
+        int numOccupied = popcnt(occupancy);
+        puNode._firstChildIdx = dualMotion.puNodes.size();
+        for (int puChildIdx = 0; puChildIdx < numOccupied; ++puChildIdx) {
+          dualMotion.puNodes.emplace_back();
+        }
+      } else if (!node0.isCompensated) {
+        throw std::runtime_error("should not happen");
       }
       fifo.pop_front();
+      ++currPUIdx;
     }
     std::swap(fifo, fifo_next);
     nodeSizeLog2--;

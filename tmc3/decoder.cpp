@@ -941,9 +941,11 @@ PCCTMC3Decoder3::processNextSlabAttributes(
     auto& clock_user = clock_user_attr[attrIdx];
     clock_user.start();
 
-    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
+    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
       attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, slabPointCloud);
-
+    } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {
+      attrInterPredParams.extractMotionForSlab(xStartSlab, _sps->localized_attributes_slab_thickness_minus1 + 1);
+    }
     _attrDecoder[attrIdx]->decodeSlab(
       *_sps, *_gps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
       _params.minGeomNodeSizeLog2, nullptr, 0, slabPointCloud,

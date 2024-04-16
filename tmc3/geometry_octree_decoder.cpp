@@ -521,6 +521,7 @@ decodeGeometryOctree(
 
   PCCPointSet3& predPointCloud = interPredParams.referencePointCloud;
   MSOctree& mSOctree = interPredParams.mSOctreeRef;
+  auto& mvField = interPredParams.mvField;
   if (isInter) {
     int log2MinPUSize = ilog2(uint32_t(gps.motion.motion_min_pu_size - 1)) + 1;
     predPointCloud = refFrame->cloud;
@@ -707,6 +708,19 @@ decodeGeometryOctree(
       arithmeticDecoder.flushAndRestart();
     }
 
+    int currPUIdx = 0;
+    if (isInter) {
+      if (nodeSizeLog2[0] == log2MotionBlockSize) {
+        // TODO: allocate motion field according to number of nodes
+        uint32_t numNodes = fifo.end() - fifo.begin();
+        mvField.puNodes.reserve(numNodes * 8); // arbitrary value.
+        mvField.mvPool.reserve(numNodes * 8); // arbitrary value.
+        // allocate all the PU roots
+        mvField.numRoots = numNodes;
+        mvField.puNodes.resize(numNodes);
+      }
+    }
+
     //// reset the idcm eligibility mask at the start of each level to
     //// support multiple streams
     //auto idcmEnableMask = /*rotateRight(idcmEnableMaskInit, depth)*/ 0; //NOTE[FT]: still 0
@@ -798,13 +812,15 @@ decodeGeometryOctree(
         if (isInter) {
 
           if (nodeSizeLog2[0] == log2MotionBlockSize) {
+            node0.mvFieldNodeIdx = currPUIdx++;
             node0.hasMotion = true;
           }
 
           // decode LPU/PU/MV
           if (node0.hasMotion && !node0.isCompensated) {
             decode_splitPU_MV_MC(mSOctree,
-              &node0, gps.motion, nodeSize,
+              &node0, mvField, node0.mvFieldNodeIdx,
+              gps.motion, nodeSize,
               &arithmeticDecoder, &compensatedPointCloud,
               flagNonPow2, S, S2);
           }
@@ -981,6 +997,19 @@ decodeGeometryOctree(
       // population count of occupancy for IDCM
       int numOccupied = popcnt(occupancy);
 
+      if(!tubeIndex && !nodeSliceIndex && isInter) {
+        // create motion field child nodes if needed
+        if (node0.hasMotion && !node0.isCompensated) {
+          auto& puNode = mvField.puNodes[node0.mvFieldNodeIdx];
+          assert(occupancy);
+          puNode._childsMask = occupancy;
+          puNode._firstChildIdx = mvField.puNodes.size();
+          for (int puChildIdx = 0; puChildIdx < numOccupied; ++puChildIdx) {
+            mvField.puNodes.emplace_back();
+          }
+        }
+      }
+
       //int predFailureCount = popcnt(uint8_t(occupancy ^ predOccupancyReal));
       if (tubeIndex && nodeSliceIndex && isLeafNode(effectiveChildSizeLog2)) {
         int slabIdx;
@@ -1105,6 +1134,17 @@ decodeGeometryOctree(
             //local motion PU inheritance
             child.hasMotion = node0.hasMotion;
             child.isCompensated = node0.isCompensated;
+
+            if (node0.hasMotion && !node0.isCompensated) {
+              auto& puNode = mvField.puNodes[node0.mvFieldNodeIdx];
+              assert(puNode._childsMask);
+              assert(puNode._firstChildIdx != MVField::kNotSetMVIdx);
+              child.mvFieldNodeIdx = puNode._firstChildIdx;
+              for (int j = 0; j < childIndex; ++j)
+                if (puNode._childsMask & (1 << j))
+                  ++child.mvFieldNodeIdx;
+            }
+
 
             //if (isInter && /*!gps.geom_angular_mode_enabled_flag*/ true)
             //  child.idcmEligible = isDirectModeEligible_Inter(

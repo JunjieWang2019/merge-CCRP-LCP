@@ -621,6 +621,9 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
     auto& attr_enc = params->attr[attrIdx];
     const auto& label = attr_sps.attributeLabel;
 
+    if (!attr_aps.dual_motion_field_flag)
+      continue;
+
     auto& motionAPS = attr_aps.motion;
     auto& motionAEnc = attr_enc.motion;
 
@@ -767,7 +770,7 @@ PCCTMC3Encoder3::compressPartition(
   currSlabIdx = -1;
   slabThickness = params->sps.localized_attributes_slab_thickness_minus1 + 1;
 
-  numPointsPerSlab.clear();
+  startXAndNumPointsPerSlab.clear();
   origin = _originInCodingCoords + _sliceOrigin;
   targetToSourceScaleFactor = 1.0 / _srcToCodingScale;
   bBoxOrigin = originPartCloud.computeBoundingBox();
@@ -877,11 +880,13 @@ PCCTMC3Encoder3::compressPartition(
     uint32_t startIdx = 0;
     PCCPointSet3 slabPointCloud;
     if (!params->sps.localized_attributes_enabled_flag) {
-      assert(numPointsPerSlab.empty());
-      numPointsPerSlab.push_back(pointCloud.getPointCount());
+      assert(startXAndNumPointsPerSlab.empty());
+      startXAndNumPointsPerSlab.push_back(std::make_pair(0,pointCloud.getPointCount()));
     }
 
-    for (auto numPts : numPointsPerSlab) {
+    for (const auto& startXAndNumPts : startXAndNumPointsPerSlab) {
+      int startX = startXAndNumPts.first;
+      int numPts = startXAndNumPts.second;
       if (params->sps.localized_attributes_enabled_flag) {
         slabPointCloud.clear();
         slabPointCloud.appendPartition(pointCloud, startIdx, startIdx+numPts);
@@ -911,6 +916,8 @@ PCCTMC3Encoder3::compressPartition(
           // local motion search performed by slab
           if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
             attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, slabPointCloud);
+          } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {
+            attrInterPredParams.extractMotionForSlab(startX, _sps->localized_attributes_slab_thickness_minus1 + 1);
           }
           // local attributes coding
           attrEncoder[attrIdx]->encodeSlab(
@@ -1045,6 +1052,8 @@ PCCTMC3Encoder3::processNextSlabAttributes(
       // local motion search performed by slab
       if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
         attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, slabPointCloud);
+      } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {
+        attrInterPredParams.extractMotionForSlab(xStartSlab, slabThickness);
       }
       // local attributes coding
       attrEncoder[attrIdx]->encodeSlab(
@@ -1056,7 +1065,7 @@ PCCTMC3Encoder3::processNextSlabAttributes(
   } else if (type == Type::kGlobalEncoder) { // encoder
     // assume point order will not change before attributes processing
     // register slab for size for later processing
-    numPointsPerSlab.push_back(slabPointCloud.getPointCount());
+    startXAndNumPointsPerSlab.push_back(std::make_pair(0, slabPointCloud.getPointCount()));
   }
   clock_user_geom.start();
 }

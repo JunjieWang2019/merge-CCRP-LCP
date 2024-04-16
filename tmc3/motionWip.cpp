@@ -425,56 +425,49 @@ deriveMotionMaxSuffixBits(int window_size)
 }
 
 //----------------------------------------------------------------------------
-void
-extracPUsubtree(
-  const ParameterSetMotion& param,
-  PUtree* local_PU_tree,
-  int block_size,
-  int& pos_fs,
-  int& pos_fp,
-  int& pos_MV,
-  PUtree* destination_tree)
-{
-  // non-split terminal case
-  if (
-    block_size <= param.motion_min_pu_size
-    || !local_PU_tree->split_flags[pos_fs]) {
-    if (block_size > param.motion_min_pu_size) {
-      destination_tree->split_flags.push_back(0);
-      pos_fs++;
-    }
 
-    destination_tree->MVs.push_back(local_PU_tree->MVs[pos_MV]);
-    pos_MV++;
+void
+splitPU_MC(
+  const MSOctree& mSOctree,
+  PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
+  const ParameterSetMotion& param,
+  point_t nodeSizeLog2,
+  PCCPointSet3* compensatedPointCloud,
+  bool recolor)
+{
+  const int node_size = 1 << nodeSizeLog2[0];
+
+  auto& puNode = mvField.puNodes[puNodeIdx];
+  // --------------  non-split / terminal case  ----------------
+  if (node_size <= param.motion_min_pu_size || !puNode._childsMask) {
+
+    // use MV
+    point_t MV = mvField.mvPool[puNode._mvIdx];
+
+    point_t MVd = MV;
+
+    if (!recolor) {
+      mSOctree.apply_motion(MVd, node0, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+    } else {
+      mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
+    }
+    node0->isCompensated = true;
     return;
   }
 
-  // split case
-  destination_tree->split_flags.push_back(1);
-  pos_fs++;
-
-  // loop on 8 children
-  for (int s = 0; s < 8; s++) {
-    if (local_PU_tree->popul_flags[pos_fp]) {  // child populated
-      destination_tree->popul_flags.push_back(1);
-      pos_fp++;
-
-      extracPUsubtree(
-        param, local_PU_tree, block_size >> 1, pos_fs, pos_fp, pos_MV,
-        destination_tree);
-    } else {  // child not pouplated
-      destination_tree->popul_flags.push_back(0);
-      pos_fp++;
-    }
-  }
+  // --------------- split case ----------------------
 }
 
+//----------------------------------------------------------------------------
 
 void
 encode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
-  PUtree* local_PU_tree,
+  MVField& mvField,
+  uint32_t puNodeIdx,
   const ParameterSetMotion& param,
   int nodeSize,
   EntropyEncoder* arithmeticEncoder,
@@ -486,14 +479,15 @@ encode_splitPU_MV_MC(
 {
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
 
+  auto& puNode = mvField.puNodes[puNodeIdx];
   // --------------  non-split / terminal case  ----------------
-  if (nodeSize <= param.motion_min_pu_size || !local_PU_tree->split_flags[0]) {
+  if (nodeSize <= param.motion_min_pu_size || !puNode._childsMask) {
     if (nodeSize > param.motion_min_pu_size) {
       motionEncoder.encodeSplitPu(0);
     }
 
     // encode MV
-    point_t MV = local_PU_tree->MVs[0];
+    point_t MV = mvField.mvPool[puNode._mvIdx];
     motionEncoder.encodeVector(MV);
 
     point_t MVd = MV;
@@ -517,6 +511,8 @@ void
 decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
   const ParameterSetMotion& param,
   int nodeSize,
   EntropyDecoder* arithmeticDecoder,
@@ -526,7 +522,14 @@ decode_splitPU_MV_MC(
   int S2,
   bool recolor)
 {
+  // Note:
+  // geometry mvField is stored only for attributes and local attributes processing
+  // when attributes do not use dual motion
   MotionEntropyDecoder motionDecoder(arithmeticDecoder);
+
+  auto& puNode = mvField.puNodes[puNodeIdx];
+  puNode.set_pos0(node0->pos * nodeSize);
+  puNode._puSizeLog2 = ilog2(uint32_t(nodeSize - 1)) + 1; // TODO: check if we need the true size at some point or clean
 
   // decode split flag
   bool split = false;
@@ -539,6 +542,9 @@ decode_splitPU_MV_MC(
     point_t MVd = 0.;
     motionDecoder.decodeVector(&MV);
     MVd = MV;
+    puNode._childsMask = 0;
+    puNode._mvIdx = mvField.mvPool.size();
+    mvField.mvPool.emplace_back(MVd);
 
     if (!recolor) {
       mSOctree.apply_motion(MVd, node0, nodeSize, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
@@ -988,12 +994,11 @@ MSOctree::find_motion(
   const EncodeMotionSearchParams& param,
   const ParameterSetMotion& mvPS,
   const MotionEntropyEstimate& motionEntropy,
-  const MSOctree& mSOctreeOrig,
-  uint32_t mSOctreeOrigNodeIdx,
   const PCCPointSet3& Block0,
   const point_t& xyz0,
   int local_size,
-  PUtree* local_PU_tree) const
+  MVField& mvField,
+  uint32_t puNodeIdx) const // node Idx in mvField
 {
   //if (!Window.size())
   //  return DBL_MAX;
@@ -1206,10 +1211,13 @@ MSOctree::find_motion(
 
   cost_NoSplit = best_d[0];
 
+  auto node = &mvField.puNodes[puNodeIdx];
 
   // ---------------------------- test split --------------------
+  auto numPUsBeforeSplit = mvField.puNodes.size();
+  auto numMVsBeforeSplit = mvField.mvPool.size();
+
   double cost_Split = DBL_MAX;
-  PUtree* Split_PU_tree = new PUtree;  // local split tree
 
   if (local_size > mvPS.motion_min_pu_size && Block0.size() >= 8) {
     // condition on number of points for search acceleration
@@ -1231,37 +1239,68 @@ MSOctree::find_motion(
 
     PCCPointSet3 Block1;
     Block1.reserve(Block0.size());
-    std::vector<int32_t> blockIndices;
-    blockIndices.reserve(Block0.size());
 
-    for (int t = 0; t < 8; t++) {
-      // child PU coordinates
-      point_t xyz1 = list_xyz[t];
-      // block for child PU
-      point_t xyz1High = xyz1 + local_size1;
-      blockIndices.resize(0);
-      for (const auto& b : Block0) {
-        // TODO: try to use formula in nearestNeighbour() to avoid
-        // comparisons and branching operations
-        if (b[0] >= xyz1[0] && b[0] < xyz1High[0]
-            && b[1] >= xyz1[1] && b[1] < xyz1High[1]
-            && b[2] >= xyz1[2] && b[2] < xyz1High[2])
-          blockIndices.push_back(b.getIndex());
+    // NOTE: points shall be already ordered
+    //       and all belonging to the current node
+    std::array<int32_t, 8> childCounts = {};
+    // child idx
+    int childIdx = 0;
+    // child PU coordinates
+    point_t xyz1 = list_xyz[childIdx];
+    // block for child PU
+    point_t xyz1High = xyz1 + local_size1;
+    // TODO: might be simplified / accelerated
+    // by dichotomic search or suited comparizon according to index
+    // => childIdx outside and index in block0
+    for (const auto& b : Block0) {
+      while (childIdx < 8 && (
+        b[2] < xyz1[2] || b[2] >= xyz1High[2]
+        || b[1] < xyz1[1] || b[1] >= xyz1High[1]
+        || b[0] < xyz1[0] || b[0] >= xyz1High[0]
+      )) {
+        ++childIdx;
+        xyz1 = list_xyz[childIdx];
+        xyz1High = xyz1 + local_size1;
       }
-      cost_Split += 1.0;  // the cost due to not coding the occupancy with inter pred
+      ++childCounts[childIdx];
+    }
 
-      if (!blockIndices.size()) {  // empty PU
-        Split_PU_tree->popul_flags.push_back(0);
+    node->_firstChildIdx = numPUsBeforeSplit;
+    node->_childsMask = 0;
+    for (int childIdx = 0; childIdx < 8; childIdx++) {
+      if(childCounts[childIdx]) {
+        node->_childsMask += 1 << childIdx;
+        // add node for current pu
+        mvField.puNodes.emplace_back();
+        auto& childNode = mvField.puNodes.back();
+        // address may have changed with emplace_back()
+        node = &mvField.puNodes[puNodeIdx];
+        xyz1 = list_xyz[childIdx];
+        childNode.set_pos0(xyz1);
+        childNode._puSizeLog2 = node->_puSizeLog2 - 1;
+      }
+    }
+    assert(node->_childsMask);
+
+    int childStart = 0;
+    uint32_t childNodeIdx = node->_firstChildIdx;
+    for (int childIdx = 0; childIdx < 8; childIdx++) {
+      cost_Split += 1.0;  // the cost due to not coding the occupancy with inter pred
+      if(!childCounts[childIdx]) {  // empty PU
         continue;
       }
-      Split_PU_tree->popul_flags.push_back(1);
-
       Block1.resize(0);
-      Block1.appendPartition(Block0,blockIndices);
+      Block1.appendPartition(
+        Block0, childStart, childStart + childCounts[childIdx]);
+      childStart += childCounts[childIdx];
 
-      uint32_t childNodeIdx = mSOctreeOrig.nodes[mSOctreeOrigNodeIdx].child[t];
+      xyz1 = list_xyz[childIdx];
 
-      cost_Split += find_motion(param, mvPS, motionEntropy, mSOctreeOrig, childNodeIdx, Block1, xyz1, local_size1, Split_PU_tree);
+      cost_Split += find_motion(
+        param, mvPS, motionEntropy, Block1, xyz1, local_size1, mvField,
+        childNodeIdx);
+
+      ++childNodeIdx;
     }
   }
 
@@ -1274,29 +1313,17 @@ MSOctree::find_motion(
   cost_Split += param.lambda * motionEntropy.estimateSplit(true);
 
   if (local_size <= mvPS.motion_min_pu_size || cost_NoSplit <= cost_Split) {  // no split
-    // push non split flag, only if size>size_min
-    if (local_size > mvPS.motion_min_pu_size) {
-      local_PU_tree->split_flags.push_back(0);
-    }
-    // push MV
-    local_PU_tree->MVs.push_back(bestV_NoSplit);
-
-    delete Split_PU_tree;
+    mvField.puNodes.resize(numPUsBeforeSplit);
+    mvField.mvPool.resize(numMVsBeforeSplit + 1);
+    // address may have changed
+    node = &mvField.puNodes[puNodeIdx];
+    //node._firstChildIdx = 0;
+    node->_mvIdx = numMVsBeforeSplit;
+    node->_childsMask = 0; // not split
+    mvField.mvPool.back() = bestV_NoSplit;
     return cost_NoSplit;
   }
   else {
-    // split
-    local_PU_tree->split_flags.push_back(1);  // push split PU flag
-
-    // append Split_PU_tree to  local_PU_tree
-    for (const auto& f : Split_PU_tree->popul_flags)
-      local_PU_tree->popul_flags.push_back(f);
-    for (const auto& f : Split_PU_tree->split_flags)
-      local_PU_tree->split_flags.push_back(f);
-    for (const auto& v : Split_PU_tree->MVs)
-      local_PU_tree->MVs.push_back(v);
-
-    delete Split_PU_tree;
     return cost_Split;
   }
 }
@@ -1312,7 +1339,8 @@ motionSearchForNode(
   const ParameterSetMotion& mvPS,
   int nodeSize,
   EntropyEncoder* arithmeticEncoder,
-  PUtree* local_PU_tree,
+  MVField& mvField,
+  uint32_t puNodeIdx, // node Idx in mvField
   bool flagNonPow2,
   int S,
   int S2)
@@ -1340,9 +1368,13 @@ motionSearchForNode(
     }
   }
 
+  auto& node = mvField.puNodes[puNodeIdx];
+  node.set_pos0(pos);
+  node._puSizeLog2 = ilog2(uint32_t(nodeSize - 1)) + 1; // TODO: check if we need the true size at some point or clean
+
   // MV search
   mSOctree.find_motion(
-    param, mvPS, mcEstimate, mSOctreeOrig, mSOctreeOrigNodeIdx, Block0, pos, nodeSize, local_PU_tree);
+    param, mvPS, mcEstimate, Block0, pos, nodeSize, mvField, puNodeIdx);
 
   return true;
 }
