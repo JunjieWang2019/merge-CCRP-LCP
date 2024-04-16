@@ -68,7 +68,7 @@ AttributeInterPredParams::findMotion(
   mSOctreeCurr = MSOctree(
     &pointCloud, {}, ilog2(uint32_t(std::min(
       mvPS.motion_min_pu_size,
-      gbh.trisoupNodeSize(gps)) - 1)) + 1);
+      gps.trisoup_enabled_flag ? gbh.trisoupNodeSize(gps) : INT32_MAX) - 1)) + 1);
   motionPUTrees.clear();
 
   auto& fifo = mSOctreeCurr.a;
@@ -195,7 +195,7 @@ AttributeInterPredParams::prepareDecodeMotion(
   mSOctreeCurr = MSOctree(
     &pointCloud, {}, ilog2(uint32_t(std::min(
       mvPS.motion_min_pu_size,
-      gbh.trisoupNodeSize(gps)) - 1)) + 1);
+      gps.trisoup_enabled_flag ? gbh.trisoupNodeSize(gps) : INT32_MAX) - 1)) + 1);
 }
 
 //----------------------------------------------------------------------------
