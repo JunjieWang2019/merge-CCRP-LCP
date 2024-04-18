@@ -180,13 +180,15 @@ struct LPUwindow {
 };
 
 
-void splitPU_MC(
+void bounded_splitPU_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   MVField& mvField,
   uint32_t puNodeIdx,
   const ParameterSetMotion& param,
   point_t nodeSizeLog2,
+  point_t boundPos0,
+  point_t boundPos1,
   PCCPointSet3* compensatedPointCloud,
   bool recolor = false);
 
@@ -287,9 +289,10 @@ struct MSOctree {
 
   void
   apply_motion(
+    const point_t currNodePos0,
+    const point_t currNodePos1,
     point_t Mvd,
     PCCOctree3Node* node0,
-    int nodeSizeLog2,
     PCCPointSet3* compensatedPointCloud,
     uint32_t depthMax = UINT32_MAX,
     bool flagNonPow2 = false,

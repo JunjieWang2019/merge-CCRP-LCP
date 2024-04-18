@@ -427,13 +427,15 @@ deriveMotionMaxSuffixBits(int window_size)
 //----------------------------------------------------------------------------
 
 void
-splitPU_MC(
+bounded_splitPU_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
   MVField& mvField,
   uint32_t puNodeIdx,
   const ParameterSetMotion& param,
   point_t nodeSizeLog2,
+  point_t boundPos0,
+  point_t boundPos1,
   PCCPointSet3* compensatedPointCloud,
   bool recolor)
 {
@@ -448,8 +450,18 @@ splitPU_MC(
 
     point_t MVd = MV;
 
+    auto node0pos0 = node0->pos << nodeSizeLog2[0];
+    auto node0pos1 = (node0->pos + 1 << nodeSizeLog2[0]) - 1;
+
+    for (int k = 0; k < 3; ++k) {
+      node0pos0[k] = std::max(boundPos0[k], node0pos0[k]);
+      node0pos1[k] = std::min(boundPos1[k], node0pos1[k]);
+    }
+
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, nodeSizeLog2[0], compensatedPointCloud, mSOctree.depth);
+      mSOctree.apply_motion(
+        node0pos0, node0pos1,
+        MVd, node0, compensatedPointCloud, mSOctree.depth);
     } else {
       mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
@@ -493,7 +505,10 @@ encode_splitPU_MV_MC(
     point_t MVd = MV;
 
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, nodeSize, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
+      mSOctree.apply_motion(
+        node0->pos * nodeSize,
+        (node0->pos + 1) * nodeSize - 1,
+        MVd, node0, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
     } else {
       mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
@@ -547,7 +562,10 @@ decode_splitPU_MV_MC(
     mvField.mvPool.emplace_back(MVd);
 
     if (!recolor) {
-      mSOctree.apply_motion(MVd, node0, nodeSize, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
+      mSOctree.apply_motion(
+        node0->pos * nodeSize,
+        (node0->pos + 1) * nodeSize - 1,
+        MVd, node0, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
     } else {
       mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
     }
@@ -1381,9 +1399,10 @@ motionSearchForNode(
 
 void
 MSOctree::apply_motion(
-  point_t MVd,
+  const point_t currNodePos0,
+  const point_t currNodePos1,
+  const point_t MVd,
   PCCOctree3Node* node0,
-  int nodeSize,
   PCCPointSet3* compensatedPointCloud,
   uint32_t depthMax,
   bool flagNonPow2,
@@ -1394,9 +1413,8 @@ MSOctree::apply_motion(
   assert(fifo.empty());
   fifo.clear();
   depthMax = std::min(depthMax, depth);
-  const int32_t node0SizeMinus1 = nodeSize - 1;
-  const auto node0Pos0 = (node0->pos * nodeSize) + MVd;
-  const auto node0Pos1 = node0Pos0 + node0SizeMinus1;
+  const auto node0Pos0 = currNodePos0 + MVd;
+  const auto node0Pos1 = currNodePos1 + MVd;
   const auto minNodeSizeMinus1 = (1 << maxDepth - depthMax) - 1;
 
   auto &local = b;

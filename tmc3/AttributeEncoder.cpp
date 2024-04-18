@@ -550,7 +550,7 @@ void AttributeEncoder::encodeSlab(
     } else {
       //if (attr_aps.mcap_to_rec_geom_flag)
       //  attrInterPredParams.compensatedPointCloud = slabPointCloud;
-      attrInterPredParams.buildCompensated(
+      attrInterPredParams.buildCompensatedSlab(
         gps.motion, false/*attr_aps.mcap_to_rec_geom_flag*/);
     }
   }

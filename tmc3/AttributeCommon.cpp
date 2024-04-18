@@ -181,7 +181,7 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
 //----------------------------------------------------------------------------
 
 void
-AttributeInterPredParams::buildCompensated(
+AttributeInterPredParams::buildCompensatedSlab(
   const ParameterSetMotion& mvPS,
   bool mcap_to_rec_geom_flag
 ) {
@@ -218,8 +218,10 @@ AttributeInterPredParams::buildCompensated(
       //assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
       assert(nodeSizeLog2 == node._puSizeLog2);
 
-      splitPU_MC(mSOctree,
+      bounded_splitPU_MC(mSOctree,
         &node0, dualMotion, puNodeIdx, mvPS, nodeSizeLog2,
+        point_t(slabStartX, 0, 0),
+        point_t(slabStartX + slabThickness - 1, INT32_MAX, INT32_MAX),
         &compensatedPointCloud,
         mcap_to_rec_geom_flag);
 
