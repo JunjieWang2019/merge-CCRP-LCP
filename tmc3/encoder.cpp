@@ -906,14 +906,30 @@ PCCTMC3Encoder3::compressPartition(
 
         if (!params->sps.localized_attributes_enabled_flag) {
           // local motion search performed on the whole frame
+          if (attrInterPredParams.enableAttrInterPred
+              && (attr_aps.dual_motion_field_flag
+                  || attr_aps.mcap_to_rec_geom_flag)) {
+            attrInterPredParams.prepareEncodeMotion(
+              attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
+              *_gps, _gbh, pointCloud);
+          }
           if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
             attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, pointCloud);
+          } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {
+            attrInterPredParams.copyMotion();
           }
           attrEncoder[attrIdx]->encode(
             *_sps, *_gps, attr_sps, attr_aps, pointCloud, &payload,
             attrInterPredParams, predCoder);
         } else {
           // local motion search performed by slab
+          if (attrInterPredParams.enableAttrInterPred
+              && (attr_aps.dual_motion_field_flag
+                  || attr_aps.mcap_to_rec_geom_flag)) {
+            attrInterPredParams.prepareEncodeMotion(
+              attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
+              *_gps, _gbh, slabPointCloud);
+          }
           if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
             attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, slabPointCloud);
           } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {
@@ -1050,6 +1066,13 @@ PCCTMC3Encoder3::processNextSlabAttributes(
       clock_user_attr[attrIdx].start();
 
       // local motion search performed by slab
+      if (attrInterPredParams.enableAttrInterPred
+          && (attr_aps.dual_motion_field_flag
+              || attr_aps.mcap_to_rec_geom_flag)) {
+        attrInterPredParams.prepareEncodeMotion(
+          attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
+          *_gps, _gbh, slabPointCloud);
+      }
       if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
         attrInterPredParams.findMotion(params, attr_enc.motion, attr_aps.motion, *_gps, _gbh, slabPointCloud);
       } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {

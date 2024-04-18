@@ -55,6 +55,14 @@ std::vector<int> sortedPointCloud(
 
 //---------------------------------------------------------------------------
 
+void sortedPointCloud(
+  const int attribCount,
+  const PCCPointSet3& pointCloud,
+  const std::vector<int>& indexOrd,
+  std::vector<int>& attributes);
+
+//---------------------------------------------------------------------------
+
 struct MSOctree;
 struct EncoderParams;
 
@@ -86,6 +94,13 @@ struct AttributeInterPredParams: InterPredParams {
     bool mcap_to_rec_geom_flag
   );
 
+  void prepareEncodeMotion(
+    const ParameterSetMotion& mvPS,
+    const GeometryParameterSet& gps,
+    const GeometryBrickHeader& gbh,
+    PCCPointSet3& pointCloud
+  );
+
   void prepareDecodeMotion(
     const ParameterSetMotion& mvPS,
     const GeometryParameterSet& gps,
@@ -107,6 +122,11 @@ struct AttributeInterPredParams: InterPredParams {
         mvField,
         point_t(startX, 0, 0),
         point_t(startX + thickness, INT32_MAX, INT32_MAX));
+  }
+
+  void copyMotion()
+  {
+    dualMotion = mvField;
   }
 protected:
   int slabStartX = -1;

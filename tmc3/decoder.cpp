@@ -625,8 +625,17 @@ PCCTMC3Decoder3::decodeCurrentBrick()
       auto& clock_user = clock_user_attr[attrIdx];
       clock_user.start();
 
-      if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-        attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, _currentPointCloud);
+      if (attrInterPredParams.enableAttrInterPred
+          && (attr_aps.dual_motion_field_flag
+              || attr_aps.mcap_to_rec_geom_flag))
+        attrInterPredParams.prepareDecodeMotion(
+          attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
+          *_gps, _gbh, _currentPointCloud);
+      if (attrInterPredParams.enableAttrInterPred
+          && _gbh.interPredictionEnabledFlag
+          && !attr_aps.dual_motion_field_flag) {
+        attrInterPredParams.copyMotion();
+      }
 
       _attrDecoder[attrIdx]->decode(
         *_sps, *_gps, attr_sps, attr_aps, abh, _gbh.footer.geom_num_points_minus1,
@@ -881,8 +890,12 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   if (!_attrDecoder)
     _attrDecoder = makeAttributeDecoder();
 
-  if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag)
-    attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, _currentPointCloud);
+  if (attrInterPredParams.enableAttrInterPred
+      && (attr_aps.dual_motion_field_flag
+          || attr_aps.mcap_to_rec_geom_flag))
+    attrInterPredParams.prepareDecodeMotion(
+      attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
+      *_gps, _gbh, _currentPointCloud);
 
   clock_user.start();
 
@@ -941,9 +954,16 @@ PCCTMC3Decoder3::processNextSlabAttributes(
     auto& clock_user = clock_user_attr[attrIdx];
     clock_user.start();
 
-    if (attrInterPredParams.enableAttrInterPred && attr_aps.dual_motion_field_flag) {
-      attrInterPredParams.prepareDecodeMotion(attr_aps.motion, *_gps, _gbh, slabPointCloud);
-    } else if (attrInterPredParams.enableAttrInterPred && _gbh.interPredictionEnabledFlag) {
+    if (attrInterPredParams.enableAttrInterPred
+        && (attr_aps.dual_motion_field_flag
+            || attr_aps.mcap_to_rec_geom_flag)) {
+      attrInterPredParams.prepareDecodeMotion(
+        attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
+        *_gps, _gbh, slabPointCloud);
+    }
+    if (attrInterPredParams.enableAttrInterPred
+        && _gbh.interPredictionEnabledFlag
+        && !attr_aps.dual_motion_field_flag) {
       attrInterPredParams.extractMotionForSlab(xStartSlab, _sps->localized_attributes_slab_thickness_minus1 + 1);
     }
     _attrDecoder[attrIdx]->decodeSlab(

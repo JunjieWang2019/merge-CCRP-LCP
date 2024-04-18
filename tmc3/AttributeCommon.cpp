@@ -55,21 +55,9 @@ AttributeInterPredParams::findMotion(
   const GeometryBrickHeader& gbh,
   PCCPointSet3& pointCloud
 ) {
-  if (!gbh.interPredictionEnabledFlag) {
-    mSOctreeCurr = MSOctree();
-    motionPUTrees.clear();
-    return;
-  }
-
   const MSOctree& mSOctree = mSOctreeRef;
 
   EntropyEncoder arithmeticEncoder;
-
-  mSOctreeCurr = MSOctree(
-    &pointCloud, {}, ilog2(uint32_t(std::min(
-      mvPS.motion_min_pu_size,
-      gps.trisoup_enabled_flag ? gbh.trisoupNodeSize(gps) : INT32_MAX) - 1)) + 1);
-  motionPUTrees.clear();
 
   auto& fifo = mSOctreeCurr.a;
   auto& fifo_next = mSOctreeCurr.b;
@@ -197,25 +185,40 @@ AttributeInterPredParams::buildCompensatedSlab(
   decltype(motionPUTrees) currentPUTrees;
   currentPUTrees.reserve(dualMotion.numRoots);
   for (int i = 0; i < dualMotion.numRoots; ++i) {
-    currentPUTrees.emplace_back(std::make_pair(i, -1/*not used when not mcap*/));
+    currentPUTrees.emplace_back(
+      std::make_pair(
+        i,
+        mcap_to_rec_geom_flag
+          ? mSOctreeCurr.nodeIdx(dualMotion.puNodes[i].pos0(), nodeSizeLog2)
+          : -1/*not used when not mcap*/));
   }
   // Note : CurrentPUTrees might not be necessary and all nodes
   //   be processed with successive node indexes (because of breadth first
   //   creation and traversal)  -> TODO: to be checked...
   while (currentPUTrees.size()) {
-    // coding (in morton order for simpler test)
+    // (in morton order for simpler test)
     decltype(currentPUTrees) nextLevelPUTrees;
     nextLevelPUTrees.reserve(currentPUTrees.size());
     int childSizeLog2 = nodeSizeLog2 - 1;
+    PCCOctree3Node node0;
+    node0.start = -1;
+    node0.end = -1;
     for (int i = 0; i < currentPUTrees.size(); ++i) {
       int puNodeIdx = currentPUTrees[i].first;
       auto& node = dualMotion.puNodes[puNodeIdx];
-      PCCOctree3Node node0;
-      node0.start = -1;
-      node0.end = -1;
+      if (mcap_to_rec_geom_flag) {
+        auto msoNodeIdx = currentPUTrees[i].second;
+        if (msoNodeIdx == -1)
+          // motion PU does not intersect octree node in current slab
+          continue;
+        auto& msoNode = mSOctreeCurr.nodes[msoNodeIdx];
+        node0.start = msoNode.start;
+        node0.end = msoNode.end;
+        // TODO: will we need support for non powers of 2 here?
+        assert((1 << nodeSizeLog2) - 1 == msoNode.sizeMinus1);
+      }
       node0.pos = node.pos0() >> nodeSizeLog2;
       node0.isCompensated = false;
-      //assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
       assert(nodeSizeLog2 == node._puSizeLog2);
 
       bounded_splitPU_MC(mSOctree,
@@ -232,9 +235,21 @@ AttributeInterPredParams::buildCompensatedSlab(
         for (int j = 0; j < 8; ++j) {
           if (puNode._childsMask & (1<<j)) {
             assert(1 << childSizeLog2 >= mvPS.motion_min_pu_size);
-            // populated
+            // populated in motion field
+            // but might be outside of the slab if motion field is inherited
+            // from geometry
+            int msoNodeChildIdx;
+            if (mcap_to_rec_geom_flag) {
+              msoNodeChildIdx = mSOctreeCurr.nodes[currentPUTrees[i].second].child[j];
+              if (!msoNodeChildIdx)
+                continue;
+            }
             nextLevelPUTrees.emplace_back(
-              std::make_pair(childPUIdx++, -1/*not used when not mcap*/));
+              std::make_pair(
+                childPUIdx++,
+                mcap_to_rec_geom_flag
+                  ? msoNodeChildIdx
+                  : -1/*not used when not mcap*/));
           }
         }
       }
@@ -243,6 +258,19 @@ AttributeInterPredParams::buildCompensatedSlab(
     std::swap(currentPUTrees, nextLevelPUTrees);
     nodeSizeLog2--;
   }
+}
+
+//----------------------------------------------------------------------------
+
+void
+AttributeInterPredParams::prepareEncodeMotion(
+  const ParameterSetMotion& mvPS,
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  PCCPointSet3& pointCloud
+) {
+  prepareDecodeMotion(mvPS, gps, gbh, pointCloud);
+  motionPUTrees.clear();
 }
 
 //----------------------------------------------------------------------------
@@ -397,6 +425,33 @@ sortedPointCloud(
   }
 
   return indexOrd;
+}
+
+//============================================================================
+
+void
+sortedPointCloud(
+  const int attribCount,
+  const PCCPointSet3& pointCloud,
+  const std::vector<int>& indexOrd,
+  std::vector<int>& attributes)
+{
+  const auto voxelCount = indexOrd.size();
+
+  if (attribCount==3 && pointCloud.hasColors()) {
+    attributes.reserve(voxelCount * 3);
+    for (auto index : indexOrd) {
+      const auto& color = pointCloud.getColor(index);
+      attributes.push_back(color[0]);
+      attributes.push_back(color[1]);
+      attributes.push_back(color[2]);
+    }
+  } else if (attribCount == 1 && pointCloud.hasReflectances()) {
+    attributes.reserve(voxelCount);
+    for (auto index : indexOrd) {
+      attributes.push_back(pointCloud.getReflectance(index));
+    }
+  }
 }
 
 //============================================================================

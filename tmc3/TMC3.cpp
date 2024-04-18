@@ -1404,9 +1404,6 @@ sanitizeEncoderOpts(
 
     if(!attr_aps.attrInterPredictionEnabled)
       attr_aps.dual_motion_field_flag = false;
-
-    if (!attr_aps.dual_motion_field_flag)
-      attr_aps.mcap_to_rec_geom_flag = false;
   }
 
   // sanity checks

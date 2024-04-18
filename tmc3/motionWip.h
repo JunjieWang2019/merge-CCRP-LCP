@@ -132,7 +132,7 @@ struct MVField {
     auto pos1 = end - 1;
     auto pos0 = begin;
     // For now taking entire node
-    // TODO: generate new by only take the intersection ? => not so easy
+    // TODO: generate new by only taking the intersection ? => not so easy
     for (int i = 0; i < from.numRoots; ++i) {
       const auto& nodeFrom = from.puNodes[i];
       auto nodePos0 = nodeFrom.pos0();
