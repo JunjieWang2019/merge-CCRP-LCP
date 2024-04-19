@@ -478,22 +478,6 @@ struct TrisoupNodeFaceVertex {
   std::vector<int> formerEdgeVertexIdx;
 };
 
-
-struct TrisoupFace {
-  bool connect;
-
-  TrisoupFace(const bool cn)
-  : connect(cn)
-  {}
-
-  TrisoupFace()
-  { this->clear(); }
-
-  void clear(void)
-  { connect = false; }
-};
-
-
 //============================================================================
 struct RasterScanTrisoupEdges {
   const int32_t blockWidth;
@@ -1230,10 +1214,12 @@ struct RasterScanTrisoupEdges {
     Vec3<int32_t> c1 = cVerts1.pos;
     c0[axis] += neiNodeW[axis];
     int32_t denom = c0[axis] - c1[axis];
-    // denom=0 means that c0 and c1 are on the same grid(t=0).
-    int32_t t = denom ? ((c0face - c1[axis] << kTrisoupFpBits) / denom) : 0;
-    Vertex faceVertex(
-      { c1 + (t * (c0 - c1) + kTrisoupFpHalf >> kTrisoupFpBits), 0, 0 });
+
+    int64_t t = 0;  // denom=0 means that c0 and c1 are on the same grid(t=0).
+    if (denom)
+      t = divApprox(c0face - c1[axis] << kTrisoupFpBits, denom, 0);
+
+    Vertex faceVertex({ c1 + (t * (c0 - c1)  + kTrisoupFpHalf >> kTrisoupFpBits), 0, 0 });
     fVert[0] = faceVertex;
     fVert[0].pos[axis] = -kTrisoupFpHalf;
     fVert[1] = faceVertex;
@@ -1248,9 +1234,7 @@ struct RasterScanTrisoupEdges {
     // count edge vertices included in the face
     for (int k = 0; k < eVerts.vertices.size(); k++) {
       Vec3<int32_t> vtxC = eVerts.vertices[k].pos + kTrisoupFpHalf;
-      if (nodeW[axis] == vtxC[axis]) {
-        neVtxBoundaryFace++;
-      }
+      neVtxBoundaryFace += nodeW[axis] == vtxC[axis];
     }
     return neVtxBoundaryFace;
   }
@@ -1258,11 +1242,8 @@ struct RasterScanTrisoupEdges {
 
 
   void determineTrisoupEdgeBoundaryLine(
-    int i,
     const TrisoupNodeEdgeVertex& eVerts,
-    const TrisoupCentroidVertex& cVerts,
-    const Vec3<int32_t>& gravityCenter,
-    Vec3<int32_t>& nodeW, int axis, Vertex& fvert, int* eIdx)
+    Vec3<int32_t>& nodeW, int axis, Vertex& fvert, int eIdx[2])
   {
     // if there were two or three edge vertices on the face,
     // then to select the nearest bridge segment
@@ -1273,8 +1254,8 @@ struct RasterScanTrisoupEdges {
     // the sequential number of edge vertex couldn't be found,
     // false is returned without creating a face vertex.
     int evCnt = eVerts.vertices.size();
-    int dist = 0, distMin = 0x7fffffff; // initial value must be larger than any case.
-    int evIdxMin[2] = { -1, -1 };
+    int distMin = 0x7fffffff; // initial value must be larger than any case.
+
     nodeW -= kTrisoupFpHalf;
     for (int evIdx = 0; evIdx < (evCnt == 3 ? 1 : evCnt); evIdx++) {
       int ev0 = evIdx;
@@ -1286,20 +1267,15 @@ struct RasterScanTrisoupEdges {
       if (!(nodeW[axis] == evCoord0[axis] && nodeW[axis] == evCoord1[axis])) {
         continue;
       }
-      Vec3<int32_t> middlePoint = (evCoord0 + evCoord1) / 2;
+      Vec3<int32_t> middlePoint = (evCoord0 + evCoord1) >> 1;
       Vec3<int32_t> distVec = (middlePoint - fvert.pos) >> kTrisoupFpBits;
-      dist =
-        distVec[0] * distVec[0]
-        + distVec[1] * distVec[1]
-        + distVec[2] * distVec[2];
+      int dist = distVec[0] * distVec[0] + distVec[1] * distVec[1] + distVec[2] * distVec[2];
       if (distMin > dist) {
-        evIdxMin[0] = ev0;
-        evIdxMin[1] = ev1;
+        eIdx[0] = ev0;
+        eIdx[1] = ev1;
         distMin = dist;
       }
     }
-    eIdx[0] = evIdxMin[0];
-    eIdx[1] = evIdxMin[1];
   }
 
 
@@ -1316,23 +1292,19 @@ struct RasterScanTrisoupEdges {
     const TrisoupCentroidVertex& cVerts1,
     const Vec3<int32_t>& gravityCenter0,
     const Vec3<int32_t>& gravityCenter1,
-    int w, int e0, int e1, Vertex* fVert)
+    int e0, int e1, Vertex* fVert)
   {
     // unit vector between two edge vertices on boundary face
     Vec3<int64_t> euv = eVerts.vertices[e1].pos - eVerts.vertices[e0].pos;
-    int64_t euvNorm =
-      isqrt(euv[0] * euv[0] + euv[1] * euv[1] + euv[2] * euv[2]);
-    euv = euvNorm ? ((euv << kTrisoupFpBits) / euvNorm) : 0;
-    Vec3<int32_t> c0 = cVerts0.pos;
-    Vec3<int32_t> c1 = cVerts1.pos;
-    Vec3<int32_t> g0 = gravityCenter0;
-    Vec3<int32_t> g1 = gravityCenter1;
-    Vec3<int32_t> ef = fVert[0].pos - eVerts.vertices[e0].pos;
+    int64_t euvNorm2 = euv[0] * euv[0] + euv[1] * euv[1] + euv[2] * euv[2] >> kTrisoupFpBits;
+
+    Vec3<int64_t> ef = fVert[0].pos - eVerts.vertices[e0].pos;
     int64_t en = ef * euv >> kTrisoupFpBits;
-    int32_t dp0 = (c0 - g0) * (ef - (en * euv >> kTrisoupFpBits));
-    int32_t dp1 = (c1 - g1) * (ef - (en * euv >> kTrisoupFpBits));
-    bool judge = dp0 > 0 && dp1 > 0;
-    return judge;
+    Vec3<int64_t> efTangent = euvNorm2 ? euvNorm2*ef - (en * euv )  >> kTrisoupFpBits : ef;
+
+    int64_t dp0 = (cVerts0.pos - gravityCenter0) * efTangent;
+    int64_t dp1 = (cVerts1.pos - gravityCenter1) * efTangent;
+    return dp0 > 0 && dp1 > 0;
   }
 
 
@@ -1342,11 +1314,9 @@ struct RasterScanTrisoupEdges {
     const std::vector<PCCOctree3Node>& leaves, const int nodeIdx, bool isEncoder)
   {
     const int32_t tmin1 = 2 * 4;
-    const int32_t tmin2 = distanceSearchEncoder * 4;
     Box3<int32_t> sliceBB;
     sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
     sliceBB.max = sliceBB.min + (gbh.slice_bb_width << gbh.slice_bb_width_log2_scale);
-    int32_t w = blockWidth;
     int i = nodeIdx;
     // For 6-neighbour nodes of three which have smaller coordinates than current node,
     // if current node and its neighbour node have refined centroid vertex each other,
@@ -1359,80 +1329,72 @@ struct RasterScanTrisoupEdges {
     // to generate 3 faces per node, neighbour direction loop must be placed at the most outer loop.
     // x,y,z-axis order 0,1,2
     for (int axis = 0; axis < 3; axis++) {
-      if (cVerts[i].valid && cVerts[i].boundaryInside) {
-        int ii = neiNodeIdxVec[i][axis];
-        // neighbour-node exists on this direction
-        if (-1 != ii) {
-          Vec3<int32_t> nodepos, neiNodew, corner[8];
-          nonCubicNode(
-            gps, gbh, leaves[ii].pos, blockWidth, sliceBB, nodepos, neiNodew,
-            corner);
-          // centroid of the neighbour-node exists and inside of the boundary
-          if (cVerts[ii].valid && cVerts[ii].boundaryInside) {
-            int eIdx[2][2] = { -1 };
-            Vec3<int32_t> neiNodeW = neiNodew << kTrisoupFpBits;
-            Vec3<int32_t> zeroW = 0 << kTrisoupFpBits;
-            int neVtxBoundaryFace =
-              countTrisoupEdgeVerticesOnFace(eVerts[i], zeroW, axis);
-            if (2 == neVtxBoundaryFace || 3 == neVtxBoundaryFace) {
-              Vertex fVert[2];
-              findTrisoupFaceVertex(
-                cVerts[i], cVerts[ii], axis, neiNodeW, fVert);
-              determineTrisoupEdgeBoundaryLine(
-                i, eVerts[i], cVerts[i], gravityCenter[i], zeroW, axis,
-                fVert[0], eIdx[0]);
-              determineTrisoupEdgeBoundaryLine(
-                ii, eVerts[ii], cVerts[ii], gravityCenter[ii], neiNodeW,
-                axis, fVert[1], eIdx[1]);
-              if (-1 != eIdx[0][0] && -1 != eIdx[0][1]) {
-                bool judge =
-                  determineTrisoupDirectionOfCentroidsAndFvert(
-                    eVerts[i], cVerts[i], cVerts[ii], gravityCenter[i],
-                    gravityCenter[ii], w, eIdx[0][0], eIdx[0][1], fVert);
-                if (judge) {
-                  TrisoupFace face(false);
-                  if (isEncoder) {
-                    // c0, c1, and face vertex is on the same side of the surface
-                    int32_t weight1 = 0, weight2 = 0;
-                    uint32_t st[2] = { leaves[i].start, leaves[ii].start };
-                    uint32_t ed[2] = { leaves[i].end, leaves[ii].end };
-                    // 0:current-node  1:nei-node
-                    for (int n = 0; n < 2; n++) {
-                      int _nodeidx = !n ? i : ii;
-                      for (int k = st[n]; k < ed[n]; k++) {
-                        Vec3<int32_t> dist =
-                          fVert[n].pos - (
-                            pointCloud[k] - leaves[_nodeidx].pos
-                            << kTrisoupFpBits);
-                        int32_t d =
-                          dist.abs().max() + kTrisoupFpHalf >> kTrisoupFpBits;
-                        if (d < tmin1) { weight1++; }
-                        if (d < tmin2) { weight2++; }
-                      }
-                    }
-                    if (weight1 > 0 || weight2 > 1) {
-                      face.connect = true;
-                    }
-                    arithmeticEncoder->encode((int)face.connect, ctxFaces);
-                  }
-                  else {
-                    face.connect = !!(arithmeticDecoder.decode(ctxFaces));
-                  }
-                  if (face.connect) {
-                    fVerts[i].formerEdgeVertexIdx.push_back(eIdx[0][0]);
-                    fVerts[i].vertices.push_back(fVert[0]);
-                    fVerts[ii].formerEdgeVertexIdx.push_back(eIdx[1][0]);
-                    fVerts[ii].vertices.push_back(fVert[1]);
-                  }
-                }
-              }
-              // if (2 or 3 == neVtxBoundaryFace)
-            }
+
+      if (!cVerts[i].valid || !cVerts[i].boundaryInside)
+        continue;
+
+      int ii = neiNodeIdxVec[i][axis];
+      // neighbour-node exists on this direction
+      // centroid of the neighbour-node exists and inside of the boundary
+      if (-1 == ii || !cVerts[ii].valid || !cVerts[ii].boundaryInside)
+        continue;
+
+      Vec3<int32_t> nodepos, neiNodew, corner[8];
+      nonCubicNode(gps, gbh, leaves[ii].pos, blockWidth, sliceBB, nodepos, neiNodew, corner);
+      Vec3<int32_t> zeroW = 0;
+      int neVtxBoundaryFace = countTrisoupEdgeVerticesOnFace(eVerts[i], zeroW, axis);
+
+      if (2 != neVtxBoundaryFace && 3 != neVtxBoundaryFace)
+        continue;
+
+      Vec3<int32_t> neiNodeW = neiNodew << kTrisoupFpBits;
+      int eIdx[2][2] = { -1 };
+      Vertex fVert[2];
+      findTrisoupFaceVertex(cVerts[i], cVerts[ii], axis, neiNodeW, fVert);
+      determineTrisoupEdgeBoundaryLine(eVerts[i], zeroW, axis, fVert[0], eIdx[0]);
+      determineTrisoupEdgeBoundaryLine(eVerts[ii], neiNodeW, axis, fVert[1], eIdx[1]);
+
+      if (-1 == eIdx[0][0] || -1 == eIdx[0][1])
+        continue;
+
+      // c0, c1, and face vertex is on the same side of the surface
+      bool judge = determineTrisoupDirectionOfCentroidsAndFvert(
+          eVerts[i], cVerts[i], cVerts[ii], gravityCenter[i],
+          gravityCenter[ii], eIdx[0][0], eIdx[0][1], fVert);
+      if (judge) {
+        bool faceConnected;
+        if (isEncoder) {
+          int32_t weight1 = 0;
+
+          // current-node
+          for (int k = leaves[i].start; k < leaves[i].end; k++) {
+            Vec3<int32_t> dist = fVert[0].pos - (pointCloud[k] - leaves[i].pos << kTrisoupFpBits);
+            int32_t d = dist.abs().max() + kTrisoupFpHalf >> kTrisoupFpBits;
+            weight1 += d < tmin1;
           }
+
+          // nei-node
+          for (int k = leaves[ii].start; k < leaves[ii].end; k++) {
+            Vec3<int32_t> dist = fVert[1].pos - (pointCloud[k] - leaves[ii].pos << kTrisoupFpBits);
+            int32_t d = dist.abs().max() + kTrisoupFpHalf >> kTrisoupFpBits;
+            weight1 += d < tmin1;
+          }
+
+          faceConnected = weight1 > 0;
+          arithmeticEncoder->encode((int)faceConnected, ctxFaces);
         }
-      }
-    }
-    return;
+        else {
+          faceConnected = !!(arithmeticDecoder.decode(ctxFaces));
+        }
+
+        if (faceConnected) {
+          fVerts[i].formerEdgeVertexIdx.push_back(eIdx[0][0]);
+          fVerts[i].vertices.push_back(fVert[0]);
+          fVerts[ii].formerEdgeVertexIdx.push_back(eIdx[1][0]);
+          fVerts[ii].vertices.push_back(fVert[1]);
+        }
+      } // end judge
+    } // end loop on axis
   }
 
 
