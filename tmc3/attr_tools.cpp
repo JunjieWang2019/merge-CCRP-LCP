@@ -278,17 +278,16 @@ namespace attr {
 
     // [4] Context: neighbors
     if (isInter(neighbors))
-      ctxMode += 3 * 3 * 3;
-    else if (isIntra(neighbors))
       ctxMode += 2 * 3 * 3;
-    else if (isNull(neighbors))
+    else if (isIntra(neighbors))
       ctxMode += 1 * 3 * 3;
+
 
     // [3] Context: number of children
     if (childrenCount > 5)
-      ctxMode += 2 * 4 * 3 * 3;
+      ctxMode += 2 * 3 * 3 * 3;
     else if (childrenCount > 3)
-      ctxMode += 1 * 4 * 3 * 3;
+      ctxMode += 1 * 3 * 3 * 3;
 
     if (enableIntraPrediction)
       return Mode::Intra;

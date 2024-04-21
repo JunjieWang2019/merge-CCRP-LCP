@@ -48,7 +48,7 @@
 #include "PCCMisc.h"
 
 #define NUMBER_OF_LEVELS_MODE 5
-#define NUMBER_OF_CONTEXT_MODE (3 * 4 * 3 * 3)
+#define NUMBER_OF_CONTEXT_MODE (3 * 3 * 3 * 3)
 
 namespace pcc {
 namespace attr {
