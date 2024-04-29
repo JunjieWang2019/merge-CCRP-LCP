@@ -59,24 +59,8 @@ encodeGeometryTrisoup(
 
   // prepare TriSoup parameters
   int blockWidth = 1 << gbh.trisoupNodeSizeLog2(gps);
-  const int maxVertexPrecisionLog2 = gbh.trisoup_vertex_quantization_bits ? gbh.trisoup_vertex_quantization_bits : gbh.trisoupNodeSizeLog2(gps);
-  const int bitDropped = std::max(0, gbh.trisoupNodeSizeLog2(gps) - maxVertexPrecisionLog2);
 
-  // TriSoup encoder parameters
-  int distanceSearchEncoder = 1;
-  /*if (opt.improvedVertexDetermination) { // !!!!!!!!!!!!!! impossible in one passe coding !!!!!!
-    float estimatedSampling = float(nodes.size());
-    estimatedSampling /= pointCloud.getPointCount();
-    estimatedSampling = std::sqrt(estimatedSampling);
-    estimatedSampling *= blockWidth;
-    estimatedSampling = std::max(1.f, estimatedSampling);
-    std::cout << "Estimation of sampling = " << estimatedSampling << "\n";
-
-    distanceSearchEncoder = (1 << std::max(0, bitDropped - 2)) - 1;
-    distanceSearchEncoder += int(std::round(estimatedSampling + 0.1f));
-    distanceSearchEncoder = std::max(1, std::min(8, distanceSearchEncoder));
-    std::cout << "distanceSearchEncoder = " << distanceSearchEncoder << "\n";
-  } */
+  std::cout << "TriSoup QP = " << gbh.trisoup_QP << "\n";
 
   // get first encoder
   pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.begin()->get();
@@ -84,8 +68,8 @@ encodeGeometryTrisoup(
   // trisoup uses octree coding until reaching the triangulation level.
   std::vector<PCCOctree3Node> nodes;
   EntropyDecoder foo;
-  RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, true, bitDropped,
-    distanceSearchEncoder, isInter, interPredParams.compensatedPointCloud,
+  RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, true,
+    1, isInter, interPredParams.compensatedPointCloud,
     gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
   rste.init();
 
@@ -99,11 +83,6 @@ encodeGeometryTrisoup(
   std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
   std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
 
-  /*if (!(isInter
-        && gps.gof_geom_entropy_continuation_enabled_flag)
-      && !gbh.entropy_continuation_flag) {
-    ctxtMemOctree.clearMap();
-  }*/
 }
 
 //============================================================================

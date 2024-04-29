@@ -29,7 +29,11 @@ categories:
          r02: 4
          r03: 3
          r04: 2
-     - trisoupQuantizationBits: 2
+     - trisoupQuantizationQP:
+         r01: 30
+         r02: 24
+         r03: 18
+         r04: 12
      - trisoupFaceVertexEnabled:
          r01: 1
          r02: 1

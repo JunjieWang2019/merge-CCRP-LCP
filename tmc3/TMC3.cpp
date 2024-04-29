@@ -773,10 +773,13 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Node size for surface triangulation\n"
     " <2: disabled")
 
-  ("trisoupQuantizationBits",
-    params.encoder.gbh.trisoup_vertex_quantization_bits, 0,
-    "Trisoup number of bits for quantization of position of vertices along edges\n"
-    "  0: inferred to trisoupNodeSizeLog2")
+  ("trisoupQuantizationQP",
+    params.encoder.gbh.trisoup_QP, 0,
+    "Trisoup QP for quantization of position of vertices along edges\n"
+    " 0: quarter voxel\n"
+    " 12: one voxel\n"
+    " 18: two voxels\n"
+    " max is QP=54")
 
   ("trisoupCentroidResidualEnabled",
     params.encoder.gbh.trisoup_centroid_vertex_residual_flag, true,
@@ -1211,6 +1214,11 @@ sanitizeEncoderOpts(
     params.encoder.gps.geom_unique_points_flag = true;
     params.encoder.gps.inferred_direct_coding_mode = 0;
   }
+
+  if (params.encoder.gps.trisoup_enabled_flag
+      && (params.encoder.gbh.trisoup_QP < 0
+        || params.encoder.gbh.trisoup_QP > 54))
+    err.error() << "trisoupQuantizationQP must belong to the interval [0-54]\n";
 
   // Disable partitionning changes for Trisoup if Trisoup is not used
   if (!params.encoder.gps.trisoup_enabled_flag) {

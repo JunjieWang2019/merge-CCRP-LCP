@@ -793,8 +793,9 @@ struct GeometryOctreeContexts {
   void clearMap();
 
   // ctx and OBUF for TriSoup
-  CtxModelDynamicOBUF ctxTriSoup[3][5];
-  CtxMapDynamicOBUF MapOBUFTriSoup[5][3];
+  CtxModelDynamicOBUF ctxTriSoup[5][5];
+  CtxMapDynamicOBUF MapOBUFTriSoup[5][5];
+
   uint8_t _BufferOBUFleavesTrisoup[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
   int _OBUFleafNumberTrisoup = 0;
 

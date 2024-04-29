@@ -486,9 +486,8 @@ When a list of values is used, the n-th entry in the list controls the
 configuration of the n-th slice.  The last entry is mapped to all remaining
 slices.
 
-### `--trisoupQuantizationBits=INT-VALUE|INT-VALUE-LIST`
-Number of bits used for quantization of position of trisoup vertices 
-along edges. 
+### `--trisoupQuantizationQP=INT-VALUE`
+QP value for position of trisoup vertices along edges.
 
 ### `--trisoupCentroidResidualEnabled=0|1`
 Controls the activation of coding residual position value for centroid 

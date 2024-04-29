@@ -883,8 +883,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
   gbh.geom_stream_cnt_minus1 = params->gbh.geom_stream_cnt_minus1;
   gbh.trisoup_node_size_log2_minus2 =
     params->gbh.trisoup_node_size_log2_minus2;
-  gbh.trisoup_vertex_quantization_bits =
-    params->gbh.trisoup_vertex_quantization_bits;
+  gbh.trisoup_QP = params->gbh.trisoup_QP;
   gbh.trisoup_centroid_vertex_residual_flag =
     params->gbh.trisoup_centroid_vertex_residual_flag;
   gbh.trisoup_face_vertex_flag =

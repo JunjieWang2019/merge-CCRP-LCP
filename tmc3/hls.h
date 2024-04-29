@@ -629,9 +629,8 @@ struct GeometryBrickHeader {
     return gps.trisoup_enabled_flag ? trisoup_node_size_log2_minus2 + 2 : 0;
   }
 
-  // Number of bits used to quantize vertex positioning in a node
-  // 0 means same number of bits as trisoupNodeSizeLog2
-  int trisoup_vertex_quantization_bits;
+  // quantization parameter for TriSoup edge
+  int trisoup_QP;
 
   // Indicates if a residual is encoded for centroid vertex of a trisoup node
   bool trisoup_centroid_vertex_residual_flag;
