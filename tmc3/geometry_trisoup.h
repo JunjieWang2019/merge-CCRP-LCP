@@ -811,7 +811,7 @@ struct RasterScanTrisoupEdges {
     int nPointInCloud = recPointCloud.getPointCount();
 
     int nPointInNode = last - itBegingBlock;
-    if (nPointInCloud <= nRecPoints + nPointInNode)
+    if (nPointInCloud < nRecPoints + nPointInNode)
       recPointCloud.resize(nRecPoints + nPointInNode + PC_PREALLOCATION_SIZE);
 
     for (auto it = itBegingBlock; it != last; it++)
@@ -1401,11 +1401,8 @@ struct RasterScanTrisoupEdges {
     max2bits = nbitsVertices > 1 ? 3 : 1;
     mid2bits = nbitsVertices > 1 ? 2 : 1;
 
-    recPointCloud.addRemoveAttributes(pointCloud);
     if (isEncoder)
       recPointCloud.resize(pointCloud.getPointCount());
-    else
-      recPointCloud.resize(PC_PREALLOCATION_SIZE);
 
     sliceBB.min = gbh.slice_bb_pos << gbh.slice_bb_pos_log2_scale;
     sliceBB.max = sliceBB.min + (gbh.slice_bb_width << gbh.slice_bb_width_log2_scale);
@@ -1684,7 +1681,8 @@ struct RasterScanTrisoupEdges {
               leaf, firstNodeToRender, renderedBlock, sliceBB, haloTriangle,
               thickness, isFaceVertexActivated);
           flush2PointCloud(
-            nRecPoints, renderedBlock.begin(), nPointsInBlock, recPointCloud);
+            nRecPoints, renderedBlock.begin(), nPointsInBlock,
+            isEncoder ? recPointCloud : pointCloud);
           firstNodeToRender++;
         }
       } // end if on slice chnage
@@ -1703,10 +1701,15 @@ struct RasterScanTrisoupEdges {
     ctxtMemOctree.refFrameNodeKeys = currentFrameNodeKeys;
     ctxtMemOctree.refFrameCentroValue = CentroValue;
 
-    // copy reconstructed point cloud to point cloud
-    recPointCloud.resize(nRecPoints);
-    pointCloud.resize(0);
-    pointCloud = std::move(recPointCloud);
+    if (isEncoder) {
+      // copy reconstructed point cloud to point cloud
+      recPointCloud.resize(nRecPoints);
+      pointCloud.resize(0);
+      pointCloud.swap(recPointCloud);
+    }
+    else {
+      assert(nRecPoints == pointCloud.getPointCount());
+    }
     clearTrisoupElements();
   }
 
