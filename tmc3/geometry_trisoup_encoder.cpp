@@ -90,7 +90,7 @@ encodeGeometryTrisoup(
   rste.init();
 
   // octree
-  encodeGeometryOctree(
+  encodeGeometryOctree<true>(
     encParams, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, &nodes,
     refFrame, sps, interPredParams, &rste);
 

@@ -67,8 +67,7 @@ void encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoder,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  InterPredParams& interPredParams,
-  RasterScanTrisoupEdges* rste = nullptr);
+  InterPredParams& interPredParams);
 
 void decodeGeometryOctree(
   const GeometryParameterSet& gps,
@@ -78,8 +77,7 @@ void decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  InterPredParams& interPredParams,
-  RasterScanTrisoupEdges* rste = nullptr);
+  InterPredParams& interPredParams);
 
 void decodeGeometryOctreeScalable(
   const GeometryParameterSet& gps,

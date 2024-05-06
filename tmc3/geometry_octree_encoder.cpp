@@ -701,6 +701,7 @@ GeometryOctreeEncoder::encodeDirectPosition(
 */
 //-------------------------------------------------------------------------
 
+template <bool forTrisoup>
 void
 encodeGeometryOctree(
   const EncoderParams& encParams,
@@ -717,7 +718,8 @@ encodeGeometryOctree(
 {
   const OctreeEncOpts& params = encParams.geom;
 
-  if (rste) {
+  if (forTrisoup) {
+    assert(rste);
     assert(nodesRemaining);
   }
 
@@ -1353,7 +1355,7 @@ encodeGeometryOctree(
             //}
 #endif
 
-            if (rste && isLastDepth) {
+            if (forTrisoup && isLastDepth) {
               nodesRemaining->push_back(child);
               nodesRemaining->back().pos <<= lvlNodeSizeLog2[maxDepth];
 
@@ -1390,7 +1392,7 @@ encodeGeometryOctree(
   //ctxtMem = encoder.getCtx(); // ctxtMem is now directly used
 
   if (nodesRemaining) {
-    if (rste) {
+    if (forTrisoup) {
       // TriSoup final pass (true)
       rste->callTriSoupSlice(true);
       rste->finishSlice();
@@ -1439,6 +1441,36 @@ encodeGeometryOctree(
   swap(pointCloud, pointCloud2);
 }
 
+// instanciate for Trisoup
+template void
+encodeGeometryOctree<true>(
+  const EncoderParams& encParams,
+  const GeometryParameterSet& gps,
+  GeometryBrickHeader& gbh,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame& refFrame,
+  const SequenceParameterSet& sps,
+  InterPredParams& interPredParams,
+  RasterScanTrisoupEdges* rste);
+
+// instanciate for Octree
+template void
+encodeGeometryOctree<false>(
+  const EncoderParams& encParams,
+  const GeometryParameterSet& gps,
+  GeometryBrickHeader& gbh,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame& refFrame,
+  const SequenceParameterSet& sps,
+  InterPredParams& interPredParams,
+  RasterScanTrisoupEdges* rste);
+
 //============================================================================
 
 void
@@ -1451,12 +1483,11 @@ encodeGeometryOctree(
   std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
   const CloudFrame& refFrame,
   const SequenceParameterSet& sps,
-  InterPredParams& interPredParams,
-  RasterScanTrisoupEdges* rste)
+  InterPredParams& interPredParams)
 {
-  encodeGeometryOctree(
+  encodeGeometryOctree<false>(
     opt, gps, gbh, pointCloud, ctxtMem, arithmeticEncoders, nullptr, refFrame,
-    sps, interPredParams, rste);
+    sps, interPredParams);
 }
 
 //-------------------------------------------------------------------------

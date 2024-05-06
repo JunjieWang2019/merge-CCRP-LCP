@@ -851,6 +851,7 @@ GeometryOctreeContexts::reset()
 //============================================================================
 // :: octree encoder exposing internal ringbuffer
 
+template <bool forTrisoup>
 void encodeGeometryOctree(
   const EncoderParams& opt,
   const GeometryParameterSet& gps,
@@ -864,6 +865,7 @@ void encodeGeometryOctree(
   InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste = nullptr);
 
+template <bool forTrisoup>
 void decodeGeometryOctree(
   const GeometryParameterSet& gps,
   const GeometryBrickHeader& gbh,

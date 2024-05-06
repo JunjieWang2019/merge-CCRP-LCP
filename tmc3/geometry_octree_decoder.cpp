@@ -482,6 +482,7 @@ invQuantPosition(int qp, Vec3<uint32_t> quantMasks, const Vec3<int32_t>& pos)
 
 //-------------------------------------------------------------------------
 
+template <bool forTrisoup>
 void
 decodeGeometryOctree(
   const GeometryParameterSet& gps,
@@ -496,7 +497,8 @@ decodeGeometryOctree(
   InterPredParams& interPredParams,
   RasterScanTrisoupEdges* rste)
 {
-  if (rste) {
+  if (forTrisoup) {
+    assert(rste);
     assert(nodesRemaining);
   }
 
@@ -1019,7 +1021,7 @@ decodeGeometryOctree(
             //}
 #endif
 
-            if (rste && isLastDepth) {
+            if (forTrisoup && isLastDepth) {
               nodesRemaining->push_back(child);
               nodesRemaining->back().pos <<= lvlNodeSizeLog2[maxDepth];
 
@@ -1050,11 +1052,11 @@ decodeGeometryOctree(
   // OR: if geometry quantisation has changed the number of points
   // BUT: not for trisoup for which default attributes values are to be kept
   //   for not yet decoded points
-  if (!rste)
+  if (!forTrisoup)
     pointCloud.resize(processedPointCount);
 
   if (nodesRemaining) {
-    if (rste) {
+    if (forTrisoup) {
       // TriSoup final pass (true)
       rste->callTriSoupSlice(true);
       rste->finishSlice();
@@ -1071,6 +1073,36 @@ decodeGeometryOctree(
   }
 }
 
+// instanciate for Trisoup
+template void
+decodeGeometryOctree<true>(
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  int skipLastLayers,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyDecoder& arithmeticDecoder,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  InterPredParams& interPredParams,
+  RasterScanTrisoupEdges* rste);
+
+// instanciate for Octree
+template void
+decodeGeometryOctree<false>(
+  const GeometryParameterSet& gps,
+  const GeometryBrickHeader& gbh,
+  int skipLastLayers,
+  PCCPointSet3& pointCloud,
+  GeometryOctreeContexts& ctxtMem,
+  EntropyDecoder& arithmeticDecoder,
+  std::vector<PCCOctree3Node>* nodesRemaining,
+  const CloudFrame* refFrame,
+  const Vec3<int> minimum_position,
+  InterPredParams& interPredParams,
+  RasterScanTrisoupEdges* rste);
+
 //-------------------------------------------------------------------------
 
 void
@@ -1082,13 +1114,12 @@ decodeGeometryOctree(
   EntropyDecoder& arithmeticDecoder,
   const CloudFrame* refFrame,
   const Vec3<int> minimum_position,
-  InterPredParams& interPredParams,
-  RasterScanTrisoupEdges* rste
+  InterPredParams& interPredParams
 )
 {
-  decodeGeometryOctree(
+  decodeGeometryOctree<false>(
     gps, gbh, 0, pointCloud, ctxtMem, arithmeticDecoder, nullptr,
-    refFrame, minimum_position, interPredParams, rste);
+    refFrame, minimum_position, interPredParams, nullptr);
 }
 
 //-------------------------------------------------------------------------
@@ -1106,7 +1137,7 @@ decodeGeometryOctreeScalable(
 {
   std::vector<PCCOctree3Node> nodes;
   InterPredParams interPredParams;
-  decodeGeometryOctree(
+  decodeGeometryOctree<false>(
     gps, gbh, minGeomNodeSizeLog2, pointCloud, ctxtMem, arithmeticDecoder,
     &nodes, refFrame, { 0, 0, 0 }, interPredParams);
 

@@ -72,7 +72,7 @@ decodeGeometryTrisoup(
   rste.init();
 
   // octree
-  decodeGeometryOctree(
+  decodeGeometryOctree<true>(
     gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, &nodes, refFrame,
     minimum_position, interPredParams, &rste);
 
