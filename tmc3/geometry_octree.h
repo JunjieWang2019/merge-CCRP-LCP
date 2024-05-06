@@ -433,7 +433,7 @@ struct CtxModelDynamicOBUF {
   static const int kNumContexts = 256 >> kCtxFactorShift;
   AdaptiveBitModelFast contexts[kNumContexts];
   static const int kContextsInitProbability[kNumContexts];
-  uint16_t obufSingleBound[33];
+  uint16_t obufSingleBound[33/* align */+ 1/**/];
 
   CtxModelDynamicOBUF()
   {
@@ -785,19 +785,14 @@ void maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes);
 //============================================================================
 
 struct GeometryOctreeContexts {
+  static constexpr int kLeavesBufferSize =
+    CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth);
 
   void reset();
 
   // dynamic OBUF
-  void resetMap();
+  void resetMap(bool forTrisoup);
   void clearMap();
-
-  // ctx and OBUF for TriSoup
-  CtxModelDynamicOBUF ctxTriSoup[5][5];
-  CtxMapDynamicOBUF MapOBUFTriSoup[5][5];
-
-  uint8_t _BufferOBUFleavesTrisoup[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
-  int _OBUFleafNumberTrisoup = 0;
 
   AdaptiveBitModel ctxTempV2[144];
 
@@ -820,7 +815,7 @@ struct GeometryOctreeContexts {
   CtxModelDynamicOBUF _CtxMapDynamicOBUF[4];
   CtxMapDynamicOBUF _MapOccupancy[2][8];
   CtxMapDynamicOBUF _MapOccupancySparse[2][8];
-  uint8_t _BufferOBUFleaves[CtxMapDynamicOBUF::kLeafBufferSize * (1 << CtxMapDynamicOBUF::kLeafDepth)];
+  uint8_t _BufferOBUFleaves[kLeavesBufferSize];
   int _OBUFleafNumber = 0;
 
   AdaptiveBitModel _ctxDupPointCntGt0;
@@ -838,6 +833,15 @@ struct GeometryOctreeContexts {
   AdaptiveBitModel _ctxQpOffsetAbsGt0;
   AdaptiveBitModel _ctxQpOffsetSign;
   AdaptiveBitModel _ctxQpOffsetAbsEgl;
+
+  // This is put at the end as it could break memory alignment
+
+  // ctx and OBUF for TriSoup
+  CtxModelDynamicOBUF ctxTriSoup[5][5];
+  CtxMapDynamicOBUF MapOBUFTriSoup[5][5];
+
+  uint8_t _BufferOBUFleavesTrisoup[kLeavesBufferSize];
+  int _OBUFleafNumberTrisoup = 0;
 };
 
 //----------------------------------------------------------------------------

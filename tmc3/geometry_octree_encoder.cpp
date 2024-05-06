@@ -78,8 +78,8 @@ public:
   //GeometryOctreeEncoder& operator=(GeometryOctreeEncoder&&) = default;
 
   // dynamic OBUF
-  void resetMap() { ctx.resetMap(); }
   void clearMap() { ctx.clearMap(); };
+  void resetMap(bool forTrisoup) { ctx.resetMap(forTrisoup); }
 
   void encodePositionLeafNumPoints(int count);
 
@@ -874,7 +874,7 @@ encodeGeometryOctree(
 
   if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     encoder.clearMap();
-    encoder.resetMap();
+    encoder.resetMap(forTrisoup);
   }
 
   int lastPos0 = INT_MIN; // used to detect slice change and call for TriSoup
