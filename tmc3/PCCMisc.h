@@ -369,6 +369,50 @@ inReverse(T&& obj)
   return {obj};
 }
 
+//============================================================================
+// numeric tools
+
+template<typename T>
+T
+gcd(T a, T b)
+{
+  while (b != 0) {
+    T r = a % b;
+    a = b;
+    b = r;
+  }
+  return a;
+}
+
+//----------------------------------------------------------------------------
+
+template<typename T>
+T
+lcm(const T& a, const T& b)
+{
+  return std::abs(a * b) / gcd(a, b);
+}
+
+//----------------------------------------------------------------------------
+
+template<typename Iterator>
+typename std::iterator_traits<Iterator>::value_type
+lcm_all(Iterator it, Iterator it_end)
+{
+  typedef typename std::iterator_traits<Iterator>::value_type T;
+
+  T res = T();
+
+  if (it != it_end)
+    res = *it++;
+
+  while (it != it_end)
+    res = lcm(res, *it++);
+
+  return res;
+}
+
+
 //----------------------------------------------------------------------------
 
 }  // namespace pcc

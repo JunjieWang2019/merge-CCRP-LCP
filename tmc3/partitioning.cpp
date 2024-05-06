@@ -174,7 +174,7 @@ partitionByUniformGeom(
   const PartitionParams& params,
   const PCCPointSet3& cloud,
   int tileID,
-  int partitionBoundaryLog2)
+  int partitionBoundary)
 {
   std::vector<Partition> slices;
   Vec3<int> sliceArrNum;
@@ -192,7 +192,6 @@ partitionByUniformGeom(
 
   // In order to avoid issues with trisoup, don't partition points within
   // a trisoup node, otherwise there will be issues fitting triangles.
-  int partitionBoundary = 1 << partitionBoundaryLog2;
   if (sliceSize % partitionBoundary) {
     sliceSize = (1 + sliceSize / partitionBoundary) * partitionBoundary;
   }
@@ -259,7 +258,7 @@ partitionByUniformSquare(
   const PartitionParams& params,
   const PCCPointSet3& cloud,
   int tileID,
-  int partitionBoundaryLog2)
+  int partitionBoundary)
 {
   std::vector<Partition> slices;
   Vec3<int> sliceArrNum;
@@ -282,7 +281,6 @@ partitionByUniformSquare(
   int sliceNum = firstSliceNum * secondSliceNum;
   int sliceSize = minEdge;
 
-  int partitionBoundary = 1 << partitionBoundaryLog2;
   if (sliceSize % partitionBoundary) {
     sliceSize = (1 + sliceSize / partitionBoundary) * partitionBoundary;
   }

@@ -112,11 +112,11 @@ PCCTMC3Encoder3::compress(
     }
 
     if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizes.empty()) {
-      int nodeSize = *std::max_element(
+      int nodeSizeCommon = lcm_all(
         params->trisoupNodeSizes.begin(),
         params->trisoupNodeSizes.end());
-      bbox.min = (bbox.min / nodeSize) * nodeSize;
-      bbox.max = ((bbox.max + nodeSize - 1) / nodeSize) * nodeSize;
+      bbox.min = (bbox.min / nodeSizeCommon) * nodeSizeCommon;
+      bbox.max = ((bbox.max + nodeSizeCommon - 1) / nodeSizeCommon) * nodeSizeCommon;
     }
 
     // Note whether the bounding box size is defined
@@ -289,14 +289,12 @@ PCCTMC3Encoder3::compress(
 
   // use the largest trisoup node size as a partitioning boundary for
   // consistency between slices with different trisoup node sizes.
-  int partitionBoundaryLog2 = 0;
-  uint32_t partitionBoundary = 1;
+
+  int32_t partitionBoundary = 1;
   if (!params->trisoupNodeSizes.empty())
-    partitionBoundary = *std::max_element(
+    partitionBoundary = lcm_all(
       params->trisoupNodeSizes.begin(),
       params->trisoupNodeSizes.end());
-
-  partitionBoundaryLog2 = ilog2(partitionBoundary - 1) + 1;
 
   do {
     for (int t = 0; t < tileMaps.size(); t++) {
@@ -309,6 +307,11 @@ PCCTMC3Encoder3::compress(
       PCCPointSet3 tileCloud = getPartition(quantizedInput.cloud, tile);
       Box3<int32_t> bbox = tileCloud.computeBoundingBox();
 
+      if (params->partition.safeTrisoupPartionning) {
+        bbox.min[0] -= (bbox.min[0] % partitionBoundary);
+        bbox.min[1] -= (bbox.min[1] % partitionBoundary);
+        bbox.min[2] -= (bbox.min[2] % partitionBoundary);
+      }
       // Move the tile cloud to coodinate origin
       // for the convenience of slice partitioning
       for (int i = 0; i < tileCloud.getPointCount(); i++)
@@ -328,12 +331,12 @@ PCCTMC3Encoder3::compress(
 
       case PartitionMethod::kUniformGeom:
         curSlices = partitionByUniformGeom(
-          params->partition, tileCloud, tile_id, partitionBoundaryLog2);
+          params->partition, tileCloud, tile_id, partitionBoundary);
         break;
 
       case PartitionMethod::kUniformSquare:
         curSlices = partitionByUniformSquare(
-          params->partition, tileCloud, tile_id, partitionBoundaryLog2);
+          params->partition, tileCloud, tile_id, partitionBoundary);
         break;
 
       case PartitionMethod::kOctreeUniform:
@@ -384,18 +387,16 @@ PCCTMC3Encoder3::compress(
     }
 
     if (params->partition.safeTrisoupPartionning) {
-      int partitionBoundary = 1 << partitionBoundaryLog2;
-
       _sliceOrigin[0] -= (_sliceOrigin[0] % partitionBoundary);
       _sliceOrigin[1] -= (_sliceOrigin[1] % partitionBoundary);
       _sliceOrigin[2] -= (_sliceOrigin[2] % partitionBoundary);
     }
 
     if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizes.empty()) {
-      int nodeSize = *std::max_element(
-          params->trisoupNodeSizes.begin(),
-          params->trisoupNodeSizes.end());
-      _sliceOrigin = ((_sliceOrigin / nodeSize) * nodeSize);
+      int nodeSizeCommon = lcm_all(
+        params->trisoupNodeSizes.begin(),
+        params->trisoupNodeSizes.end());
+      _sliceOrigin = ((_sliceOrigin / nodeSizeCommon) * nodeSizeCommon);
     }
 
     compressPartition(sliceCloud, sliceSrcCloud, params, callback, reconCloud);
@@ -1107,17 +1108,20 @@ PCCTMC3Encoder3::startEncodeGeometryBrick(
   if (_sps->entropy_continuation_enabled_flag)
     gbh.entropy_continuation_flag = !_firstSliceInFrame;
 
-  int nodeSize = 1;
+  int nodeSizeCommon = 1;
   if (params->trisoup.alignToNodeGrid && !params->trisoupNodeSizes.empty())
-    nodeSize = *std::max_element(
+    nodeSizeCommon = lcm_all(
       params->trisoupNodeSizes.begin(),
       params->trisoupNodeSizes.end());
+
 
   // inform the geometry coder what the root node size is
   for (int k = 0; k < 3; k++) {
     // NB: A minimum whd of 2 means there is always at least 1 tree level
     if (params->trisoup.alignToNodeGrid)
-      gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, ((_sliceBoxWhd[k] + nodeSize - 1) / nodeSize) * nodeSize));
+      gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2,
+        ((_sliceBoxWhd[k] + nodeSizeCommon - 1) / nodeSizeCommon)
+        * nodeSizeCommon));
     else
       gbh.rootNodeSizeLog2[k] = ceillog2(std::max(2, _sliceBoxWhd[k]));
 

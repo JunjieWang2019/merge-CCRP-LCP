@@ -1298,7 +1298,7 @@ sanitizeEncoderOpts(
 
   params.encoder.sps.inter_frame_trisoup_align_slices_step =
     params.encoder.sps.inter_frame_trisoup_align_slices_flag ?
-      *std::max_element(
+      lcm_all(
         params.encoder.trisoupNodeSizes.begin(),
         params.encoder.trisoupNodeSizes.end())
       : 1;

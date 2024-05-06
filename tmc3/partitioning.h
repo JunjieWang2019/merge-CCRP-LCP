@@ -127,7 +127,7 @@ std::vector<Partition> partitionByUniformGeom(
   const PartitionParams& params,
   const PCCPointSet3& cloud,
   int tileID,
-  int paritionBoundaryLog2);
+  int paritionBoundary);
 
 std::vector<Partition> partitionByOctreeDepth(
   const PartitionParams& params,
@@ -139,7 +139,7 @@ std::vector<Partition> partitionByUniformSquare(
   const PartitionParams& params,
   const PCCPointSet3& cloud,
   int tileID,
-  int paritionBoundaryLog2);
+  int paritionBoundary);
 
 std::vector<Partition> partitionByNpts(
   const PartitionParams& params, const PCCPointSet3& cloud, int tileID);
