@@ -579,7 +579,7 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
     motionGEnc.window_size = 10;
     motionGEnc.Amotion0 = 2; // std::max(1, int(std::round(2 * scaleFactor)));
     motionGEnc.lambda = 2.5*TriSoupSize*4;
-    motionGEnc.decimate = 7;
+    motionGEnc.decimate = 8;
     motionGEnc.dgeom_color_factor = 0.015;
     motionGEnc.K = 10;
     break;
@@ -640,12 +640,13 @@ PCCTMC3Encoder3::deriveMotionParams(EncoderParams* params)
       break;
 
     case 3:
+      motionAPS.motion_min_pu_size = motionGPS.motion_min_pu_size / 2;
       // search parameters
       motionAEnc.Amotion0 = 2;
       motionAEnc.lambda = 2.5 * TriSoupSize * 4 / 32;
-      motionAEnc.decimate = 7;
+      motionAEnc.decimate = 8;
       motionAEnc.dgeom_color_factor = 2;
-      motionAEnc.K = 10;
+      motionAEnc.K = 1;
       break;
 
     default:

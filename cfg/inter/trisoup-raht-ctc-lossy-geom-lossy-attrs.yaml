@@ -8,6 +8,11 @@ categories:
      - mode: 0
 
      ##
+     # use approximate NN search during motion search
+     # (affects both geometry and dual motion)
+     - fasterMotionSearch: 1
+
+     ##
      # partitioning for trisoup
      - sliceMaxPointsTrisoup: 5000000
      - sliceMaxPoints: 4000000
