@@ -68,7 +68,11 @@ public:
   int stop();
 
   void encodeRunLength(int runLength);
-  void encodeInterPredMode(const int& predMode);
+  void encodeInterPredMode(
+    const int& predMode,
+    const RahtPredictionParams& rahtPredParams,
+    int layerIndex,
+    int layerDepth);
   void encodeSymbol(uint32_t value, int k1, int k2, int k3);
   void encode(int32_t value0, int32_t value1, int32_t value2);
   void encode(int32_t value);
@@ -154,11 +158,43 @@ PCCResidualsEncoder::resStatUpdateRefl(int32_t value)
 
 //----------------------------------------------------------------------------
 
-void PCCResidualsEncoder::encodeInterPredMode(const int& predMode) {
-  const bool& isLayerMode = predMode >= 1;
+void
+PCCResidualsEncoder::encodeInterPredMode(
+  const int& predMode,
+  const RahtPredictionParams& rahtPredParams,
+  int layerIndex,
+  int layerDepth)
+{
+  int distanceToRoot = layerIndex + 1;
+  int layerD = layerDepth - distanceToRoot;
+  int predCtxLevel = 0;
+  if (rahtPredParams.enable_inter_prediction) {
+    predCtxLevel = layerD - rahtPredParams.mode_level;
+    if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
+      predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
+  } else if (rahtPredParams.prediction_enabled_flag) {
+    predCtxLevel = layerD - rahtPredParams.intra_mode_level;
+    if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
+      predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
+  }
+
+  bool upperInferMode =
+    distanceToRoot < rahtPredParams.upper_mode_level
+    && distanceToRoot < layerDepth - rahtPredParams.mode_level + 1;
+
+  bool realInferInLowerLevel =
+    rahtPredParams.enable_average_prediction
+    ? (distanceToRoot >= (layerDepth - rahtPredParams.mode_level
+        + rahtPredParams.lower_mode_level_for_average_prediction + 1)
+      && !upperInferMode)
+    : predCtxLevel < 0 && !upperInferMode ;
+
+  const bool isLayerMode = predMode >= 1;
   arithmeticEncoder.encode(isLayerMode, ctxLayerPred);
-  if (isLayerMode)
-    arithmeticEncoder.encode(predMode == 1, ctxInterLayerPred);
+
+  if (!upperInferMode && !realInferInLowerLevel)
+    if (isLayerMode)
+      arithmeticEncoder.encode(predMode == 1, ctxInterLayerPred);
 }
 
 //----------------------------------------------------------------------------
@@ -575,11 +611,12 @@ encodeRaht(
   if (zeroRun)
     encoder.encodeRunLength(zeroRun);
 
-  if (aps.rahtPredParams.raht_enable_inter_intra_layer_RDO) {
+  if (abh.attr_layer_code_mode.size()) {
     int codeModeSize = abh.attr_layer_code_mode.size();
     for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
       int predMode = abh.attr_layer_code_mode[layerIdx];
-      encoder.encodeInterPredMode(predMode);
+      encoder.encodeInterPredMode(
+        predMode, aps.rahtPredParams, layerIdx, codeModeSize);
     }
   }
 

@@ -62,7 +62,10 @@ public:
   void stop();
 
   int decodeRunLength();
-  int decodeInterPredMode();
+  int decodeInterPredMode(
+    const RahtPredictionParams& rahtPredParams,
+    int layerIndex,
+    int layerDepth);
   int decodeSymbol(int k1, int k2, int k3);
   void decode(int32_t values[3]);
   int32_t decode();
@@ -97,11 +100,47 @@ PCCResidualsDecoder::stop()
 
 //----------------------------------------------------------------------------
 
-int PCCResidualsDecoder::decodeInterPredMode() {
+int
+PCCResidualsDecoder::decodeInterPredMode(
+  const RahtPredictionParams& rahtPredParams,
+  int layerIndex,
+  int layerDepth)
+{
+  int distanceToRoot = layerIndex + 1;
+  int layerD = layerDepth - distanceToRoot;
+  int predCtxLevel = 0;
+  if (rahtPredParams.enable_inter_prediction) {
+    predCtxLevel = layerD - rahtPredParams.mode_level;
+    if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
+      predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
+  } else if (rahtPredParams.prediction_enabled_flag) {
+    predCtxLevel = layerD - rahtPredParams.intra_mode_level;
+    if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
+      predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
+  }
+
+  bool upperInferMode =
+    distanceToRoot < rahtPredParams.upper_mode_level
+    && distanceToRoot < layerDepth - rahtPredParams.mode_level + 1;
+
+  bool realInferInLowerLevel =
+    rahtPredParams.enable_average_prediction
+    ? (distanceToRoot >= (layerDepth - rahtPredParams.mode_level
+        + rahtPredParams.lower_mode_level_for_average_prediction + 1)
+      && !upperInferMode)
+    : predCtxLevel < 0 && !upperInferMode;
+
   bool isLayerMode;
   isLayerMode = arithmeticDecoder.decode(ctxLayerPred);
   if (!isLayerMode)
     return 0;
+
+  if (upperInferMode)
+    return 2;
+
+  if (realInferInLowerLevel)
+    return 1;
+
   bool isInterLayerMode = arithmeticDecoder.decode(ctxInterLayerPred);
   if (isInterLayerMode)
     return 1;
@@ -341,7 +380,8 @@ decodeRaht(
     int codeModeSize = abh.attr_layer_code_mode.size();
     for (int layerIdx = 0; layerIdx < codeModeSize; ++layerIdx) {
       int& predMode = abh.attr_layer_code_mode[layerIdx];
-      predMode = decoder.decodeInterPredMode();
+      predMode = decoder.decodeInterPredMode(
+        aps.rahtPredParams, layerIdx, codeModeSize);
     }
 
     std::vector<int64_t> mortonCode_mc;

@@ -987,30 +987,35 @@ uraht_process(
     if (level % 3)
       continue;
 
+    int distanceToRoot = rootLevel - level / 3;
+    int layerD = RDOCodingDepth - distanceToRoot;
     int predCtxLevel = 0;
     if (rahtPredParams.enable_inter_prediction) {
-      predCtxLevel = (level / 3) - rahtPredParams.mode_level;
+      predCtxLevel = layerD - rahtPredParams.mode_level;
       if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
         predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
     } else if (rahtPredParams.prediction_enabled_flag) {
-      predCtxLevel = (level / 3) - rahtPredParams.intra_mode_level;
+      predCtxLevel = layerD - rahtPredParams.intra_mode_level;
       if (predCtxLevel >= NUMBER_OF_LEVELS_MODE)
         predCtxLevel = NUMBER_OF_LEVELS_MODE - 1;
     }
 
-    int distanceToRoot = rootLevel - level / 3;
-    bool upperInferMode = false;
-    if (coder.isInterEnabled()) {
-      if ((distanceToRoot < rahtPredParams.upper_mode_level)
-        && (distanceToRoot < rootLevel - rahtPredParams.mode_level + 1))
-        upperInferMode = true;
-    }
+    bool upperInferMode = coder.isInterEnabled()
+      && distanceToRoot < rahtPredParams.upper_mode_level
+      && distanceToRoot < RDOCodingDepth - rahtPredParams.mode_level + 1;
 
     const bool enableAveragePredictionLevel = rahtPredParams.enable_average_prediction
       && distanceToRoot >= (rootLevel - rahtPredParams.mode_level - rahtPredParams.upper_mode_level_for_average_prediction + 1)
       && distanceToRoot < (rootLevel - rahtPredParams.mode_level + rahtPredParams.lower_mode_level_for_average_prediction + 1)
       && !upperInferMode
       && coder.isInterEnabled();
+
+    bool realInferInLowerLevel =
+      rahtPredParams.enable_average_prediction
+      ? (distanceToRoot >= (RDOCodingDepth - rahtPredParams.mode_level
+          + rahtPredParams.lower_mode_level_for_average_prediction + 1)
+        && !upperInferMode && coder.isInterEnabled())
+      : predCtxLevel < 0 && !upperInferMode && coder.isInterEnabled();
 
     // Motion compensation
     if (coder.isInterEnabled()) {
@@ -1709,8 +1714,11 @@ uraht_process(
 
         if (typeid(ModeCoder) == typeid(attr::ModeEncoder) && enableACRDOInterPred) {
           for (int k = 0; k < numAttrs; k++) {
-            transformIntraLayerBuf[k][idx] -= attrPredIntraLayerTransformIt[k][idx];
-            transformInterLayerBuf[k][idx] -= attrPredInterLayerTransformIt[k][idx];
+            if (!realInferInLowerLevel)
+              transformIntraLayerBuf[k][idx] -= attrPredIntraLayerTransformIt[k][idx];
+
+            if (!upperInferMode)
+              transformInterLayerBuf[k][idx] -= attrPredInterLayerTransformIt[k][idx];
           }
         }
 
@@ -1762,35 +1770,39 @@ uraht_process(
               lambda0 = q.scale(1);
             lambda = lambda0 * lambda0 * (numAttrs == 1 ? 25 : 35);
             if (enableACRDOInterPred) {
-              auto interLayerCoeff = transformInterLayerBuf[k][idx].round();
-              interLayerDist2 += interLayerCoeff * interLayerCoeff;
-              auto interLayerQcoeff =
-                q.quantize(interLayerCoeff << kFixedPointAttributeShift);
+              if (!upperInferMode) {
+                auto interLayerCoeff = transformInterLayerBuf[k][idx].round();
+                interLayerDist2 += interLayerCoeff * interLayerCoeff;
+                auto interLayerQcoeff =
+                  q.quantize(interLayerCoeff << kFixedPointAttributeShift);
 
-              auto recInterCoeff =
-                divExp2RoundHalfUp(q.scale(interLayerQcoeff), kFixedPointAttributeShift);
-              interLayerRecDist2 +=
-                (interLayerCoeff - recInterCoeff) * (interLayerCoeff - recInterCoeff);
+                auto recInterCoeff =
+                  divExp2RoundHalfUp(q.scale(interLayerQcoeff), kFixedPointAttributeShift);
+                interLayerRecDist2 +=
+                  (interLayerCoeff - recInterCoeff) * (interLayerCoeff - recInterCoeff);
 
-              interLayerSumCoeff += std::abs(interLayerQcoeff);
-              interLayerRatecoeff +=
-                std::abs(interLayerQcoeff) < 15
-                ? LUTlog[std::abs(interLayerQcoeff)] : LUTlog[15];
+                interLayerSumCoeff += std::abs(interLayerQcoeff);
+                interLayerRatecoeff +=
+                  std::abs(interLayerQcoeff) < 15
+                  ? LUTlog[std::abs(interLayerQcoeff)] : LUTlog[15];
+              }
 
-              auto intraLayerCoeff = transformIntraLayerBuf[k][idx].round();
-              intraLayerDist2 += intraLayerCoeff * intraLayerCoeff;
-              auto intraLayerQcoeff =
-                q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
+              if (!realInferInLowerLevel) {
+                auto intraLayerCoeff = transformIntraLayerBuf[k][idx].round();
+                intraLayerDist2 += intraLayerCoeff * intraLayerCoeff;
+                auto intraLayerQcoeff =
+                  q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
 
-              auto recIntraCoeff =
-                divExp2RoundHalfUp(q.scale(intraLayerQcoeff), kFixedPointAttributeShift);
-              intraLayerRecDist2 +=
-                (intraLayerCoeff - recIntraCoeff) * (intraLayerCoeff - recIntraCoeff);
+                auto recIntraCoeff =
+                  divExp2RoundHalfUp(q.scale(intraLayerQcoeff), kFixedPointAttributeShift);
+                intraLayerRecDist2 +=
+                  (intraLayerCoeff - recIntraCoeff) * (intraLayerCoeff - recIntraCoeff);
 
-              intraLayerSumCoeff += std::abs(intraLayerQcoeff);
-              intraLayerRatecoeff +=
-                std::abs(intraLayerQcoeff) < 15
-                ? LUTlog[std::abs(intraLayerQcoeff)] : LUTlog[15];
+                intraLayerSumCoeff += std::abs(intraLayerQcoeff);
+                intraLayerRatecoeff +=
+                  std::abs(intraLayerQcoeff) < 15
+                  ? LUTlog[std::abs(intraLayerQcoeff)] : LUTlog[15];
+              }
             }
           }
           dlambda = (double)lambda;
@@ -1801,14 +1813,14 @@ uraht_process(
           }
 
           if (enableACRDOInterPred) {
-            if (intraLayerSumCoeff < 3) {
+            if (!realInferInLowerLevel && intraLayerSumCoeff < 3) {
               int Rate = getRate(intraLayerTrainZeros);
               Rate += (intraLayerRatecoeff + 128) >> 8;
               intraLayerFlagRDOQ =
                 (intraLayerDist2 << 26) < (lambda * Rate + (intraLayerRecDist2 << 26));
             }
 
-            if (interLayerSumCoeff < 3) {
+            if (!upperInferMode && interLayerSumCoeff < 3) {
               int Rate = getRate(interLayerTrainZeros);
               Rate += (interLayerRatecoeff + 128) >> 8;
               interLayerFlagRDOQ =
@@ -1824,15 +1836,19 @@ uraht_process(
           trainZeros = 0;
 
         if (enableACRDOInterPred) {
-          if (intraLayerFlagRDOQ || intraLayerSumCoeff == 0)
-            intraLayerTrainZeros++;
-          else
-            intraLayerTrainZeros = 0;
+          if (!realInferInLowerLevel) {
+            if (intraLayerFlagRDOQ || intraLayerSumCoeff == 0)
+              intraLayerTrainZeros++;
+            else
+              intraLayerTrainZeros = 0;
+          }
 
-          if (interLayerFlagRDOQ || interLayerSumCoeff == 0)
-            interLayerTrainZeros++;
-          else
-            interLayerTrainZeros = 0;
+          if (!upperInferMode) {
+            if (interLayerFlagRDOQ || interLayerSumCoeff == 0)
+              interLayerTrainZeros++;
+            else
+              interLayerTrainZeros = 0;
+          }
         }
 
         // The RAHT transform
@@ -1842,11 +1858,15 @@ uraht_process(
             transformBuf[k][idx].val = 0;
 
           if (enableACRDOInterPred) {
-            if (intraLayerFlagRDOQ)
-              transformIntraLayerBuf[k][idx].val = 0;
+            if (!realInferInLowerLevel) {
+              if (intraLayerFlagRDOQ)
+                transformIntraLayerBuf[k][idx].val = 0;
+            }
 
-            if (interLayerFlagRDOQ)
-              transformInterLayerBuf[k][idx].val = 0;
+            if (!upperInferMode) {
+              if (interLayerFlagRDOQ)
+                transformInterLayerBuf[k][idx].val = 0;
+            }
           }
 
           auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
@@ -1869,64 +1889,88 @@ uraht_process(
               curEstimate.resStatUpdate(coeff, k);
 
             if (enableACRDOInterPred) {
-              auto intraLayerCoeff = transformIntraLayerBuf[k][idx].round();
-              assert(intraLayerCoeff <= INT_MAX && intraLayerCoeff >= INT_MIN);
-              intraLayerCoeff =
-                q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
+              if (!realInferInLowerLevel) {
+                auto intraLayerCoeff = transformIntraLayerBuf[k][idx].round();
+                assert(intraLayerCoeff <= INT_MAX && intraLayerCoeff >= INT_MIN);
+                intraLayerCoeff =
+                  q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
 
-              intraLayerEstimate.updateCostBits(intraLayerCoeff, k);
+                intraLayerEstimate.updateCostBits(intraLayerCoeff, k);
 
-              *intraLayerCoeffBufItK[k]++ = intraLayerCoeff;
-              skipinverseintralayer = skipinverseintralayer && (intraLayerCoeff == 0);
-              BestRecBufIntraLayer[k][idx] =
-                divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
-              intraLayerEstimate.resStatUpdate(intraLayerCoeff, k);
+                *intraLayerCoeffBufItK[k]++ = intraLayerCoeff;
+                skipinverseintralayer = skipinverseintralayer && (intraLayerCoeff == 0);
+                BestRecBufIntraLayer[k][idx] =
+                  divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
+                intraLayerEstimate.resStatUpdate(intraLayerCoeff, k);
+              }
 
-              auto interLayerCoeff = transformInterLayerBuf[k][idx].round();
-              assert(interLayerCoeff <= INT_MAX && interLayerCoeff >= INT_MIN);
-              interLayerCoeff =
-                q.quantize(interLayerCoeff << kFixedPointAttributeShift);
+              if (!upperInferMode) {
+                auto interLayerCoeff = transformInterLayerBuf[k][idx].round();
+                assert(interLayerCoeff <= INT_MAX && interLayerCoeff >= INT_MIN);
+                interLayerCoeff =
+                  q.quantize(interLayerCoeff << kFixedPointAttributeShift);
 
-              interLayerEstimate.updateCostBits(interLayerCoeff, k);
+                interLayerEstimate.updateCostBits(interLayerCoeff, k);
 
-              skipinverseinterlayer = skipinverseinterlayer && (interLayerCoeff == 0);
-              *interLayerCoeffBufItK[k]++ = interLayerCoeff;
-              BestRecBufInterLayer[k][idx] =
-                divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift); // still in RAHT domain
+                skipinverseinterlayer = skipinverseinterlayer && (interLayerCoeff == 0);
+                *interLayerCoeffBufItK[k]++ = interLayerCoeff;
+                BestRecBufInterLayer[k][idx] =
+                  divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift); // still in RAHT domain
 
-              interLayerEstimate.resStatUpdate(interLayerCoeff, k);
+                interLayerEstimate.resStatUpdate(interLayerCoeff, k);
+              }
 
               FixedPoint fInterLayerResidue, fIntraLayerResidue, fMCPredResidual;
               int64_t iresidueinterLayer = 0;
               int64_t iresidueintraLayer = 0;
               int64_t iresidueMCPred = 0;
-              fInterLayerResidue.val = transformInterLayerBuf[k][idx].val - BestRecBufInterLayer[k][idx].val;
-              iresidueinterLayer = fInterLayerResidue.round();
-              fIntraLayerResidue.val = transformIntraLayerBuf[k][idx].val - BestRecBufIntraLayer[k][idx].val; //qunatization reconstruction error
-              iresidueintraLayer = fIntraLayerResidue.round();
+              if (!upperInferMode) {
+                fInterLayerResidue.val = transformInterLayerBuf[k][idx].val - BestRecBufInterLayer[k][idx].val;
+                iresidueinterLayer = fInterLayerResidue.round();
+              }
+              if (!realInferInLowerLevel) {
+                fIntraLayerResidue.val = transformIntraLayerBuf[k][idx].val - BestRecBufIntraLayer[k][idx].val; //qunatization reconstruction error
+                iresidueintraLayer = fIntraLayerResidue.round();
+              }
+
               fMCPredResidual.val = transformBuf[k][idx].val - BestRecBuf[k][idx].val;
               iresidueMCPred = fMCPredResidual.round();
 
+              int64_t idistinterLayer;
+              if (!upperInferMode) {
+                idistinterLayer = (iresidueinterLayer) * (iresidueinterLayer);
+              }
 
-              int64_t idistinterLayer = (iresidueinterLayer) * (iresidueinterLayer);
-              int64_t idistintraLayer = (iresidueintraLayer) * (iresidueintraLayer);
+              int64_t idistintraLayer;
+              if (!realInferInLowerLevel) {
+                idistintraLayer = (iresidueintraLayer) * (iresidueintraLayer);
+              }
+
               int64_t idistMCPredLayer = (iresidueMCPred) * (iresidueMCPred);
-              distinterLayer += (double)idistinterLayer;
-              distintraLayer += (double)idistintraLayer;
-              distMCPredLayer += (double)idistMCPredLayer;
 
+              if (!upperInferMode)
+                distinterLayer += (double)idistinterLayer;
+
+              if (!realInferInLowerLevel)
+                distintraLayer += (double)idistintraLayer;
+
+              distMCPredLayer += (double)idistMCPredLayer;
             }
           } else {
             int64_t coeff = *coeffBufItK[k]++;
             skipinverse = skipinverse && (coeff == 0);
             BestRecBuf[k][idx] =
-            divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+              divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
           }
           if (rahtPredParams.integer_haar_enable_flag) {
             BestRecBuf[k][idx] += attrBestPredTransformIt[k][idx]; // Transform Domain Pred for Lossless case
             if (enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-              BestRecBufIntraLayer[k][idx] += attrPredIntraLayerTransformIt[k][idx];
-              BestRecBufInterLayer[k][idx] += attrPredInterLayerTransformIt[k][idx];
+
+              if (!realInferInLowerLevel)
+                BestRecBufIntraLayer[k][idx] += attrPredIntraLayerTransformIt[k][idx];
+
+              if (!upperInferMode)
+                BestRecBufInterLayer[k][idx] += attrPredInterLayerTransformIt[k][idx];
             }
           }
         }
@@ -1943,11 +1987,17 @@ uraht_process(
 
           if (enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
             if (rahtPredParams.integer_haar_enable_flag) {
-              BestRecBufIntraLayer[k][0].val = attrRecParentUsIt[k] ;
-              BestRecBufInterLayer[k][0].val = attrRecParentUsIt[k] ;
+              if (!realInferInLowerLevel)
+                BestRecBufIntraLayer[k][0].val = attrRecParentUsIt[k];
+
+              if (!upperInferMode)
+                BestRecBufInterLayer[k][0].val = attrRecParentUsIt[k];
             } else {
-              BestRecBufIntraLayer[k][0].val = attrRecParentUsIt[k] - PredDCIntraLayer[k].val;
-              BestRecBufInterLayer[k][0].val = attrRecParentUsIt[k] - PredDCInterLayer[k].val;
+              if (!realInferInLowerLevel)
+                BestRecBufIntraLayer[k][0].val = attrRecParentUsIt[k] - PredDCIntraLayer[k].val;
+
+              if (!upperInferMode)
+                BestRecBufInterLayer[k][0].val = attrRecParentUsIt[k] - PredDCInterLayer[k].val;
             }
           }
         }
@@ -1956,8 +2006,10 @@ uraht_process(
       if (rahtPredParams.integer_haar_enable_flag) {
         invTransformBlock222<HaarKernel>(numAttrs, BestRecBuf.begin(), weights);
         if (enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-          invTransformBlock222<HaarKernel>(numAttrs, BestRecBufIntraLayer.begin(), weights);
-          invTransformBlock222<HaarKernel>(numAttrs, BestRecBufInterLayer.begin(), weights);
+          if (!realInferInLowerLevel)
+            invTransformBlock222<HaarKernel>(numAttrs, BestRecBufIntraLayer.begin(), weights);
+          if (!upperInferMode)
+            invTransformBlock222<HaarKernel>(numAttrs, BestRecBufInterLayer.begin(), weights);
         }
       } else {
         if (skipinverse) {
@@ -1970,7 +2022,7 @@ uraht_process(
             if (!weights[cidx])
               continue;
 
-            for(int k = 0; k < numAttrs; k++) {
+            for (int k = 0; k < numAttrs; k++) {
               FixedPoint Correctionterm = normsqrtsbuf[cidx] * DCerror[k];
               BestRecBuf[k][cidx] = Correctionterm;
             }
@@ -1980,44 +2032,48 @@ uraht_process(
         }
 
         if (enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-          //intralayer
-          if (skipinverseintralayer) {
-            FixedPoint DCerror[3];
-            for (int k = 0; k < numAttrs; k++) {
-              DCerror[k] = BestRecBufIntraLayer[k][0];
-              BestRecBufIntraLayer[k][0].val = 0;
-            }
-            for (int cidx = 0; cidx < 8; cidx++) {
-              if (!weights[cidx])
-                continue;
-
+          if (!realInferInLowerLevel) {
+            //intralayer
+            if (skipinverseintralayer) {
+              FixedPoint DCerror[3];
               for (int k = 0; k < numAttrs; k++) {
-                FixedPoint Correctionterm = normsqrtsbuf[cidx] * DCerror[k];
-                BestRecBufIntraLayer[k][cidx] = Correctionterm;
+                DCerror[k] = BestRecBufIntraLayer[k][0];
+                BestRecBufIntraLayer[k][0].val = 0;
               }
+              for (int cidx = 0; cidx < 8; cidx++) {
+                if (!weights[cidx])
+                  continue;
+
+                for (int k = 0; k < numAttrs; k++) {
+                  FixedPoint Correctionterm = normsqrtsbuf[cidx] * DCerror[k];
+                  BestRecBufIntraLayer[k][cidx] = Correctionterm;
+                }
+              }
+            } else {
+              invTransformBlock222<RahtKernel>(numAttrs, BestRecBufIntraLayer.begin(), weights, (typeid(ModeCoder) == typeid(attr::ModeDecoder)));
             }
-          } else {
-            invTransformBlock222<RahtKernel>(numAttrs, BestRecBufIntraLayer.begin(), weights, (typeid(ModeCoder) == typeid(attr::ModeDecoder)));
           }
 
-          //interlayer
-          if (skipinverseinterlayer) {
-            FixedPoint DCerror[3];
-            for (int k = 0; k < numAttrs; k++) {
-              DCerror[k] = BestRecBufInterLayer[k][0];
-              BestRecBufInterLayer[k][0].val = 0;
-            }
-            for (int cidx = 0; cidx < 8; cidx++) {
-              if (!weights[cidx])
-                continue;
-
+          if (!upperInferMode) {
+            //interlayer
+            if (skipinverseinterlayer) {
+              FixedPoint DCerror[3];
               for (int k = 0; k < numAttrs; k++) {
-                FixedPoint Correctionterm = normsqrtsbuf[cidx] * DCerror[k];
-                BestRecBufInterLayer[k][cidx] = Correctionterm;
+                DCerror[k] = BestRecBufInterLayer[k][0];
+                BestRecBufInterLayer[k][0].val = 0;
               }
+              for (int cidx = 0; cidx < 8; cidx++) {
+                if (!weights[cidx])
+                  continue;
+
+                for (int k = 0; k < numAttrs; k++) {
+                  FixedPoint Correctionterm = normsqrtsbuf[cidx] * DCerror[k];
+                  BestRecBufInterLayer[k][cidx] = Correctionterm;
+                }
+              }
+            } else {
+              invTransformBlock222<RahtKernel>(numAttrs, BestRecBufInterLayer.begin(), weights, (typeid(ModeCoder) == typeid(attr::ModeDecoder)));
             }
-          } else {
-            invTransformBlock222<RahtKernel>(numAttrs, BestRecBufInterLayer.begin(), weights, (typeid(ModeCoder) == typeid(attr::ModeDecoder)));
           }
         }
       }
@@ -2038,14 +2094,21 @@ uraht_process(
 
           if (enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
             if (rahtPredParams.integer_haar_enable_flag) {
-              intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
-              interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx].val;
-            } else {
-              BestRecBufIntraLayer[k][nodeIdx].val += attrPredIntraLayer[k][nodeIdx].val;
-              intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
+              if (!realInferInLowerLevel)
+                intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
 
-              BestRecBufInterLayer[k][nodeIdx].val += attrPredInterLayer[k][nodeIdx].val;
-              interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx].val;
+              if (!upperInferMode)
+                interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx].val;
+            } else {
+              if (!realInferInLowerLevel) {
+                BestRecBufIntraLayer[k][nodeIdx].val += attrPredIntraLayer[k][nodeIdx].val;
+                intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
+              }
+
+              if (!upperInferMode) {
+                BestRecBufInterLayer[k][nodeIdx].val += attrPredInterLayer[k][nodeIdx].val;
+                interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx].val;
+              }
             }
           }
         }
@@ -2061,10 +2124,15 @@ uraht_process(
               BestRecBuf[k][nodeIdx].val >>= shift;
               BestRecBuf[k][nodeIdx] *= rsqrtWeight;
               if (enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-                BestRecBufIntraLayer[k][nodeIdx].val >>= shift;
-                BestRecBufIntraLayer[k][nodeIdx] *= rsqrtWeight;
-                BestRecBufInterLayer[k][nodeIdx].val >>= shift;
-                BestRecBufInterLayer[k][nodeIdx] *= rsqrtWeight;
+                if (!realInferInLowerLevel) {
+                  BestRecBufIntraLayer[k][nodeIdx].val >>= shift;
+                  BestRecBufIntraLayer[k][nodeIdx] *= rsqrtWeight;
+                }
+
+                if (!upperInferMode) {
+                  BestRecBufInterLayer[k][nodeIdx].val >>= shift;
+                  BestRecBufInterLayer[k][nodeIdx] *= rsqrtWeight;
+                }
               }
             }
           }
@@ -2073,8 +2141,11 @@ uraht_process(
         for (int k = 0; k < numAttrs; k++) {
           attrRec[j * numAttrs + k] = BestRecBuf[k][nodeIdx].val;
           if(enableACInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
-            intraLayerAttrRec[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
-            interLayerAttrRec[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx].val;
+            if (!realInferInLowerLevel)
+              intraLayerAttrRec[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
+
+            if (!upperInferMode)
+              interLayerAttrRec[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx].val;
           }
         }
         j++;
@@ -2084,13 +2155,31 @@ uraht_process(
     if (enableACRDOInterPred) {
       if (typeid(coder) == typeid(attr::ModeEncoder)) {
         double curCost = curEstimate.costBits() + coder.getModeBits();
-        double intraLayerCost = intraLayerEstimate.costBits();
-        double interLayerCost = interLayerEstimate.costBits();
+
+        double intraLayerCost;
+        if (!realInferInLowerLevel)
+          intraLayerCost = intraLayerEstimate.costBits();
+
+        double interLayerCost;
+        if (!upperInferMode)
+          interLayerCost = interLayerEstimate.costBits();
+
         int64_t ifactor = 1 << 24;
         double dfactor = (double)(ifactor);
         double rdcostMCPred = distMCPredLayer * dfactor + dlambda * curCost;
-        double rdcostintraLayer = distintraLayer * dfactor + dlambda * intraLayerCost;
-        double rdcostinterLayer = distinterLayer * dfactor + dlambda * interLayerCost;
+
+        double rdcostintraLayer;
+        if (!realInferInLowerLevel)
+          rdcostintraLayer = distintraLayer * dfactor + dlambda * intraLayerCost;
+        else
+          rdcostintraLayer = std::numeric_limits<double>::infinity();
+
+        double rdcostinterLayer;
+        if (!upperInferMode)
+          rdcostinterLayer = distinterLayer * dfactor + dlambda * interLayerCost;
+        else
+          rdcostinterLayer = std::numeric_limits<double>::infinity();
+
         if (rdcostinterLayer < rdcostintraLayer && rdcostinterLayer < rdcostMCPred) {
           for (int k = 0; k < numAttrs; ++k)
             std::copy_n(interLayerCoeffBufItBeginK[k], sumNodes, coeffBufItBeginK[k]);
@@ -2144,8 +2233,7 @@ uraht_process(
     // preserve current weights/positions for later search
     weightsParent = weightsLf;
     sumNodes = 0;
-    if (enableACRDOInterPred)
-      ++depth;
+    ++depth;
   }
 
   // process duplicate points at level 0
