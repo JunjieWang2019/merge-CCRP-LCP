@@ -837,7 +837,7 @@ struct GeometryOctreeContexts {
   // This is put at the end as it could break memory alignment
 
   // ctx and OBUF for TriSoup
-  CtxModelDynamicOBUF ctxTriSoup[5][5];
+  CtxModelDynamicOBUF ctxTriSoup[5][7];
   CtxMapDynamicOBUF MapOBUFTriSoup[5][5];
 
   uint8_t _BufferOBUFleavesTrisoup[kLeavesBufferSize];

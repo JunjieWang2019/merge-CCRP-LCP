@@ -293,7 +293,7 @@ GeometryOctreeContexts::resetMap(bool forTrisoup)
     return;
 
   for (int i = 0; i < 5; i++) {
-    MapOBUFTriSoup[i][0].reset(14 + 1 + 2, 7);      // flag
+    MapOBUFTriSoup[i][0].reset(14 + 1 + 0, 7);      // flag
     MapOBUFTriSoup[i][1].reset(10 + 1 + 3 + 1 + 2, 6);      // first bit position
     MapOBUFTriSoup[i][2].reset(10 + 1 + 3 + 1 + 2, 6 + 1);  // second bit position
     MapOBUFTriSoup[i][3].reset(10 + 1 + 3 + 1 + 2, 6 + 2);  // third bit position

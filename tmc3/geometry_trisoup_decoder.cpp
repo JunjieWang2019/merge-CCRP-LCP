@@ -647,7 +647,9 @@ constructCtxPresence(
   bool isInter,
   int8_t TriSoupVerticesPred,
   int8_t colocatedVertex,
-  int pos2Pred) {
+  int pos2Pred,
+  int& mapIdx) {
+
 
   ctxMap1 = std::min(ctxInfo.nclosestPattern, 2) * 15 * 2 + (ctxInfo.neighbEdge - 1) * 2 + ((ctxInfo.ctx1 == 4));    // 2* 15 *3 = 90 -> 7 bits
   ctxMap2 = ctxInfo.neighbEnd << 11;
@@ -659,23 +661,16 @@ constructCtxPresence(
 
   bool isInterGood = isInter && (ctxInfo.nBadPredRef2 <= 0 || ctxInfo.nBadPredComp <= 3);
   ctxInter = 0;
+  mapIdx = 0;
   if (isInterGood) {
-    ctxInter = 1 + (TriSoupVerticesPred != 0);
-    if (ctxInter == 2)
-      ctxInter += 2 * (pos2Pred == 1 || pos2Pred == 2);
+    ctxInter = 1 + (TriSoupVerticesPred != 0) * 3;//1 4;
+    mapIdx = 1 + (TriSoupVerticesPred != 0);
 
     bool goodRef = ctxInfo.nBadPredRef2 <= 0;
     if (goodRef) {
-      ctxMap2 |= (colocatedVertex != 0 ? 1 : 0) << 15;
+      ctxInter += (colocatedVertex != 0 ? 2 : 1);
     }
-    else
-      ctxMap2 <<= 1;
-    ctxMap2 |= goodRef << 16;
   }
-  else {
-    ctxMap2 <<= 2;
-  }
-
 }
 
 // ---------------------------------------------------------------------------

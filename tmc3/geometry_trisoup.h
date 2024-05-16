@@ -112,7 +112,9 @@ namespace pcc {
     bool isInter,
     int8_t TriSoupVerticesPred,
     int8_t colocatedVertex,
-    int pos2Pred);
+    int pos2Pred,
+    int& mapIdx
+  );
 
   void constructCtxPos1(
     int& ctxMap1,
@@ -638,7 +640,7 @@ struct RasterScanTrisoupEdges {
     constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices2bits, qualityRef, qualityComp);
 
     // encode vertex presence
-    int ctxMap1, ctxMap2, ctxInter;
+    int ctxMap1, ctxMap2, ctxInter, mapIdx;
     int Nshift4Mag = std::max(0, NbitsQ - 1);
     int pos2Pred = 0;
     if (NbitsQ >= 1)
@@ -648,9 +650,8 @@ struct RasterScanTrisoupEdges {
       pos2Pred = (bit1 << 1) + (bit1 ? bit2 : !bit2);
     }
 
-    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex, pos2Pred);
-
-    int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].getEvolve(
+    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex, pos2Pred, mapIdx);
+    int ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[mapIdx][0].getEvolve(
       vertexQP != 0, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
       ctxtMemOctree._BufferOBUFleavesTrisoup);
 
@@ -797,7 +798,7 @@ struct RasterScanTrisoupEdges {
     constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices2bits, qualityRef, qualityComp);
 
     // decode vertex presence
-    int ctxMap1, ctxMap2, ctxInter;
+    int ctxMap1, ctxMap2, ctxInter, mapIdx;
     int Nshift4Mag = std::max(0, NbitsQ - 1);
     int pos2Pred = 0;
     if (NbitsQ >= 1)
@@ -807,9 +808,8 @@ struct RasterScanTrisoupEdges {
       pos2Pred = (bit1 << 1) + (bit1 ? bit2 : !bit2);
     }
 
-    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex, pos2Pred);
-
-    bool c = ctxtMemOctree.MapOBUFTriSoup[ctxInter][0].decodeEvolve(
+    constructCtxPresence(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex, pos2Pred, mapIdx);
+    bool c = ctxtMemOctree.MapOBUFTriSoup[mapIdx][0].decodeEvolve(
       &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[0][ctxInter], ctxMap2,
       ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
       ctxtMemOctree._BufferOBUFleavesTrisoup);
