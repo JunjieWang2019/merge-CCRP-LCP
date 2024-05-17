@@ -793,6 +793,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params.encoder.gbh.trisoup_halo_flag, true,
     "Trisoup activate halo around triangles for ray tracing")
 
+  ("trisoupVertexMergeEnabled",
+    params.encoder.gbh.trisoup_vertex_merge_flag, true,
+    "Trisoup activates vertex merge during vertex determination.")
+
   ("trisoupImprovedEncoderEnabled",
     params.encoder.trisoup.improvedVertexDetermination, true,
     "Trisoup activate improved determination of vertex position (encoder only)")

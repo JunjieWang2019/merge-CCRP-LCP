@@ -500,6 +500,10 @@ Controls the activation of using vertices on faces in trisoup coding.
 Controls the activation of using halo around trisoup triangles for ray
 tracing.
 
+### `--trisoupVertexMergeEnabled=0|1`
+Controls the activation of the merging of neighbor vertex to improve visual
+quality.
+
 ### `--trisoupImprovedEncoderEnabled=0|1`
 (Encoder only)
 Controls the activation of improved determination of trisoup vertex position.

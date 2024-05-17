@@ -897,6 +897,7 @@ PCCTMC3Encoder3::encodeGeometryBrick(
     params->gbh.trisoup_face_vertex_flag;
   gbh.trisoup_halo_flag =
     params->gbh.trisoup_halo_flag;
+  gbh.trisoup_vertex_merge_flag = params->gbh.trisoup_vertex_merge_flag;
   gbh.trisoup_thickness =
     params->gbh.trisoup_thickness;
   gbh.slice_bb_pos   = params->gbh.slice_bb_pos;

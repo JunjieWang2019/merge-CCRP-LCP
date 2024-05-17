@@ -643,6 +643,9 @@ struct GeometryBrickHeader {
   // Indicates if the trisoup face vertex is enabled or not
   bool trisoup_face_vertex_flag;
 
+  //Indicates if the trisoup vertex merge is enable or not
+  bool trisoup_vertex_merge_flag;
+
   // Indicates if the trisoup halo is enabled or not
   bool trisoup_halo_flag;
 

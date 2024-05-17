@@ -980,6 +980,7 @@ write(
       bs.write(gbh.trisoup_face_vertex_flag);
     }
     bs.write(gbh.trisoup_halo_flag);
+    bs.write(gbh.trisoup_vertex_merge_flag);
     bs.writeUe(gbh.trisoup_thickness);
 
     int _write_bits = 0;
@@ -1079,6 +1080,7 @@ parseGbh(
       bs.read(&gbh.trisoup_face_vertex_flag);
     }
     bs.read(&gbh.trisoup_halo_flag);
+    bs.read(&gbh.trisoup_vertex_merge_flag);
     bs.readUe(&gbh.trisoup_thickness);
 
     gbh.slice_bb_pos_bits = 0;

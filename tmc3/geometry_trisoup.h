@@ -41,6 +41,7 @@
 
 #include "PCCPointSet.h"
 #include "geometry_octree.h"
+#include <map>
 
 #define PC_PREALLOCATION_SIZE 200000
 
@@ -548,6 +549,10 @@ struct RasterScanTrisoupEdges {
   std::vector<TrisoupNodeFaceVertex> fVerts;
   std::vector<Vec3<int32_t>> gravityCenter;
   std::vector<std::array<int, 3>> neiNodeIdxVec;
+  // TODO: remove this map: overall O(N.log2(N)) complexity
+  // could be replaced by tracking the neighbors in raster scan:
+  // overall O(N) complexity
+  std::map<Vec3<int32_t>, int> triNodeEnable;
 
   // Box
   point_t BBorig;
@@ -565,11 +570,12 @@ struct RasterScanTrisoupEdges {
   // for slice tracking
   int uniqueIndex = 0;
   int firstVertexToCode = 0;
+  int firstVertexToCodeMod3 = 0;
   int nodeIdxC = 0;
   int firstNodeToRender = 0;
 
   // for edge coding
-  std::queue<int> xForedgeOfVertex;
+  std::queue<point_t> posForEdgeOfVertex;
 
   // for colocated edge tracking
   std::vector<int64_t> currentFrameEdgeKeys;
@@ -589,6 +595,7 @@ struct RasterScanTrisoupEdges {
   std::vector<int64_t> renderedBlock;
 
   bool haloFlag;
+  bool vertexMergeFlag;
   int thickness ;
   bool isCentroidDriftActivated;
   bool isFaceVertexActivated;
@@ -994,7 +1001,33 @@ struct RasterScanTrisoupEdges {
     // inter quality for centroid
     int badQualityRef = 0;
     int badQualityComp = 0;
-
+    std::array<bool, 8> triNodeVertex{};
+    std::array<bool, 8> addnVertex{};
+    constexpr int M = 4;
+    constexpr int N = 6;
+    int vertexNum;
+    int32_t th;
+    int32_t bmax;
+    if (vertexMergeFlag) {
+      vertexNum = 0;
+      int cnt = idxSegment;
+      th = std::min(8 << kTrisoupFpBits, blockWidth << (kTrisoupFpBits - 2));
+      bmax = blockWidth << kTrisoupFpBits;
+      for (int n = 0; n < 8; n++) {
+        Vec3<int32_t> value = nodepos + corner[n];
+        auto it = triNodeEnable.find(value);
+        if (it != triNodeEnable.end())
+          if (it->second >= M) {
+            triNodeVertex[n] = true;
+          }
+      }
+      for (int j = 0; j < 12; j++) {
+        int uniqueIndex = segmentUniqueIndex[cnt++];
+        int vertexQ = TriSoupVerticesQP[uniqueIndex];
+        if (vertexQ != 0)
+          vertexNum++;
+      }
+    }
     for (int j = 0; j < 12; j++) {
       int uniqueIndex = segmentUniqueIndex[idxSegment++];
       int vertexQ = TriSoupVerticesQP[uniqueIndex];
@@ -1007,6 +1040,20 @@ struct RasterScanTrisoupEdges {
       if (vertexQ == 0)
         continue;  // skip segments that do not intersect the surface
 
+      int32_t deQVert1 = dequantizeQP(vertexQ)+kTrisoupFpHalf;
+      int32_t deQVert2 = bmax - deQVert1;
+      static const int vertexIdx1 [] = { 0, 0, 2, 1, 0, 2, 3, 1, 4, 4, 6, 5 };
+      static const int vertexIdx2 [] = { 1, 2, 3, 3, 4, 6, 7, 5, 5, 6, 7, 7 };
+      if (vertexMergeFlag && vertexNum >= N) {
+        if (triNodeVertex[vertexIdx1[j]] && deQVert1 < th) {
+          addnVertex[vertexIdx1[j]] = true;
+          continue;
+        }
+        if (triNodeVertex[vertexIdx2[j]] && deQVert2 < th) {
+          addnVertex[vertexIdx2[j]] = true;
+          continue;
+        }
+      }
       // Get 3D position of point of intersection.
       Vec3<int32_t> point = corner[startCorner[j]] << kTrisoupFpBits;
       point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3
@@ -1017,6 +1064,17 @@ struct RasterScanTrisoupEdges {
       leafVertices.push_back({ point, 0, 0 });
 
       neVertex.vertices.push_back({ point, 0, 0 });
+    }
+
+    if (vertexMergeFlag) {
+      for (int k = 0; k < addnVertex.size(); k++) {
+        if (addnVertex[k] == true) {
+          Vec3<int32_t> point = corner[k] << kTrisoupFpBits;
+          point -= kTrisoupFpHalf;
+          neVertex.vertices.push_back({point, 0, 0});
+          leafVertices.push_back({point, 0, 0});
+        }
+      }
     }
 
     int vtxCount = (int)neVertex.vertices.size();
@@ -1571,6 +1629,7 @@ struct RasterScanTrisoupEdges {
     renderedBlock.resize(blockWidth * blockWidth * 16, 0);
 
     haloFlag = gbh.trisoup_halo_flag;
+    vertexMergeFlag = gbh.trisoup_vertex_merge_flag;
     thickness = gbh.trisoup_thickness;
     isCentroidDriftActivated = gbh.trisoup_centroid_vertex_residual_flag;
     isFaceVertexActivated = gbh.trisoup_face_vertex_flag;
@@ -1773,7 +1832,7 @@ struct RasterScanTrisoupEdges {
           ++uniqueIndex;
           neighbNodes.push_back(neighboursMask);
           edgePattern.push(pattern);
-          xForedgeOfVertex.push(currWedgePos[0]);
+          posForEdgeOfVertex.push(currWedgePos);
 
           // for colocated edges
           int64_t key = (int64_t(currWedgePos[0] + keyshift[0]) << 42) + (int64_t(currWedgePos[1] + keyshift[1]) << 22) + (int64_t(currWedgePos[2] + keyshift[2]) << 2) + dir;
@@ -1811,7 +1870,7 @@ struct RasterScanTrisoupEdges {
       if (changeSlice()) {
         // coding vertices
         int upperxForCoding = !nextIsAvailable() ? INT32_MAX : currWedgePos[0] - blockWidth;
-        while (!xForedgeOfVertex.empty() && xForedgeOfVertex.front() < upperxForCoding) {
+        while (!posForEdgeOfVertex.empty() && posForEdgeOfVertex.front()[0] < upperxForCoding) {
           // spatial neighbour and inter comp predictors
           int8_t  interPredictor = isInter ? TriSoupVerticesPred.front() : 0;
           auto pattern = edgePattern.front();
@@ -1828,19 +1887,53 @@ struct RasterScanTrisoupEdges {
           }
 
           // code edge
+          int8_t vertex;
           if (isEncoder) { // encode vertex
-            auto vertex = TriSoupVerticesQP[firstVertexToCode];
-            encodeOneTriSoupVertexRasterScan(vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices2bits, neighbNodes[firstVertexToCode], pattern, interPredictor, colocatedVertex, qualityRef, qualityComp, firstVertexToCode);
+            vertex = TriSoupVerticesQP[firstVertexToCode];
+            encodeOneTriSoupVertexRasterScan(
+              vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices2bits,
+              neighbNodes[firstVertexToCode], pattern, interPredictor,
+              colocatedVertex, qualityRef, qualityComp, firstVertexToCode);
+          } else {
+            decodeOneTriSoupVertexRasterScan(
+              arithmeticDecoder, ctxtMemOctree, TriSoupVerticesQP,TriSoupVertices2bits,
+              neighbNodes[firstVertexToCode], pattern, interPredictor,
+              colocatedVertex, qualityRef, qualityComp, firstVertexToCode);
+            vertex = TriSoupVerticesQP[firstVertexToCode];
+            TriSoupVertices2bits.push_back(map2bits(vertex));
           }
-          else {
-            decodeOneTriSoupVertexRasterScan(arithmeticDecoder, ctxtMemOctree, TriSoupVerticesQP, TriSoupVertices2bits, neighbNodes[firstVertexToCode], pattern, interPredictor, colocatedVertex, qualityRef, qualityComp, firstVertexToCode);
-            TriSoupVertices2bits.push_back(map2bits(TriSoupVerticesQP.back()));
+          if (vertexMergeFlag) {
+            if (vertex != 0) {
+              int32_t th = std::min(
+                8 << kTrisoupFpBits, blockWidth << kTrisoupFpBits - 2);
+              int32_t bmax = blockWidth << kTrisoupFpBits;
+              point_t posKey = posForEdgeOfVertex.front();
+              int32_t deQVert = dequantizeQP(vertex) + kTrisoupFpHalf;
+              int32_t deQVert2 = bmax - deQVert;
+              if (deQVert < th) {
+                triNodeEnable[posKey]++;
+              }
+              if (deQVert2 < th) {
+                if (firstVertexToCodeMod3 == 0) {
+                  posKey = posKey + pos00W;
+                  triNodeEnable[posKey]++;
+                } else if (firstVertexToCodeMod3 == 1) {
+                  posKey = posKey + pos0W0;
+                  triNodeEnable[posKey]++;
+                } else /*if (firstVertexToCodeMod3 == 2)*/ {
+                  posKey = posKey + posW00;
+                  triNodeEnable[posKey]++;
+                }
+              }
+            }
           }
-          xForedgeOfVertex.pop();
+          posForEdgeOfVertex.pop();
           edgePattern.pop();
           if (isInter)
             TriSoupVerticesPred.pop();
           firstVertexToCode++;
+          if (++firstVertexToCodeMod3 == 3)
+            firstVertexToCodeMod3 = 0;
         }
 
         // centroid processing
