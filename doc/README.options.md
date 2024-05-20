@@ -678,6 +678,10 @@ Controls the RAHT lower level from which the prediction is using
 average prediction. It is relative to `rahtModeLevel` and is subtracted
 from it.
 
+### `--rahtCrossChromaComponentPrediction=0|1`
+Controls the use of cross-chroma component prediction. When it is enabled,
+The second chroma component is predicted from the first one.
+
 ### `--qp=INT-VALUE`
 Attribute's luma quantization parameter.
 

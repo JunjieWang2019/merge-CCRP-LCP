@@ -790,6 +790,22 @@ divApproxRoundHalfInf(
 
 //---------------------------------------------------------------------------
 
+inline int64_t
+divApproxRoundHalfInf(
+  const int64_t a, const uint64_t b, const int32_t log2Scale)
+{
+  assert(abs(a) < (1ull << 46));
+
+  int32_t log2InvScale;
+  const int64_t invB = divInvDivisorApprox(b, log2InvScale);
+  const int32_t n = log2InvScale - log2Scale;
+  int64_t res;
+  res = divExp2RoundHalfInf(invB * a, n);
+  return res;
+}
+
+//---------------------------------------------------------------------------
+
 } /* namespace pcc */
 
 #endif /* PCCMath_h */

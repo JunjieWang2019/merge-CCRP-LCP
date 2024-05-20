@@ -43,6 +43,7 @@
 #include "ply.h"
 #include <vector>
 #include "pointset_processing.h"
+#include "ringbuf.h"
 
 namespace pcc {
 
@@ -101,5 +102,24 @@ private:
   int probResGt0[3];  //prob of residuals larger than 0: 1 for each component
   int probResGt1[3];  //prob of residuals larger than 1: 1 for each component
   double sumCostBits;
+};
+
+struct PCCRAHTComputeCCCP {
+  int8_t computeCrossChromaComponentPredictionCoeff(int m, int64_t coeffs[][3]);
+
+  void reset()
+  {
+    sum = {0, 0};
+    window.clear();
+  }
+
+private:
+  struct Elt {
+    int64_t k1k2;
+    int64_t k1k1;
+  };
+
+  Elt sum {0, 0};
+  ringbuf<Elt> window = ringbuf<Elt>(128);
 };
 } /* namespace pcc */

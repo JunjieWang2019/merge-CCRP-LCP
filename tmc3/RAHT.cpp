@@ -94,6 +94,42 @@ PCCRAHTACCoefficientEntropyEstimate::resStatUpdate(int32_t value, int k)
 }
 
 //============================================================================
+
+int8_t
+PCCRAHTComputeCCCP::computeCrossChromaComponentPredictionCoeff(
+  int m, int64_t coeffs[][3])
+{
+  Elt sum12 {0, 0};
+
+  for (size_t coeffIdx = 0; coeffIdx < m; ++coeffIdx) {
+    const auto& attr = coeffs[coeffIdx];
+    sum12.k1k2 += attr[1] * attr[2];
+    sum12.k1k1 += attr[1] * attr[1];
+  }
+
+  if (window.size() == 128) {
+    const auto& removed = window.front();
+    sum.k1k2 -= removed.k1k2;
+    sum.k1k1 -= removed.k1k1;
+    window.pop_front();
+  }
+
+  sum.k1k2 += sum12.k1k2;
+  sum.k1k1 += sum12.k1k1;
+  window.push(sum12);
+
+  int scale = 0;
+
+  if (sum.k1k2 && sum.k1k1) {
+    // sign(sum.k1k2) * sign(sum.k1k1)
+    scale = divApproxRoundHalfInf(sum.k1k2, sum.k1k1, 4);
+  }
+
+  // NB: coding range is limited to +-4
+  return PCCClip(scale, -16, 16);
+}
+
+//============================================================================
 // remove any non-unique leaves from a level in the uraht tree
 
 int
@@ -956,6 +992,9 @@ uraht_process(
   int trainZeros = 0;
   // NB: rootLevel = ceil((levelHfPos.size() - 1)/3.0)
   int rootLevel = (levelHfPos.size() + 1) / 3;
+  int8_t CccpCoeff = 0;
+  PCCRAHTComputeCCCP curlevelCccp;
+
   int intraLayerTrainZeros = 0;
   int interLayerTrainZeros = 0;
   PCCRAHTACCoefficientEntropyEstimate intraLayerEstimate;
@@ -986,6 +1025,9 @@ uraht_process(
     // every three levels, perform transform
     if (level % 3)
       continue;
+
+    CccpCoeff = 0;
+    curlevelCccp.reset();
 
     int distanceToRoot = rootLevel - level / 3;
     int layerD = RDOCodingDepth - distanceToRoot;
@@ -1700,6 +1742,11 @@ uraht_process(
           std::fill(BestRecBufInterLayer[k].begin(), BestRecBufInterLayer[k].end(), FixedPoint(0));
         }
       }
+
+      int64_t CoeffRecBuf[8][3] = {0};
+      int nodelvlSum = 0;
+      FixedPoint transformRecBuf[3] = {0};
+
       scanBlock(weights, [&](int idx) {
         // skip the DC coefficient unless at the root of the tree
         if (inheritDc && !idx)
@@ -1727,7 +1774,7 @@ uraht_process(
         const int LUTlog[16] = {0,   256, 406, 512, 594, 662, 719,  768,
                                 812, 850, 886, 918, 947, 975, 1000, 1024};
         bool flagRDOQ = false;
-
+        int64_t Qcoeff;
         int64_t intraLayerSumCoeff = 0;
         bool intraLayerFlagRDOQ = false;
 
@@ -1741,6 +1788,7 @@ uraht_process(
           int Ratecoeff = 0;
           int64_t lambda0;
           int64_t lambda;
+          int64_t coeff = 0;
 
           int64_t intraLayerRecDist2 = 0;
           int64_t intraLayerDist2 = 0;
@@ -1754,9 +1802,24 @@ uraht_process(
             //auto q = Quantizer(qpLayer[std::min(k, int(quantizers.size()) - 1)] + nodeQp[idx]);
             auto quantizers = qpset.quantizers(qpLayer, nodeQp[idx]);
             auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
-            auto coeff = transformBuf[k][idx].round();
+            coeff = transformBuf[k][idx].round();
             Dist2 += coeff * coeff;
-            auto Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
+
+            if (!rahtPredParams.integer_haar_enable_flag
+                && rahtPredParams.cross_chroma_component_prediction_flag
+                && !coder.isInterEnabled()) {
+              if (k != 2) {
+                Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
+                transformRecBuf[k] = divExp2RoundHalfUp(
+                  q.scale(Qcoeff), kFixedPointAttributeShift);
+              } else {
+                transformRecBuf[k].val = transformBuf[k][idx].val
+                  - ((CccpCoeff * transformRecBuf[1].val) >> 4);
+                coeff = transformRecBuf[k].round();
+                Qcoeff = q.quantize((coeff) << kFixedPointAttributeShift);
+              }
+            } else
+              Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
 
             auto recCoeff =
               divExp2RoundHalfUp(q.scale(Qcoeff), kFixedPointAttributeShift);
@@ -1854,8 +1917,10 @@ uraht_process(
         // The RAHT transform
         auto quantizers = qpset.quantizers(qpLayer, nodeQp[idx]);
         for (int k = 0; k < numAttrs; k++) {
-          if (flagRDOQ) // apply RDOQ
+          if (flagRDOQ) { // apply RDOQ
             transformBuf[k][idx].val = 0;
+            transformRecBuf[k].val = 0;
+          }
 
           if (enableACRDOInterPred) {
             if (!realInferInLowerLevel) {
@@ -1877,13 +1942,30 @@ uraht_process(
             coeff =
               q.quantize(coeff << kFixedPointAttributeShift);
 
+            if (!rahtPredParams.integer_haar_enable_flag
+                && rahtPredParams.cross_chroma_component_prediction_flag
+                && !coder.isInterEnabled()) {
+              if (k != 2) {
+                BestRecBuf[k][idx] = transformRecBuf[k];
+              } else {
+                coeff = transformRecBuf[k].round();
+                coeff = q.quantize(coeff << kFixedPointAttributeShift);
+                transformRecBuf[k] = divExp2RoundHalfUp(
+                  q.scale(coeff), kFixedPointAttributeShift);
+                transformRecBuf[k].val +=
+                  CccpCoeff * transformRecBuf[1].val >> 4;
+                BestRecBuf[k][idx] = transformRecBuf[k];
+              }
+              CoeffRecBuf[nodelvlSum][k] = transformRecBuf[k].round();
+            } else
+              BestRecBuf[k][idx] =
+               divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+
             if (enableACRDOInterPred)
               curEstimate.updateCostBits(coeff, k);
 
             *coeffBufItK[k]++ = coeff;
             skipinverse = skipinverse && (coeff == 0);
-            BestRecBuf[k][idx] =
-              divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
 
             if (enableACRDOInterPred)
               curEstimate.resStatUpdate(coeff, k);
@@ -1959,8 +2041,21 @@ uraht_process(
           } else {
             int64_t coeff = *coeffBufItK[k]++;
             skipinverse = skipinverse && (coeff == 0);
-            BestRecBuf[k][idx] =
+            transformRecBuf[k] = CoeffRecBuf[nodelvlSum][k] =
               divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+            if (!rahtPredParams.integer_haar_enable_flag
+                && rahtPredParams.cross_chroma_component_prediction_flag
+                && !coder.isInterEnabled()) {
+              if (k != 2)
+                BestRecBuf[k][idx] = transformRecBuf[k];
+              else {
+                transformRecBuf[k].val += (CccpCoeff * transformRecBuf[1].val) >> 4;
+
+                BestRecBuf[k][idx] = transformRecBuf[k];
+                CoeffRecBuf[nodelvlSum][k] = transformRecBuf[k].round();
+              }
+            } else
+              BestRecBuf[k][idx] = transformRecBuf[k];
           }
           if (rahtPredParams.integer_haar_enable_flag) {
             BestRecBuf[k][idx] += attrBestPredTransformIt[k][idx]; // Transform Domain Pred for Lossless case
@@ -1974,8 +2069,17 @@ uraht_process(
             }
           }
         }
+        nodelvlSum++;
       });
 
+       // compute last component coefficient
+      if (numAttrs == 3 && nodeCnt > 1
+          && !rahtPredParams.integer_haar_enable_flag
+          && rahtPredParams.cross_chroma_component_prediction_flag
+          && !coder.isInterEnabled()) {
+        CccpCoeff = curlevelCccp.computeCrossChromaComponentPredictionCoeff(
+          nodelvlSum, CoeffRecBuf);
+      }
       // replace DC coefficient with parent if inheritable
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {

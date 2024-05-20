@@ -1000,6 +1000,10 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     "Lower level to enabling average prediction, "
     "relative to rahtModelLevel (subtracted)")
 
+  ("rahtCrossChromaComponentPrediction",
+    params_attr.aps.rahtPredParams.cross_chroma_component_prediction_flag, true,
+    "Use first chroma component to predict the second chroma component")
+
   ("qp",
     // NB: this is adjusted with minus 4 after the arguments are parsed
     params_attr.aps.init_qp_minus4, 4,
