@@ -29,10 +29,155 @@ contents. The original implementation started from the experimental model
 being studied in EE13.60, and is based on the `release-v20.0-rc1` of G-PCC
 test model TMC13.
 
+### `ges-tm-v6.0`
+
+Tag `ges-tm-v6.0` will be released after reported issues are resolved,
+if any.
+
+### `ges-tm-v6.0-rc1`
+
+Tag `ges-tm-v6.0-rc1` includes adoptions made during the meeting #15 of the
+WG7 held in Rennes (April 2024), and some additional fixes and cleanups.
+
+- `raht: tidy - remove unnecessary operations`:  
+    Performs some cleanups of the code for RAHT.
+
+- `octree: refactor - restore a single function for enc/dec`:  
+    Refactors octree's encoding and decoding functions.
+    A single function is restored to support both octree and trisoup.
+
+- `geom/attr: refactor - payload handling structure for single pass decoding`:  
+    Refactors the decoding process to allow expected feature of
+    being able to perform geometry and attributes decoding together in a
+    single pass (with more local processing of the data).
+
+- `geom/attr: tidy - dual motion parameters derivation and HLS`:  
+    Provides general cleanups and fixes for the dual motion's
+    parameters and HLS.
+
+- `geom/attr: refactor - simplify parameters passing to enc/dec functions`:  
+    Simplifies parameters passing to several Encoding/Decoding
+    functions.
+
+- `geom/attr: tidy - minor cleanups`:  
+    Provides minor code cleanups.
+
+- `geom/attr: refactor - template octree enc/dec with/without trisoup`:  
+    Uses templatized versions for the octree encoding/decoding
+    functions, to obtain better execution performances.
+
+- `trisoup: m67002 - versatile quantization`:  
+    Introduces versatile geometry quantization of TriSoup to provide
+    better rate control with quantization parameter.
+
+- `trisoup: misc - optimize OBUF memory use`:  
+    Optimizes OBUF memory usage and management to improve
+    execution speed.
+
+- `enc/trisoup: m67002 - update motion presets`:  
+    Improves presets for inter-frame motion search and
+    prediction with trisoup.
+
+- `trisoup: m67015 - support for non-powers of two node sizes`:  
+    Provides finer granularity for quality control of the
+    TriSoup model by introducing the support for TriSoup node sizes which
+    are not powers of two.
+
+- `trisoup: m67539 - improve trisoup surface reconstruction`:  
+    Improves trisoup surface reconstruction around vertices.
+    It reduces visual artefacts when the surface is passing through the
+    corner using one vertex instead of multiple vertices.
+
+- `trisoup: m68006 - simplify face vertex`:  
+    Provides several cleanups and simplifications of the
+    face vertex for TriSoup.
+
+- `trisoup: m67544 - reduce OBUF memory usage`:  
+    Refines the OBUF scheme of Trisoup vertex presence flag.
+
+- `octree: m67540 - improve inter states contextualization`:  
+    EE13.60-Test2a which improved inter-frame
+    contextual modeling for occupancy coding.
+
+- `octree: m67004 - improve inter prediction`:  
+    Combination 1 of m67004 with m67540.
+
+- `enc/raht: m67627 - RDOQ improvement`:  
+    The reconstruction distortion is also taken into account
+    within RDOQ for RAHT.
+
+- `enc/raht: m67627 - fix RDO with lossless`:  
+    Fixes the RDO issue when determining prediction mode under CW
+    condition.
+
+- `raht: m67627 - fix prediction mode signaling`:  
+    Modifies the software to match with the spec when signalling
+    the prediction mode.
+
+- `raht: m67628 - remove redundant signalling and RDO calculations`:  
+    Removes unnecessary signaling for the prediction mode of
+    RAHT, and avoids corresponding RDO calculations.
+
+- `raht: m67541 - cross chroma component prediction`:  
+    Introduces cross chroma component prediction, for intra
+    frame coding. The first chroma component is used to predict the second
+    chroma component.
+
+- `raht: m67542 - remove unused contexts`:  
+    Removes unused contexts for prediction Mode coding.
+
+- `raht: m67406 - refactor div/mod 3 RAHT level/layer`:  
+    Provides an example of implementation to avoid using
+    divisions by 3 and modulo by 3 when computing levels and layers in RAHT
+    transform.
+
+- `raht: m67406 - use fixed point for attributes`:  
+    Refactors RAHT to use fixed point representation for the
+    intermediate values of the attributes.
+
+- `misc: m67406 - approximate division for FixedPoint representation`:  
+    Introduces a new division approximation function to be used
+    for divisions removal and uniformization with other existing division
+    approximations.
+
+- `raht: m67406 - share a single approximate division`:  
+    Removes two LUTs and increases precision when computing
+    weighted intra/inter prediction.
+
+- `raht: m67406 - rounding inter integer haar predictor`:  
+    Slightly improves the prediction by rounding the integer
+    haar predictor.
+
+- `tuc/raht: m67093 - RAHT per block`:  
+    Adding possibility of performing RAHT transform by blocks as a technology
+    under consideration.
+
+- `tuc/geom/attr: m67808 - localized attributes`:  
+    Add localized attributes processing as a technology under consideration.
+    Localized attributes improve the design of the codec to let it be more
+    friendly to being embedded in a device.
+
+- `enc/trisoup: m67838 - fix slice/tile alignment`:  
+    From discussions about m67838, try fixing slice/tile alignment in case
+    multiple slices/tiles are used, to remove artefacts on slice boundaries.
+
+- `enc/trisoup: m67601 - improve vertex determination`:  
+    Introduces an encoding parameter to control the threshold
+    for vertex determination. This threshold is put to 1 by default
+    (instead of 0).
+
+- `enc/trisoup: m67017 - new CTCs with 6 rate points`:  
+    New Common Test Conditions for TriSoup.
+
+- `enc/trisoup/raht: m67018 - new CTCs for colors with trisoup`:  
+    New Common Test Conditions for colors with RAHT coded on top of
+    a TriSoup geometry.
+
 ### `ges-tm-v5.0`
 
-Tag `ges-tm-v5.0` will be released after reported issues are resolved,
-if any.
+Tag `ges-tm-v5.0` has been released after some cleanups and improvements and
+a few minor bug fixes have been integrated. The `README.md` file has also been
+updated to advise building for Release, for runtime comparisons.
 
 ### `ges-tm-v5.0-rc1`
 
@@ -146,8 +291,9 @@ WG7 held online (January 2024), and some additional fixes and cleanups.
 
 ### `ges-tm-v4.0`
 
-Tag `ges-tm-v4.0` will be released after reported issues are resolved,
-if any.
+Tag `ges-tm-v4.0` has been released on top of `ges-tm-v4.0-rc1` since no other
+issue had been reported. Gitlab references have been update to reflect the new
+address of mpeg gitlab server and the new organization of the projects.
 
 ### `ges-tm-v4.0-rc1`
 
@@ -237,8 +383,8 @@ Hannover (October 2023), and some additional cleanups.
 
 ### `ges-tm-v3.0`
 
-Tag `ges-tm-v3.0` will be released after reported issues are resolved,
-if any.
+Tag `ges-tm-v3.0` has been released on top of `ges-tm-v3.0-rc1` since no other
+issue had been reported.
 
 ### `ges-tm-v3.0-rc1`
 
