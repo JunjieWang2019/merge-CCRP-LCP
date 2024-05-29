@@ -2200,7 +2200,7 @@ uraht_process(
 
         for (int k = 0; k < numAttrs; k++) {
           attrRec[j * numAttrs + k] = BestRecBuf[k][nodeIdx].val;
-          if(enableACInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
+          if(enableACRDOInterPred && typeid(ModeCoder) == typeid(attr::ModeEncoder)) {
             if (!realInferInLowerLevel)
               intraLayerAttrRec[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx].val;
 
