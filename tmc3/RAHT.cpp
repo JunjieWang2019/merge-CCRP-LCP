@@ -2229,7 +2229,7 @@ uraht_process(
         double rdcostMCPred = distMCPredLayer * dfactor + dlambda * curCost;
 
         double rdcostintraLayer;
-        if (!realInferInLowerLevel)
+        if (inheritDc && !realInferInLowerLevel)
           rdcostintraLayer = distintraLayer * dfactor + dlambda * intraLayerCost;
         else
           rdcostintraLayer = std::numeric_limits<double>::infinity();
