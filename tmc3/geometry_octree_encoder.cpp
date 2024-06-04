@@ -1030,56 +1030,6 @@ encodeGeometryOctree(
     rsc.initializeNextDepth();
 
     // process all nodes within a single level
-    auto fifoCurrNode = fifo.begin();
-    auto fifoSliceFirstNode = fifoCurrNode;
-    auto fifoTubeFirstNode = fifoCurrNode;
-    int tubeIndex = 0;
-    int nodeSliceIndex = 0;
-    auto goNextNode = [&]() {
-      ++fifoCurrNode;
-      if (
-        fifoCurrNode == fifoCurrLvlEnd
-        && nodeSliceIndex == 1
-        && tubeIndex == 1
-        ) {
-        fifo.resize(0);
-        fifo.swap(fifoNext);
-        tubeIndex = 0;
-        nodeSliceIndex = 0;
-        fifoSliceFirstNode = fifoCurrNode;
-        fifoTubeFirstNode = fifoCurrNode;
-      }
-      else if (
-        fifoCurrNode == fifoCurrLvlEnd
-        || fifoCurrNode->pos[1] != fifoTubeFirstNode->pos[1]
-        || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
-        ) {
-        // End of tube
-        if (tubeIndex == 0) {
-          ++tubeIndex;
-          fifoCurrNode = fifoTubeFirstNode;
-        }
-        else {
-          if (
-            fifoCurrNode == fifoCurrLvlEnd
-            || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
-            ) {
-            // End of slice
-            if (nodeSliceIndex == 0) {
-              ++nodeSliceIndex;
-              fifoCurrNode = fifoSliceFirstNode;
-            }
-            else {
-              nodeSliceIndex = 0;
-              fifoSliceFirstNode = fifoCurrNode;
-            }
-          }
-          tubeIndex = 0;
-          fifoTubeFirstNode = fifoCurrNode;
-        }
-      }
-    };
-
     bool isLastDepth = depth == maxDepth - 1;
 
     if (forTrisoup && isLastDepth) {
@@ -1092,7 +1042,20 @@ encodeGeometryOctree(
     int planarMask[3] = { 0, 0, 0 };
     maskPlanar(planar, planarMask, codedAxesCurNode);
 
-    for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
+    IterOneLevelSubnodesRSO(
+      fifo.begin(),
+      fifoCurrLvlEnd,
+      [&](const decltype(fifo.begin())& itNode) -> const point_t& {
+        return itNode->pos;
+      },
+      [&](const decltype(fifo.begin())& fifoCurrNode, int childIdx) {
+
+      if (childIdx & 1)
+        return;
+
+      const int tubeIndex = (childIdx >> 1) & 1;
+      const int nodeSliceIndex = (childIdx >> 2) & 1;
+
       PCCOctree3Node& node0 = *fifoCurrNode;
 
       // encode delta qp for each octree block
@@ -1106,7 +1069,7 @@ encodeGeometryOctree(
       auto effectiveChildSizeLog2 = childSizeLog2 - shiftBits;
 
       if (isLeafNode(effectiveNodeSizeLog2))
-        continue;
+        return;
 
       // make quantisation work with qtbt and planar.
       /*int codedAxesCurNode = codedAxesCurLvl;
@@ -1390,7 +1353,7 @@ encodeGeometryOctree(
         }
 
         // leaf nodes do not get split
-        continue;
+        return;
       }
 
       if (!isLeafNode(effectiveChildSizeLog2)) {
@@ -1506,11 +1469,14 @@ encodeGeometryOctree(
           }
         }
       }
-    }
+    });
+
+    fifo.resize(0);
+    fifo.swap(fifoNext);
 
     // calculate the number of points that would be decoded if decoding were
     // to stop at this point.
-    if (gps.octree_point_count_list_present_flag && (tubeIndex && nodeSliceIndex)) {
+    if (gps.octree_point_count_list_present_flag) {
       int numPtsAtLvl = numNodesNextLvl + nextDmIdx - 1;
       gbh.footer.octree_lvl_num_points_minus1.push_back(numPtsAtLvl);
     }

@@ -729,56 +729,6 @@ decodeGeometryOctree(
 
 
     // process all nodes within a single level
-    auto fifoCurrNode = fifo.begin();
-    auto fifoSliceFirstNode = fifoCurrNode;
-    auto fifoTubeFirstNode = fifoCurrNode;
-    int tubeIndex = 0;
-    int nodeSliceIndex = 0;
-    auto goNextNode = [&] () {
-      ++fifoCurrNode;
-      if (
-        fifoCurrNode == fifoCurrLvlEnd
-        && nodeSliceIndex == 1
-        && tubeIndex == 1
-      ) {
-        fifo.resize(0);
-        fifo.swap(fifoNext);
-        tubeIndex = 0;
-        nodeSliceIndex = 0;
-        fifoSliceFirstNode = fifoCurrNode;
-        fifoTubeFirstNode = fifoCurrNode;
-      }
-      else if (
-        fifoCurrNode == fifoCurrLvlEnd
-        || fifoCurrNode->pos[1] != fifoTubeFirstNode->pos[1]
-        || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
-      ) {
-        // End of tube
-        if (tubeIndex == 0) {
-          ++tubeIndex;
-          fifoCurrNode = fifoTubeFirstNode;
-        }
-        else{
-          if(
-            fifoCurrNode == fifoCurrLvlEnd
-            || fifoCurrNode->pos[0] != fifoTubeFirstNode->pos[0]
-          ) {
-            // End of slice
-            if (nodeSliceIndex == 0) {
-              ++nodeSliceIndex;
-              fifoCurrNode = fifoSliceFirstNode;
-            }
-            else {
-              nodeSliceIndex = 0;
-              fifoSliceFirstNode = fifoCurrNode;
-            }
-          }
-          tubeIndex = 0;
-          fifoTubeFirstNode = fifoCurrNode;
-        }
-      }
-    };
-
     bool isLastDepth = depth == maxDepth - 1;
 
     if (forTrisoup && isLastDepth) {
@@ -791,7 +741,20 @@ decodeGeometryOctree(
     int planarMask[3] = { 0, 0, 0 };
     maskPlanar(planar, planarMask, codedAxesCurNode);
 
-    for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
+    IterOneLevelSubnodesRSO(
+      fifo.begin(),
+      fifoCurrLvlEnd,
+      [&](const decltype(fifo.begin())& itNode) -> const point_t& {
+        return itNode->pos;
+      },
+      [&](const decltype(fifo.begin())& fifoCurrNode, int childIdx) {
+
+      if (childIdx & 1)
+        return;
+
+      const int tubeIndex = (childIdx >> 1) & 1;
+      const int nodeSliceIndex = (childIdx >> 2) & 1;
+
       PCCOctree3Node& node0 = *fifoCurrNode;
 
       if (nodeQpOffsetsPresent && !tubeIndex && !nodeSliceIndex) {
@@ -804,7 +767,7 @@ decodeGeometryOctree(
       auto effectiveChildSizeLog2 = childSizeLog2 - shiftBits;
 
       if (isLeafNode(effectiveNodeSizeLog2))
-        continue;
+        return;
 
       std::array<int32_t, 8> predUnCompCounts = {};
       if(!tubeIndex && !nodeSliceIndex) {
@@ -1089,7 +1052,7 @@ decodeGeometryOctree(
         }
 
         // do not recurse into leaf nodes
-        continue;
+        return;
       }
 
 
@@ -1193,7 +1156,10 @@ decodeGeometryOctree(
           }
         }
       }
-    }
+    });
+
+    fifo.resize(0);
+    fifo.swap(fifoNext);
 
     // Check that one level hasn't produced too many nodes
     // todo(df): this check is too weak to spot overflowing the fifo

@@ -181,7 +181,7 @@ void IterOneLevelSubnodesRSO(
   for (; fifoCurrNode != fifoCurrLvlEnd; goNextNode()) {
     auto firstChildIdx = (nodeSliceIndex << 2) | (tubeIndex << 1);
     callback(fifoCurrNode, firstChildIdx);
-    callback(fifoCurrNode, firstChildIdx + 1);
+    callback(fifoCurrNode, firstChildIdx | 1);
   }
 }
 
