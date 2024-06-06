@@ -53,12 +53,12 @@
 namespace pcc {
 namespace attr {
 
-enum Mode
+enum Mode:int8_t
 {
-  Null,
-  Intra,
-  Inter,
-  size
+  Null = 0,
+  Intra = 1,
+  Inter = 2,
+  size = 3
 };
 
 inline bool isNull(Mode mode) { return mode == Mode::Null; }
@@ -200,12 +200,13 @@ public:
 
   auto getEntropy(int ctxMode, int ctxLevel) -> std::array<double, Mode::size>&
   {
+    bool enableIntra = ctxMode & 1;
+    ctxMode >>= 1;
     assert(ctxMode >= 0 && ctxMode < NUMBER_OF_CONTEXT_MODE);
     assert(ctxLevel >= 0 && ctxLevel < NUMBER_OF_LEVELS_MODE);
     std::fill(
       entropy.begin(), entropy.end(), std::numeric_limits<double>::infinity());
 
-    bool enableIntra = (ctxMode % 3) > 0;
     if (!enableInter && !enableIntra) {
       entropy[Mode::Null] = 0;
       return entropy;
@@ -243,32 +244,35 @@ public:
   static uint16_t pack(int ctxMode, int ctxLevel, Mode real)
   {
     return uint16_t(real)
-      + uint16_t(Mode::size)
-      * (uint16_t(ctxLevel) + NUMBER_OF_LEVELS_MODE * uint16_t(ctxMode));
+      + (uint16_t(ctxLevel)
+        << NumBits<Mode::size-1>::val)
+      + (uint16_t(ctxMode)
+        << NumBits<Mode::size-1>::val + NumBits<NUMBER_OF_LEVELS_MODE-1>::val);
   }
 
   static void unpack(uint16_t val, int& ctxMode, int& ctxLevel, Mode& real)
   {
-    real = Mode(val % uint16_t(Mode::size));
-    val /= uint16_t(Mode::size);
-    ctxLevel = val % NUMBER_OF_LEVELS_MODE;
-    ctxMode = val / NUMBER_OF_LEVELS_MODE;
+    real = Mode(val & uint16_t(1 << NumBits<Mode::size-1>::val) - 1);
+    val >>= NumBits<Mode::size-1>::val;
+    ctxLevel = val & (1 << NumBits<NUMBER_OF_LEVELS_MODE-1>::val) - 1;
+    ctxMode = val >> NumBits<NUMBER_OF_LEVELS_MODE-1>::val;
   }
 
 private:
   template<bool writeOut>
-  void _encode(int ctxMode, int ctxLevel, Mode real)
+  void _encode(int _ctxMode, int ctxLevel, Mode real)
   {
+    bool enableIntra = _ctxMode & 1;
+    int ctxMode = _ctxMode >> 1;
     assert(ctxMode >= 0 && ctxMode < NUMBER_OF_CONTEXT_MODE);
     assert(ctxLevel >= 0 && ctxLevel < NUMBER_OF_LEVELS_MODE);
-    bool enableIntra = (ctxMode % 3) > 0;
     if (!enableIntra && !enableInter) {
       assert(real == Mode::Null);
       return;
     }
 
     if (!writeOut)
-      buffer.push_back(pack(ctxMode, ctxLevel, real));
+      buffer.push_back(pack(_ctxMode, ctxLevel, real));
 
     bool flag;
     flag = isNull(real);
@@ -307,9 +311,10 @@ public:
 
   Mode decode(int ctxMode, int ctxLevel)
   {
+    bool enableIntra = ctxMode & 1;
+    ctxMode >>= 1;
     assert(ctxMode >= 0 && ctxMode < NUMBER_OF_CONTEXT_MODE);
     assert(ctxLevel >= 0 && ctxLevel < NUMBER_OF_LEVELS_MODE);
-    bool enableIntra = (ctxMode % 3) > 0;
     if (!enableIntra && !enableInter) {
       return Mode::Null;
     }

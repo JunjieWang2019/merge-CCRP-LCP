@@ -47,6 +47,8 @@
 
 namespace pcc {
 
+//============================================================================
+
 void regionAdaptiveHierarchicalTransform(
   const RahtPredictionParams& rahtPredParams,
   AttributeBrickHeader& abh,
@@ -77,35 +79,180 @@ void regionAdaptiveHierarchicalInverseTransform(
   int* coefficients,
   attr::ModeDecoder& decoder);
 
-struct PCCRAHTACCoefficientEntropyEstimate {
-  PCCRAHTACCoefficientEntropyEstimate()
-  {
-    init();
+//============================================================================
+
+namespace RAHT {
+
+//============================================================================
+// Find the neighbours of the node indicated by @t between @first and @last.
+// The position weight of each found neighbour is stored in two arrays.
+
+template<typename It>
+int
+findNeighbours(
+  It first,
+  It last,
+  It it,
+  int level,
+  uint8_t occupancy,
+  int parentNeighIdx[19])
+{
+  static const uint8_t neighMasks[19] = {255, 240, 204, 170, 192, 160, 136,
+                                         3,   5,   15,  17,  51,  85,  10,
+                                         34,  12,  68,  48,  80};
+
+  // current position (discard extra precision)
+  int64_t cur_pos = it->pos >> level;
+
+  // the position of the parent, offset by (-1,-1,-1)
+  int64_t base_pos = morton3dAdd(cur_pos, -1ll);
+
+  // these neighbour offsets are relative to base_pos
+  static const uint8_t neighOffset[19] = {0, 35, 21, 14, 49, 42, 28, 1,  2, 3,
+                                          4, 5,  6,  10, 12, 17, 20, 33, 34};
+
+  // special case for the direct parent (no need to search);
+  parentNeighIdx[0] = std::distance(first, it);
+
+  int parentNeighCount = parentNeighIdx[0] != -1;
+  for (int i = 1; i < 19; i++) {
+    // Only look for neighbours that have an effect
+    if (!(occupancy & neighMasks[i])) {
+      parentNeighIdx[i] = -1;
+      continue;
+    }
+
+    // compute neighbour address to look for
+    // the delta between it and the current position is
+    int64_t neigh_pos = morton3dAdd(base_pos, neighOffset[i]);
+    int64_t delta = neigh_pos - cur_pos;
+
+    // find neighbour
+    It start = first;
+    It end = last;
+
+    if (delta >= 0) {
+      start = it;
+      if ((delta + 1) < std::distance(it, last))
+        end = std::next(it, delta + 1);
+    }
+    else {
+      end = it;
+      if ((-delta) < std::distance(first, it))
+        start = std::prev(it, -delta);
+    }
+    It found = std::lower_bound(
+      start, end, neigh_pos,
+      [=](decltype(*it)& candidate, int64_t neigh_pos) {
+        return (candidate.pos >> level) < neigh_pos; });
+    parentNeighIdx[i] =
+      found == end || (found->pos >> level) != neigh_pos
+      ? -1 : std::distance(first, found);
+    parentNeighCount += parentNeighIdx[i] != -1;
   }
 
-  PCCRAHTACCoefficientEntropyEstimate(
-    const PCCRAHTACCoefficientEntropyEstimate& other) = default;
+  return parentNeighCount;
+}
 
-  PCCRAHTACCoefficientEntropyEstimate&
-    operator=(const PCCRAHTACCoefficientEntropyEstimate&) = default;
+//============================================================================
+// computeParentDc
 
-  void resStatUpdate(int32_t values, int k);
-  void init();
-  void updateCostBits(int32_t values, int k);
-  double costBits() { return sumCostBits; }
-  void resetCostBits() { sumCostBits = 0.; }
+template<bool haarFlag, int numAttrs>
+void
+computeParentDc(
+  int64_t w,
+  std::vector<int64_t>::const_iterator dc,
+  int64_t parentDc[3]
+)
+{
+  if (haarFlag) {
+    for (int k = 0; k < numAttrs; k++) {
+      parentDc[k] = dc[k];
+    }
+    return;
+  }
 
-private:
-  // Encoder side residual cost calculation
-  static constexpr unsigned scaleRes = 1 << 20;
-  static constexpr unsigned windowLog2 = 6;
-  int probResGt0[3];  //prob of residuals larger than 0: 1 for each component
-  int probResGt1[3];  //prob of residuals larger than 1: 1 for each component
-  double sumCostBits;
-};
+  int shift = 5 * ((w > 1024) + (w > 1048576));
+  int64_t rsqrtWeight = fastIrsqrt(w) >> (40 - shift - kFPFracBits);
+  for (int k = 0; k < numAttrs; k++) {
+    parentDc[k] = fpReduce<kFPFracBits>(
+      (dc[k] >> shift) * rsqrtWeight);
+  }
+}
+
+//============================================================================
+// expand a set of eight weights into three levels
+
+template<bool skipkernel, class Kernel>
+void
+mkWeightTree(int64_t weights[8 + 8 + 8 + 8 + 24])
+{
+  auto in = &weights[0];
+  auto out = &weights[8];
+
+  for (int i = 0; i < 4; i++) {
+    out[0] = in[0] + in[1];
+    out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
+    in += 2;
+    out++;
+  }
+  out += 4;
+  for (int i = 0; i < 4; i++) {
+    out[0] = in[0] + in[1];
+    out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
+    in += 2;
+    out++;
+  }
+  out += 4;
+  for (int i = 0; i < 4; i++) {
+    out[0] = in[0] + in[1];
+    out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
+    in += 2;
+    out++;
+  }
+
+  for (int i = 0; i < 24; i += 2) {
+    weights[i + 32] = (!!weights[i]) << kFPFracBits;
+    weights[i + 33] = (!!weights[i + 1]) << kFPFracBits;
+
+    if (weights[i] && weights[i + 1]) {
+      if (skipkernel) {
+        weights[i + 32] = weights[i];
+        weights[i + 33] = weights[i + 1];
+      }
+      else {
+        Kernel w(weights[i], weights[i + 1]);
+        weights[i + 32] = w.getW0();
+        weights[i + 33] = w.getW1();
+      }
+    }
+  }
+}
+
+//============================================================================
+// Invoke mapFn(coefIdx) for each present coefficient in the transform
+
+template<class T>
+void
+scanBlock(int64_t weights[], T mapFn)
+{
+  static const int8_t kRahtScanOrder[] = {0, 4, 2, 1, 6, 5, 3, 7};
+
+  // there is always the DC coefficient (empty blocks are not transformed)
+  mapFn(0);
+
+  for (int i = 1; i < 8; i++) {
+    if (weights[24 + kRahtScanOrder[i]])
+      mapFn(kRahtScanOrder[i]);
+  }
+}
+
+//============================================================================
+// Cross Chroma Component Prediction
 
 struct PCCRAHTComputeCCCP {
-  int8_t computeCrossChromaComponentPredictionCoeff(int m, int64_t coeffs[][3]);
+  int8_t computeCrossChromaComponentPredictionCoeff(
+    int m, int64_t coeffs[][3]);
 
   void reset()
   {
@@ -122,4 +269,11 @@ private:
   Elt sum {0, 0};
   ringbuf<Elt> window = ringbuf<Elt>(128);
 };
+
+//============================================================================
+
+} /* namespace RAHT */
+
+//============================================================================
+
 } /* namespace pcc */

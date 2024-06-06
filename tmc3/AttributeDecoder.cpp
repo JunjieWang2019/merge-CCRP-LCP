@@ -596,7 +596,6 @@ AttributeDecoder::decodeRAHTperBlock(
   std::vector<Qps> pointQpOffsets;
   pointQpOffsets.reserve(voxelCount);
 
-  int n = 0;
   for (auto index : indexOrd) {
     pointQpOffsets.push_back(qpSet.regionQpOffset(pointCloud[index]));
   }

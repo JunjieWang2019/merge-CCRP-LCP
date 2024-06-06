@@ -186,6 +186,25 @@ numBits(int x)
 }
 
 //---------------------------------------------------------------------------
+// The number of bits required to represent constexpr X.
+// NB: X must be >= 0.
+// NB: NumBits<0>::val = 0.
+template <uint64_t X>
+struct NumBits {
+  enum { val = NumBits<(X >> 1)>::val + 1 };
+};
+// terminal case
+template <>
+struct NumBits<1ULL> {
+  enum { val = 1 };
+};
+// special case
+template <>
+struct NumBits<0ULL> {
+  enum { val = 1 };
+};
+
+//---------------------------------------------------------------------------
 // rotate left by n bits.
 // If n is negative, the effect is to rotate right.
 // NB: Signed types are treated as unsigned.
@@ -217,16 +236,43 @@ rotateRight(T val, int n)
 // Compute an approximation of \left\floor \sqrt{x} \right\floor
 
 uint32_t isqrt(uint64_t x) __attribute__((const));
+uint32_t fastIsqrt(uint64_t x) __attribute__((const));
 
 //---------------------------------------------------------------------------
 // Compute an approximation of reciprocal sqrt
 
-uint64_t irsqrt(uint64_t a64) __attribute__((const));
+int64_t irsqrt(uint64_t a64) __attribute__((const));
+int64_t fastIrsqrt(int64_t a64) __attribute__((const));
 
 //---------------------------------------------------------------------------
 // Compute an approximation of atan2
 
 int iatan2(int y, int x);
+
+//---------------------------------------------------------------------------
+// Reduce fixed point by one level of fixed point precision (N bits)
+// may be used for restoring original fixed point precision after a
+// multiplication by fixed point value;
+// or for rounding fixed point value to integer value.
+template <int N, typename T>
+inline T fpReduce(T val)
+{
+  if (val < 0)
+    return  -(((1 << N - 1) - val) >> N);
+  else
+    return +(((1 << N - 1) + val) >> N);
+}
+
+//---------------------------------------------------------------------------
+// Expand by one level of fixed point precision (N bits)
+// may be used for expanding precision before a division by a fixed point
+// value;
+// or for converting an integer value to a fixed point value.
+template <int N, typename T>
+inline T fpExpand(T val)
+{
+  return val > 0 ? val << N : -((-val) << N);
+}
 
 //---------------------------------------------------------------------------
 // Decrement the @axis-th dimension of 3D morton code @x.
@@ -244,15 +290,13 @@ morton3dAxisDec(int64_t val, int axis)
 inline uint64_t
 morton3dAdd(uint64_t a, uint64_t b)
 {
-  uint64_t mask = 0x9249249249249249llu;
-  uint64_t val = 0;
+  constexpr uint64_t mask1 = 0x9249249249249249llu;
+  constexpr uint64_t mask2 = mask1 << 1;
+  constexpr uint64_t mask3 = mask1 << 2;
 
-  for (int i = 0; i < 3; i++) {
-    val |= (a | ~mask) + (b & mask) & mask;
-    mask <<= 1;
-  }
-
-  return val;
+  return (a | ~mask1) + (b & mask1) & mask1
+    | (a | ~mask2) + (b & mask2) & mask2
+    | (a | ~mask3) + (b & mask3) & mask3;
 }
 
 //---------------------------------------------------------------------------

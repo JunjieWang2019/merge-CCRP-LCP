@@ -49,126 +49,20 @@
 
 namespace pcc {
 
-void
-computeParentDc(
-  const int64_t weights[],
-  std::vector<int64_t>::const_iterator dc,
-  std::vector<FixedPoint>& parentDc,
-  bool integer_haar_enable_flag
-  )
-{
-  if (integer_haar_enable_flag) {
-    for (int k = 0; k < parentDc.size(); k++) {
-      parentDc[k].val = dc[k];
-    }
-    return;
-  }
-
-  uint64_t w = weights[0];
-  for (int i = 1; i < 8; i++)
-    w += weights[i];
-
-  FixedPoint rsqrtWeight;
-  int shift = w > 1024 ? ilog2(w - 1) >> 1 : 0;
-  rsqrtWeight.val = irsqrt(w) >> (40 - shift - FixedPoint::kFracBits);
-  for (int k = 0; k < parentDc.size(); k++) {
-    parentDc[k].val = dc[k] >> shift;
-    parentDc[k] *= rsqrtWeight;
-  }
-}
-
-void
-translateLayer(
-  std::vector<int64_t>& layerAttr,
-  size_t level,
-  size_t attrCount,
-  size_t count_rf,
-  size_t count_mc,
-  int64_t* morton_rf,
-  int64_t* morton_mc,
-  int* attr_mc,
-  bool integer_haar_enable_flag,
-  size_t layerSize)
-{
-  std::vector<int64_t> morton_layer;
-  if (layerSize)
-    morton_layer.reserve(layerSize / attrCount);
-  else
-    morton_layer.reserve(count_rf);
-
-  int64_t prev = -1;
-  size_t i = 0;
-  for (size_t n = 0; n < count_rf; n++) {
-    int64_t curr = morton_rf[n] >> level;
-    if (curr != prev) {
-      prev = curr;
-      morton_layer.push_back(curr);
-    }
-  }
-
-  count_rf = morton_layer.size();
-  layerAttr.resize(count_rf * attrCount);
-
-  i = 0;
-  size_t j = 0;
-  while (i < count_rf && j < count_mc) {
-    prev = morton_layer[i];
-
-    while (j < count_mc && prev > (morton_mc[j] >> level))
-      j++;
-
-    int64_t weight = 0;
-    auto layer = std::next(layerAttr.begin(), attrCount * i);
-    for (size_t k = 0; k < attrCount; k++)
-      layer[k] = 0;
-
-    while (j < count_mc && prev == (morton_mc[j] >> level)) {
-      weight++;
-      auto attr = &attr_mc[attrCount * j];
-      for (size_t k = 0; k < attrCount; k++)
-        layer[k] += static_cast<int64_t>(attr[k]) << FixedPoint::kFracBits;
-      j++;
-    }
-
-    if (weight > 1) {
-      for (size_t k = 0; k < attrCount; k++) {
-        layer[k] /= weight;
-        if (integer_haar_enable_flag)
-          layer[k] = (layer[k] >> FixedPoint::kFracBits) << FixedPoint::kFracBits;
-      }
-    } else if (!weight) {
-      for (size_t k = 0; k < attrCount; k++)
-        layer[k] = -1;
-    }
-
-    i++;
-    while (i < count_rf && prev == morton_layer[i]) {
-      std::copy(
-        layer, layer + attrCount,
-        std::next(layerAttr.begin(), attrCount * i));
-      i++;
-    }
-  }
-}
-
+using namespace RAHT;
 
 namespace attr {
   Mode getNeighborsMode(
     const bool& isEncoder,
     const int parentNeighIdx[19],
     const std::vector<UrahtNode>& weightsParent,
-    int16_t& voteInterWeight,
-    int16_t& voteIntraWeight,
-    int16_t& voteInterLayerWeight,
-    int16_t& voteIntraLayerWeight)
+    int& voteInterWeight,
+    int& voteIntraWeight,
+    int& voteInterLayerWeight,
+    int& voteIntraLayerWeight)
   {
-    int voteNull = 0;
-    int voteIntra = 0;
-    int voteInter = 0;
-
-    int voteNullLayer = 0;
-    int voteIntraLayer = 0;
-    int voteInterLayer = 0;
+    int vote[4] = { 0,0,0,0 }; // Null, intra, inter, size;
+    int voteLayer[4] = { 0,0,0,0 }; // Null, intra, inter, size;
 
     for (int i = 1; i < 19; i++) {
       if (parentNeighIdx[i] == -1)
@@ -176,121 +70,64 @@ namespace attr {
 
       auto uncle = std::next(weightsParent.begin(), parentNeighIdx[i]);
 
-      if (isNull(uncle->mode))
-        voteNull += 1;
-      else if (isIntra(uncle->mode))
-        voteIntra += 1;
-      else if (isInter(uncle->mode))
-        voteInter += 1;
+      vote[uncle->mode]++;
 
-      if (isEncoder) {
-        if (isNull(uncle->mode))
-          voteNullLayer += 1;
-        else if (isIntra(uncle->mode))
-          voteIntraLayer += 1;
-        else if (isInter(uncle->mode))
-          voteInterLayer += 1;
-      }
+      if (isEncoder)
+        voteLayer[uncle->mode]++;
 
       if (uncle->decoded) {
-        for (auto cousin = uncle->firstChild; cousin < uncle->lastChild;
-             cousin++) {
-          if (isNull(cousin->mode))
-            voteNull += 3;
-          else if (isIntra(cousin->mode))
-            voteIntra += 3;
-          else if (isInter(cousin->mode))
-            voteInter += 3;
-
-          if (isEncoder) {
-            if (isNull(cousin->_mode))
-              voteNullLayer += 3;
-            else if (isIntra(cousin->_mode))
-              voteIntraLayer += 3;
-            else if (isInter(cousin->_mode))
-              voteInterLayer += 3;
-          }
+        auto cousin = uncle->firstChild;
+        for (int t = 0; t < uncle->numChildren; t++, cousin++) {
+          vote[cousin->mode] += 3;
+          if (isEncoder)
+            voteLayer[cousin->_mode] += 3;
         }
       }
     }
 
-    voteInterWeight = voteInter * 2 + voteNull;
-    voteIntraWeight = voteIntra * 2 + voteNull;
+    auto parent = std::next(weightsParent.begin(), parentNeighIdx[0]);
+
+    voteIntraWeight = vote[1] * 2 + vote[0];
+    voteInterWeight = vote[2] * 2 + vote[0];
+    voteIntraWeight += isNull(parent->mode) + 2 * isIntra(parent->mode);
+    voteInterWeight += isNull(parent->mode) + 2 * isInter(parent->mode);
+
     if (isEncoder) {
-      voteInterLayerWeight = voteInterLayer * 2 + voteNullLayer;
-      voteIntraLayerWeight = voteIntraLayer * 2 + voteNullLayer;
+      voteIntraLayerWeight = voteLayer[1] * 2 + voteLayer[0];
+      voteInterLayerWeight = voteLayer[2] * 2 + voteLayer[0];
+      voteIntraLayerWeight += isNull(parent->mode) + 2 * isIntra(parent->mode);
+      voteInterLayerWeight += isNull(parent->mode) + 2 * isInter(parent->mode);
     }
 
-    if (1) {
-      auto parent = std::next(weightsParent.begin(), parentNeighIdx[0]);
-
-      if (isNull(parent->mode)) {
-        voteIntraWeight += 1;
-        voteInterWeight += 1;
-      } else if (isIntra(parent->mode))
-        voteIntraWeight += 2;
-      else if (isInter(parent->mode))
-        voteInterWeight += 2;
-
-      if (isEncoder) {
-        if (isNull(parent->mode)) {
-          voteIntraLayerWeight += 1;
-          voteInterLayerWeight += 1;
-        } else if (isIntra(parent->mode))
-          voteIntraLayerWeight += 2;
-        else if (isInter(parent->mode))
-          voteInterLayerWeight += 2;
-      }
-    }
-
-    if (voteNull > voteIntra && voteNull > voteInter)
+    if (vote[0] > vote[1] && vote[0] > vote[2])
       return Mode::Null;
-    if (voteIntra > voteInter)
+    if (vote[1] > vote[2])
       return Mode::Intra;
     return Mode::Inter;
   }
 
-  Mode getInferredMode(
-    int& ctxMode,
-    bool enableIntraPrediction,
-    bool enableInterPrediction,
+  int getInferredMode(
+    bool enableIntraPred,
+    bool enableInterPred,
     int childrenCount,
     Mode parent,
-    Mode neighbors,
-    const int numAttrs,
-    const int64_t weights[8],
-    std::vector<int64_t>::const_iterator dc)
+    Mode neighbors)
   {
     // [3] Context: enabled flag
-    if (enableIntraPrediction && enableInterPrediction)
-      ctxMode = 2;
-    else if (enableIntraPrediction)
-      ctxMode = 1;
-    else
-      ctxMode = 0;
+    int ctxMode = enableIntraPred << enableInterPred;
 
     // [3] Context: parent
-    if (isInter(parent))
-      ctxMode += 2 * 3;
-    else if (isIntra(parent) || false)
-      ctxMode += 1 * 3;
+    ctxMode += 2 * 3 * isInter(parent);
+    ctxMode += 1 * 3 * isIntra(parent);
 
-    // [4] Context: neighbors
-    if (isInter(neighbors))
-      ctxMode += 2 * 3 * 3;
-    else if (isIntra(neighbors))
-      ctxMode += 1 * 3 * 3;
-
+    // [3] Context: neighbors
+    ctxMode += 2 * 3 * 3 * isInter(neighbors);
+    ctxMode += 1 * 3 * 3 * isIntra(neighbors);
 
     // [3] Context: number of children
-    if (childrenCount > 5)
-      ctxMode += 2 * 3 * 3 * 3;
-    else if (childrenCount > 3)
-      ctxMode += 1 * 3 * 3 * 3;
+    ctxMode += 1 * 3 * 3 * 3 * ((childrenCount > 3) + (childrenCount > 5));
 
-    if (enableIntraPrediction)
-      return Mode::Intra;
-    return Mode::Null;
+    return (ctxMode << 1) + enableIntraPred;
   }
 
   int estimateExpGolombBits(unsigned int symbol, int k)

@@ -46,44 +46,56 @@
 #include "PCCMisc.h"
 #include "ModeCoder.h"
 
-using VecAttr = std::vector<std::array<pcc::FixedPoint, 8>>;
-
 namespace pcc {
 
-void computeParentDc(
-  const int64_t weights[],
-  std::vector<int64_t>::const_iterator dc,
-  std::vector<FixedPoint>& parentDc,
-  bool integer_haar_enable_flag);
-
-void translateLayer(
-  std::vector<int64_t>& layerAttr,
-  size_t level,
-  size_t attrCount,
-  size_t count_rf,
-  size_t count_mc,
-  int64_t* morton_rf,
-  int64_t* morton_mc,
-  int* attr_mc,
-  bool integer_haar_enable_flag,
-  size_t layerSize = 0);
+using VecAttr = std::vector<std::array<pcc::FixedPoint, 8>>;
 
 //============================================================================
+
+struct UrahtNodeLight {
+  int64_t pos;
+  int weight;
+  std::array<int16_t, 2> qp;
+  attr::Mode mode = attr::Mode::size;
+  attr::Mode _mode = attr::Mode::size;
+};
 
 struct UrahtNode {
   int64_t pos;
   int weight;
-  Qps qp;
-  bool decoded;
-  int64_t offset;
-  attr::Mode mode;
-  attr::Mode _mode;
-  attr::Mode mc;
+  std::array<int16_t, 2> qp;
+  bool decoded = false;
+  attr::Mode mode = attr::Mode::size;
+  attr::Mode _mode = attr::Mode::size;
 
   uint8_t occupancy;
-  std::vector<UrahtNode>::iterator firstChild;
-  std::vector<UrahtNode>::iterator lastChild;
+  std::vector<UrahtNodeLight>::iterator firstChild;
+  uint8_t numChildren;
+
+  void operator=(const UrahtNodeLight& node) {
+    pos = node.pos;
+    weight = node.weight;
+    qp = node.qp;
+    mode = node.mode;
+    _mode = node._mode;
+    occupancy = 0;
+    decoded = false;
+  }
 };
+
+struct UrahtNodeDecoder {
+  int64_t pos;
+  int weight;
+  std::array<int16_t, 2> qp;
+  bool decoded = false;
+  attr::Mode mode = attr::Mode::size;
+  uint8_t occupancy = 0;
+
+  int firstChildIdx;
+  uint8_t numChildren;
+};
+
+//============================================================================
 
 enum NeighborType
 {
@@ -176,25 +188,22 @@ operator+(const ParentIndex& a, const T& b)
 }
 
 namespace attr {
+
   Mode getNeighborsMode(
     const bool& isEncoder,
     const int parentNeighIdx[19],
     const std::vector<UrahtNode>& weightsParent,
-    int16_t& voteInterWeight,
-    int16_t& voteIntraWeight,
-    int16_t& voteInterLayerWeight,
-    int16_t& voteIntraLayerWeight);
+    int& voteInterWeight,
+    int& voteIntraWeight,
+    int& voteInterLayerWeight,
+    int& voteIntraLayerWeight);
 
-  Mode getInferredMode(
-    int& ctxMode,
-    bool enableIntraPrediction,
-    bool enableInterPrediction,
+  int getInferredMode(
+    bool enableIntraPred,
+    bool enableInterPred,
     int childrenCount,
     Mode parent,
-    Mode neighbors,
-    const int numAttrs,
-    const int64_t weights[8],
-    std::vector<int64_t>::const_iterator dc);
+    Mode neighbors);
 
   template<class Kernel>
   Mode choseMode(
@@ -209,65 +218,55 @@ namespace attr {
 
 }  // namespace AttrPrediction
 
+namespace RAHT {
+
+//============================================================================
+
+// Fixed Point precision for RAHT
+static constexpr int64_t kFPFracBits = FixedPoint::kFracBits;
+static constexpr int64_t kFPOneHalf = 1 << (kFPFracBits - 1);
+static constexpr int64_t kFPDecMask = ((1 << kFPFracBits) - 1);
+static constexpr int64_t kFPIntMask = ~kFPDecMask;
+
 //============================================================================
 // Encapsulation of a RAHT transform stage.
 
 class RahtKernel {
 public:
-  RahtKernel(int weightLeft, int weightRight, bool scaledWeights=false)
+  inline
+  RahtKernel(int64_t weightLeft, int64_t weightRight, bool scaledWeights = false)
   {
     if (scaledWeights) {
-      _a.val = weightLeft;
-      _b.val = weightRight;
-    } else {
-      uint64_t w = weightLeft + weightRight;
-      uint64_t isqrtW = irsqrt(w);
-      _a.val =
-        (isqrt(uint64_t(weightLeft) << (2 * _a.kFracBits)) * isqrtW) >> 40;
-      _b.val =
-        (isqrt(uint64_t(weightRight) << (2 * _b.kFracBits)) * isqrtW) >> 40;
+      _a = weightLeft;
+      _b = weightRight;
+    }
+    else {
+      int64_t w = weightLeft + weightRight;
+      int64_t isqrtW = fastIrsqrt(w);
+      _a = fastIsqrt(weightLeft) * isqrtW >> 40;
+      _b = fastIsqrt(weightRight) * isqrtW >> 40;
     }
   }
 
-  void fwdTransform(FixedPoint& lf, FixedPoint& hf)
+  void fwdTransform(int64_t& lf, int64_t& hf)
   {
-    // lf = right * b + left * a
-    // hf = right * a - left * b
-    auto tmp = lf.val * _b.val;
-    lf.val = lf.val * _a.val + hf.val * _b.val;
-    hf.val = hf.val * _a.val - tmp;
-    //auto tmp = lf.val * _b.val;
-    //lf.val *= _a.val;
-    //lf.val += hf.val * _b.val;
-    //hf.val *= _a.val;
-    //hf.val -= tmp;
-
-    lf.fixAfterMultiplication();
-    hf.fixAfterMultiplication();
+    auto tmp = lf * _b;
+    lf = fpReduce<kFPFracBits>(lf * _a + hf * _b);
+    hf = fpReduce<kFPFracBits>(hf * _a - tmp);
   }
 
-  void invTransform(FixedPoint& left, FixedPoint& right)
+  void invTransform(int64_t& left, int64_t& right)
   {
-    // left = lf * a - hf * b
-    // right = lf * b + hf * a
-    auto tmp = right.val * _b.val;
-    right.val = right.val * _a.val + left.val * _b.val;
-    left.val = left.val *_a.val - tmp;
-    //auto tmp = right.val * _b.val;
-    //right.val *= _a.val;
-    //right.val += left.val * _b.val;
-    //left.val *= _a.val;
-    //left.val -= tmp;
-
-    right.fixAfterMultiplication();
-    left.fixAfterMultiplication();
+    int64_t tmp = right * _b;
+    right = fpReduce<kFPFracBits>(right * _a + left * _b);
+    left = fpReduce<kFPFracBits>(left * _a - tmp);
   }
 
-  int64_t getW0() { return _a.val; }
-  int64_t getW1() { return _b.val; }
+  int64_t getW0() { return _a; }
+  int64_t getW1() { return _b; }
 
 private:
-  FixedPoint _a, _b;
+  int64_t _a, _b;
 };
 
 //============================================================================
@@ -275,18 +274,19 @@ private:
 
 class HaarKernel {
 public:
+  inline
   HaarKernel(int weightLeft, int weightRight, bool scaledWeights=false) { }
 
-  void fwdTransform(FixedPoint& lf, FixedPoint& hf)
+  void fwdTransform(int64_t& lf, int64_t& hf)
   {
-    hf.val -= lf.val;
-    lf.val += ((hf.val >> (1 + hf.kFracBits)) << hf.kFracBits);
+    hf -= lf;
+    lf += (hf >> 1 + kFPFracBits) << kFPFracBits;
   }
 
-  void invTransform(FixedPoint& left, FixedPoint& right)
+  void invTransform(int64_t& left, int64_t& right)
   {
-    left.val -= (((right.val >> (1 + right.kFracBits)) << right.kFracBits));
-    right.val += left.val;
+    left -= (right >> 1 + kFPFracBits) << kFPFracBits;
+    right += left;
   }
 
   int64_t getW0() { return 1; }
@@ -325,19 +325,18 @@ fwdTransformBlock222(
     // actual transform
     Kernel kernel(w0, w1, true);
     for (int k = 0; k < numBufs; k++) {
-      kernel.fwdTransform(buf[k][i0], buf[k][i1]);
+      kernel.fwdTransform(buf[k][i0].val, buf[k][i1].val);
     }
   }
 }
 
-template<class Kernel>
+template<int numBufs, class Kernel>
 void
-invTransformBlock222(
-  const int numBufs, VecAttr::iterator buf, const int64_t weights[], bool computekernel=false)
+fwdTransformBlock222(int64_t* buf, const int64_t weights[])
 {
-  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
-  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
-  for (int i = 11, iw = 22; i >= 0; i--, iw -= 2) {
+  static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
+  static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
+  for (int i = 0, iw = 0; i < 12; i++, iw += 2) {
     int i0 = a[i];
     int i1 = b[i];
     int64_t w0 = weights[iw + 32];
@@ -350,17 +349,55 @@ invTransformBlock222(
     if (!w0 || !w1) {
       if (!w0) {
         for (int k = 0; k < numBufs; k++)
-          std::swap(buf[k][i0], buf[k][i1]);
+          std::swap(buf[8*k+i0], buf[8*k+i1]);
       }
       continue;
     }
 
     // actual transform
-    Kernel kernel(w0, w1, !computekernel);
+    Kernel kernel(w0, w1, true);
     for (int k = 0; k < numBufs; k++) {
-      kernel.invTransform(buf[k][i0], buf[k][i1]);
+      kernel.fwdTransform(buf[8*k+i0], buf[8*k+i1]);
     }
   }
 }
+
+template<int numBufs, bool computekernel,  class Kernel>
+void
+invTransformBlock222(int64_t buf[3][8], const int64_t weights[])
+{
+  static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
+  static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
+  const int64_t* w = &weights[33 + 22];
+  for (int i = 11; i >= 0; i--) {
+
+    int64_t w1 = *(w--);
+    int64_t w0 = *(w--);
+
+    if (w0 || w1) {
+
+      int i0 = a[i];
+      int i1 = b[i];
+
+      // only one occupied, propagate to next level
+      if (!w0 || !w1) {
+        if (!w0) {
+          for (int k = 0; k < numBufs; k++)
+            buf[k][i1] = buf[k][i0];
+        }
+      }
+      else {
+        // actual transform
+        Kernel kernel(w0, w1, !computekernel);
+        for (int k = 0; k < numBufs; k++) {
+          kernel.invTransform(buf[k][i0], buf[k][i1]);
+        }
+      }
+
+    }
+  }
+}
+
+} /* namespace RAHT */
 
 } /* namespace pcc */
