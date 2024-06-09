@@ -46,6 +46,8 @@
 #include <vector>
 #include <cmath>
 
+#include "PCCMisc.h"
+
 namespace pcc {
 namespace dirac {
 
@@ -87,11 +89,11 @@ namespace dirac {
       probability = 0x8000;
     }
 
-    void getEntropy(double h[2]) const
+    template <int FPP, unsigned K=2>
+    void getEntropy(int64_t h[2]) const
     {
-       double p0 = probability / 65536.0;
-       h[0] = -std::log2(p0);
-       h[1] = -std::log2(1 - p0);
+       h[0] = -fpLog2<16,FPP,K>(probability);
+       h[1] = -fpLog2<16,FPP,K>((1ULL << 16) - probability);
     }
 
   };

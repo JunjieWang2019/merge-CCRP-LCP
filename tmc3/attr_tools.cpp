@@ -248,12 +248,15 @@ namespace attr {
     for (int mode = 0; mode < modes.size(); mode++) {
       error[mode] /= sum_weight;
       costFun[mode] = error[mode]
-        + lambda * (double(rate[mode]) + rdo.entropy[modes[mode]])
-          / childCount;
+        + lambda * fpToDouble<32>(
+          ((int64_t(rate[mode]) << 32) + rdo.entropy[modes[mode]])
+            / childCount);
     }
     rdo.update(
       error[Mode::Null],
-      (double(rate[Mode::Null]) + rdo.entropy[Mode::Null]) / childCount);
+      fpToDouble<32>(
+        ((int64_t(rate[Mode::Null]) << 32) + rdo.entropy[modes[Mode::Null]])
+          / childCount));
 
     for (int i = modes.size() - 1; i > 0; i--) {
       bool selected = true;

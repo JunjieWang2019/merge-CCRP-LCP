@@ -776,9 +776,11 @@ encodeGeometryOctree(
 
   // local motion prediction structure -> LPUs from predPointCloud
   if (isInter) {
-    log2MotionBlockSize = int(log2(gps.motion.motion_block_size - 1) + 1);
+    log2MotionBlockSize =
+      ilog2(uint32_t(gps.motion.motion_block_size - 1)) + 1;
     if (gbh.maxRootNodeDimLog2 < log2MotionBlockSize) { // LPU is bigger than root note, must adjust if possible
-      int log2MotionBlockSizeMin = int(log2(gps.motion.motion_min_pu_size - 1) + 1);
+      int log2MotionBlockSizeMin =
+        ilog2(uint32_t(gps.motion.motion_min_pu_size - 1)) + 1;
       if (log2MotionBlockSizeMin <= gbh.maxRootNodeDimLog2)
         log2MotionBlockSize = gbh.maxRootNodeDimLog2;
     }

@@ -100,33 +100,38 @@ private:
 //----------------------------------------------------------------------------
 
 struct MotionEntropyEstimate {
-  double hMvIsZero[2];
-  double hMvIsOne[2];
-  double hMvIsTwo[2];
-  double hMvIsThree[2];
-  double hExpGolombV[6][2];
-  double hSplitPu[2];
-
   MotionEntropyEstimate(const MotionEntropy& codec, size_t wSize, int boundPrefix, int boundSuffix);
 
   double estimateVector(const point_t& mv) const;
 
+  double estimateSplit(bool splitFlag) const {
+    return fpToDouble<kFPP>(hSplitPu[splitFlag]);
+  }
+
 private:
-  double prepareEstimate(unsigned absval) const;
+  static constexpr int kFPP = 16;
+  int64_t hMvIsZero[2];
+  int64_t hMvIsOne[2];
+  int64_t hMvIsTwo[2];
+  int64_t hMvIsThree[2];
+  int64_t hExpGolombV[6][2];
+  int64_t hSplitPu[2];
+
+  int64_t prepareEstimate(unsigned absval) const;
   void prepareEstimateVector();
 
-  double estimateComponent(unsigned absval) const {
+  int64_t estimateComponent(unsigned absval) const {
     if (absval < LUT_MVestimate.size())
       return LUT_MVestimate[absval];
-    auto res = dyn_MVestimate.emplace(std::make_pair(absval, 0.));
+    auto res = dyn_MVestimate.emplace(std::make_pair(absval, 0LL));
     if (res.second)
       res.first->second = prepareEstimate(absval);
     return res.first->second;
   }
   int boundPrefix;
   int boundSuffix;
-  std::vector<double> LUT_MVestimate;
-  mutable std::map<int,double> dyn_MVestimate;
+  std::vector<int64_t> LUT_MVestimate;
+  mutable std::map<int,int64_t> dyn_MVestimate;
 };
 
 //============================================================================
@@ -148,13 +153,13 @@ MotionEntropyEstimate::MotionEntropyEstimate(const MotionEntropy& codec, size_t 
 , boundSuffix(boundSuffix)
 , LUT_MVestimate(wSize+1)
 {
-  codec.splitPu.getEntropy(hSplitPu);
-  codec.mvIsZero.getEntropy(hMvIsZero);
-  codec.mvIsOne.getEntropy(hMvIsOne);
-  codec.mvIsTwo.getEntropy(hMvIsTwo);
-  codec.mvIsThree.getEntropy(hMvIsThree);
+  codec.splitPu.getEntropy<kFPP>(hSplitPu);
+  codec.mvIsZero.getEntropy<kFPP>(hMvIsZero);
+  codec.mvIsOne.getEntropy<kFPP>(hMvIsOne);
+  codec.mvIsTwo.getEntropy<kFPP>(hMvIsTwo);
+  codec.mvIsThree.getEntropy<kFPP>(hMvIsThree);
   for (int i = 0; i < 6; i++)
-    codec.expGolombV[i].getEntropy(hExpGolombV[i]);
+    codec.expGolombV[i].getEntropy<kFPP>(hExpGolombV[i]);
 
   prepareEstimateVector();
 }
@@ -253,7 +258,7 @@ MotionEntropyDecoder::decodeVector(point_t* mv)
 
 //----------------------------------------------------------------------------
 
-double
+int64_t
 MotionEntropyEstimate::prepareEstimate(unsigned absval) const
 {
   int v = absval;
@@ -262,7 +267,7 @@ MotionEntropyEstimate::prepareEstimate(unsigned absval) const
     return hMvIsZero[1];
   }
   else {
-    double r = hMvIsZero[0] + 1.;  // unpredictable sign
+    int64_t r = hMvIsZero[0] + (1ULL << kFPP);  // unpredictable sign
     v--;
 
     r += hMvIsOne[v == 0];
@@ -305,7 +310,7 @@ MotionEntropyEstimate::prepareEstimate(unsigned absval) const
         r += hExpGolombV[ctx_number][0];
       if (num_bit_prefix == boundPrefix)
         k = boundSuffix;
-      r += k;
+      r += (int64_t(k) << kFPP);
       break;
     }
     return r;
@@ -329,7 +334,8 @@ double
 MotionEntropyEstimate::estimateVector(
   const point_t& mv) const
 {
-  return estimateComponent(std::abs(mv[0])) + estimateComponent(std::abs(mv[1])) + estimateComponent(std::abs(mv[2]));
+  return fpToDouble<kFPP>(estimateComponent(std::abs(mv[0]))
+    + estimateComponent(std::abs(mv[1])) + estimateComponent(std::abs(mv[2])));
 }
 
 //============================================================================
@@ -1261,10 +1267,11 @@ MSOctree::find_motion(
 
   // ---------------------------- choose split vs no split --------------------
   if (local_size > mvPS.motion_min_pu_size) {
-    cost_NoSplit +=
-      param.lambda * motionEntropy.hSplitPu[0];  // cost no split flag
+    // cost no split flag
+    cost_NoSplit += param.lambda * motionEntropy.estimateSplit(false);
   }
-  cost_Split += param.lambda * motionEntropy.hSplitPu[1];  // cost split flag
+  // cost split flag
+  cost_Split += param.lambda * motionEntropy.estimateSplit(true);
 
   if (local_size <= mvPS.motion_min_pu_size || cost_NoSplit <= cost_Split) {  // no split
     // push non split flag, only if size>size_min

@@ -88,7 +88,7 @@ public:
   void restoreStates()  {throw std::runtime_error("not implemented");}
   void reloadPrevStates() {throw std::runtime_error("not implemented");}
   void resetModeBits() {throw std::runtime_error("not implemented");}
-  double getModeBits()  {throw std::runtime_error("not implemented");}
+  int64_t getModeBits()  {throw std::runtime_error("not implemented");}
 };
 
 struct coderStates
@@ -114,16 +114,17 @@ class ModeEncoder : public ModeCoder {
   double meanDist;
   double meanRate;
   double learnRate;
-  double _modeBits;
+  int64_t _modeBits;
   coderStates _states;
+  static constexpr int kFPP = 32;
 public:
-  std::array<double, Mode::size> entropy;
+  std::array<int64_t, Mode::size> entropy;
 
   void resetModeBits() {
     _modeBits = 0.;
   }
 
-  double getModeBits() {
+  int64_t getModeBits() {
     return _modeBits;
   }
 
@@ -198,34 +199,35 @@ public:
     buffer.clear();
   }
 
-  auto getEntropy(int ctxMode, int ctxLevel) -> std::array<double, Mode::size>&
+  auto getEntropy(int ctxMode, int ctxLevel) -> std::array<int64_t, Mode::size>&
   {
     bool enableIntra = ctxMode & 1;
     ctxMode >>= 1;
     assert(ctxMode >= 0 && ctxMode < NUMBER_OF_CONTEXT_MODE);
     assert(ctxLevel >= 0 && ctxLevel < NUMBER_OF_LEVELS_MODE);
     std::fill(
-      entropy.begin(), entropy.end(), std::numeric_limits<double>::infinity());
+      entropy.begin(), entropy.end(), std::numeric_limits<uint64_t>::max());
 
     if (!enableInter && !enableIntra) {
       entropy[Mode::Null] = 0;
       return entropy;
     }
 
-    double PnotNull = static_cast<double>(rdoModeIsNull[ctxMode]) / 65536.0;
-    entropy[Mode::Null] = -std::log2(1.0 - PnotNull);
+    uint64_t PnotNull = fpExpand<kFPP - 16, uint64_t>(rdoModeIsNull[ctxMode]);
+    entropy[Mode::Null] = -fpLog2<kFPP>((1ULL << kFPP) - PnotNull);
     if (!enableInter || !enableIntra) {
       if (enableInter) {
-        entropy[Mode::Inter] = -std::log2(PnotNull);
+        entropy[Mode::Inter] = -fpLog2<kFPP>(PnotNull);
       } else {
-        entropy[Mode::Intra] = -std::log2(PnotNull);
+        entropy[Mode::Intra] = -fpLog2<kFPP>(PnotNull);
       }
       return entropy;
     }
 
-    double PnotIntra = static_cast<double>(rdoModeIsIntra[ctxMode]) / 65536.0;
-    entropy[Mode::Intra] = -std::log2(PnotNull * (1.0 - PnotIntra));
-    entropy[Mode::Inter] = -std::log2(PnotNull * PnotIntra);
+    uint64_t PnotIntra = fpExpand<kFPP - 16, uint64_t>(rdoModeIsIntra[ctxMode]);
+    entropy[Mode::Intra] = -fpLog2<2 * kFPP, kFPP>(
+      (PnotNull * ((1ULL << kFPP) - PnotIntra)));
+    entropy[Mode::Inter] = -fpLog2<2 * kFPP, kFPP>(PnotNull * PnotIntra);
     return entropy;
   }
 

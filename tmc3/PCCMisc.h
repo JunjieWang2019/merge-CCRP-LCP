@@ -38,7 +38,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <iterator>
+#include <limits>
 #include <utility>
 #include <string>
 #include <vector>
@@ -149,8 +151,17 @@ ceilpow2(uint64_t x)
 inline int
 ilog2(uint32_t x)
 {
+#if defined __GNUC__
+  return x ? 31 - __builtin_clz(x) : -1;
+#elif defined _MSC_VER
+  unsigned long r = -1;
+  if (x)
+    _BitScanReverse(&r, x);
+  return r;
+#else
   x = ceilpow2(x + 1) - 1;
   return popcnt(x) - 1;
+#endif
 }
 
 //---------------------------------------------------------------------------
@@ -160,8 +171,17 @@ ilog2(uint32_t x)
 inline int
 ilog2(uint64_t x)
 {
+#if defined __GNUC__
+  return x ? 63 - __builtin_clzll(x) : -1;
+#elif defined _MSC_VER
+  unsigned long r = -1;
+  if (x)
+    _BitScanReverse64(&r, x);
+  return r;
+#else
   x = ceilpow2(x + 1) - 1;
   return popcnt(uint32_t(x >> 32)) + popcnt(uint32_t(x)) - 1;
+#endif
 }
 
 //---------------------------------------------------------------------------
@@ -271,7 +291,82 @@ inline T fpReduce(T val)
 template <int N, typename T>
 inline T fpExpand(T val)
 {
-  return val > 0 ? val << N : -((-val) << N);
+  return val >= 0 ? val << N : -((-val) << N);
+}
+
+//---------------------------------------------------------------------------
+// Estimate log2 function (with decimal part) for fixed points numbers
+//
+// InFPP: fixed point precision of the input
+// OutFPP: fixed point precision of the output
+// K: number of iterations for the approximation
+//
+// In general (i.e. without taking into account possible range of input values),
+// OutFPP should not be more than 63-6 (63-5 should always work if InFPP = 32).
+// InFPP may have any value in range [0..64] and similar approximation error
+//   should be obtained for any value.
+//
+// Method found in a discussion on StackExchange
+//   https://math.stackexchange.com/questions/1706939/approximation-log-2x
+//
+template <int InFPP, int OutFPP=InFPP, unsigned K=2>
+int64_t fpLog2(uint64_t x) {
+  if (!x) return std::numeric_limits<int64_t>::min();
+
+  const int64_t log2 = ilog2(x);
+  const int64_t shift = log2 - InFPP;
+
+  int64_t res = shift << OutFPP;
+  // compute decimal part
+  if (K > 0) {
+    // try taking maximum fixed point precision
+    int64_t xD;
+    if (log2 >= 32)
+      xD = x >> log2 - 32;
+    else
+      xD = x << 32 - log2;
+    // highest bit is lost, x is set equal to {(x offset by shift) - 1}
+    // with 64 bits FP precision
+    x <<= 64 - log2;
+    constexpr uint64_t oneD = 1ULL << 32;
+    uint64_t t = x / (xD + oneD);
+
+    // Note: accum could get more precision than 32 bits if needed
+    uint64_t accum = t;
+    uint64_t tPowered = t;
+    for (unsigned k = 3; k < 2*K+1; k+=2) {
+      // Note: we could also increase tPowered precision along iterations
+      tPowered *= t;
+      tPowered >>= 32;
+      tPowered *= t;
+      accum += tPowered / k >> 32;
+      tPowered >>= 32;
+    }
+    // 2 / log(2) ~= 2.88539 @ 32 fpp bits
+    constexpr uint64_t twoOverLogTwo = 0x2e2a8eca5ULL;
+    // Note: in theory it should not overflow
+    //assert(accum <= 0x58b90bfbULL);
+    res += (twoOverLogTwo * accum) >> 64 - OutFPP;
+  }
+  return res;
+}
+
+template <unsigned FPP, typename T>
+double fpToDouble(T x)
+{
+  if (FPP < 64)
+    return double(x) / double(T(1) << FPP);
+  else
+    return double(x) / std::pow(2., FPP);
+}
+
+template <unsigned FPP, typename T>
+T fpFromDouble(double x)
+{
+  if (FPP < 64)
+    return T(x * double(T(1) << FPP) + 0.5);
+  else
+    return T(x * std::pow(2., FPP) + 0.5);
 }
 
 //---------------------------------------------------------------------------

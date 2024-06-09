@@ -89,16 +89,17 @@ struct PCCRAHTACCoefficientEntropyEstimate {
   void resStatUpdate(int32_t values, int k);
   void init();
   void updateCostBits(int32_t values, int k);
-  double costBits() { return sumCostBits; }
-  void resetCostBits() { sumCostBits = 0.; }
+  int64_t costBits() { return sumCostBits; }
+  void resetCostBits() { sumCostBits = 0; }
 
 private:
   // Encoder side residual cost calculation
-  static constexpr unsigned scaleRes = 1 << 20;
+  static constexpr int log2scaleRes = 20;
+  static constexpr unsigned scaleRes = 1 << log2scaleRes;
   static constexpr unsigned windowLog2 = 6;
   int probResGt0[3];  //prob of residuals larger than 0: 1 for each component
   int probResGt1[3];  //prob of residuals larger than 1: 1 for each component
-  double sumCostBits;
+  int64_t sumCostBits;
 };
 
 //============================================================================
@@ -108,7 +109,7 @@ PCCRAHTACCoefficientEntropyEstimate::init()
 {
   for (int k = 0; k < 3; k++)
     probResGt0[k] = probResGt1[k] = (scaleRes >> 1);
-  sumCostBits = 0.;
+  sumCostBits = 0;
 }
 
 //---------------------------------------------------------------------------
@@ -116,17 +117,16 @@ PCCRAHTACCoefficientEntropyEstimate::init()
 void
 PCCRAHTACCoefficientEntropyEstimate::updateCostBits(int32_t value, int k)
 {
-  int log2scaleRes = ilog2(uint32_t(scaleRes));
-  double bits = 0;
-  bits += value ? log2scaleRes - log2(probResGt0[k])
-    : log2scaleRes - log2(scaleRes - probResGt0[k]);  //Gt0
+  int64_t bits = 0;
+  bits += value ? -fpLog2<log2scaleRes, 32>(probResGt0[k])
+    : -fpLog2<log2scaleRes, 32>(scaleRes - probResGt0[k]);  //Gt0
   int mag = abs(value);
   if (mag) {
-    bits += mag > 1 ? log2scaleRes - log2(probResGt1[k])
-      : log2scaleRes - log2(scaleRes - probResGt1[k]);  //Gt1
-    bits += 1;  //sign bit.
+    bits += mag > 1 ? -fpLog2<log2scaleRes, 32>(probResGt1[k])
+      : -fpLog2<log2scaleRes, 32>(scaleRes - probResGt1[k]);  //Gt1
+    bits += 1ULL << 32;  //sign bit.
     if (mag > 1)
-      bits += 2.0 * log2(mag - 1.0) + 1.0;  //EG0 approximation.
+      bits += 2 * fpLog2<0, 32>(mag - 1.0) + 1.0;  //EG0 approximation.
   }
   sumCostBits += bits;
 }
@@ -1957,15 +1957,16 @@ uraht_process_encoder(
 
 
     if (enableACRDOInterPred) {
-      double curCost = curEstimate.costBits() + coder.getModeBits();
+      double curCost = fpToDouble<32>(
+        curEstimate.costBits() + coder.getModeBits());
 
       double intraLayerCost;
       if (!realInferInLowerLevel)
-        intraLayerCost = intraLayerEstimate.costBits();
+        intraLayerCost = fpToDouble<32>(intraLayerEstimate.costBits());
 
       double interLayerCost;
       if (!upperInferMode)
-        interLayerCost = interLayerEstimate.costBits();
+        interLayerCost = fpToDouble<32>(interLayerEstimate.costBits());
 
       int64_t ifactor = 1 << 24;
       double dfactor = (double)(ifactor);
