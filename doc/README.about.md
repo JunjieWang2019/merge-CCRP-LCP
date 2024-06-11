@@ -34,6 +34,48 @@ test model TMC13.
 Tag `ges-tm-v6.0` will be released after reported issues are resolved,
 if any.
 
+### `ges-tm-v6.0-rc2`
+
+Tag `ges-tm-v6.0-rc2` includes a few bug fixes and a refactoring of the RAHT.
+
+- `raht: fix issue #2 - wrong condition used to access a table`:  
+    Encoder was crashing when using inter frame coding with encoder parameter
+    --rahtLayerInterModeSelectionEnabled=0, because it was accessing a non
+    allocated table element. The table is not supposed to be used.
+
+    A condition enabling the use of the table was based on the wrong variable
+    name. This commit fixes the condition.
+
+- `raht: fix issue #4 - RDO could select intra layer mode on root node`:  
+    Encoder could select intra layer mode on root node, leading to mismatch
+    between encoder and decoder output in some situations.
+    This commit fixes this issue by enforcing infinite RD cost for intra
+    layer mode on first layer.
+
+- `raht: major refactoring`:  
+    This commit provides a major refactoring of the RAHT code:
+
+    - The code is split between the encoder and decoder into two
+      separate files:
+      - move RAHT.cpp -> RAHTEncoder.cpp
+      - add RAHTDecoder.cpp
+    - Many optimization are introduced within the decoder
+    - Some are reported into the encoder, but the work on the encoder will be
+      continued after next meeting cycle
+
+- `enc: fix issue #5 - do not use std::log2 for RDO`:  
+    This commit removes dependencies on std::log2() for the encoder when
+    performing Rate Distortion Optimizations (RDO). Instead, a fixed point
+    approximation of log2 pcc::fpLog2 is introduced so that the results will
+    not depend on the platform and its implementation dependent math library.
+
+    This commit thus changes computations for RAHT RDO, as well as for motion
+    search, and should solve issue #5.
+
+- `misc: fix issue #3`:  
+    Theres is a bug in gcc-8.1/8.2 (fixed in 8.3). This commit avoids the
+    compiler complaining for no reason.
+
 ### `ges-tm-v6.0-rc1`
 
 Tag `ges-tm-v6.0-rc1` includes adoptions made during the meeting #15 of the
