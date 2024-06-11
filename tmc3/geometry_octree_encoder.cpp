@@ -962,7 +962,7 @@ encodeGeometryOctree(
     int codedAxesPrevLvl = depth ? gbh.tree_lvl_coded_axis_list[depth - 1] : 7;
     int codedAxesCurLvl = gbh.tree_lvl_coded_axis_list[depth];
 
-    auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
+    const auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
 
     // Idcm quantisation applies to child nodes before per node qps
     if (--numLvlsUntilQuantization > 0) {

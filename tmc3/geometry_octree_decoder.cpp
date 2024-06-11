@@ -661,7 +661,7 @@ decodeGeometryOctree(
 
     const auto nodeSize = S * (1 << nodeSizeLog2[0] - S2);
 
-    auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
+    const auto pointSortMask = qtBtChildSize(nodeSizeLog2, childSizeLog2);
 
     // if one dimension is not split, atlasShift[k] = 0
     int codedAxesPrevLvl = depth ? gbh.tree_lvl_coded_axis_list[depth - 1] : 7;
