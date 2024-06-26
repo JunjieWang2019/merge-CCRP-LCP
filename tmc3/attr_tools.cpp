@@ -173,7 +173,8 @@ namespace attr {
     const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
-    const Qps* nodeQp)
+    const Qps* nodeQp,
+    const bool inheritDC)
   {
     auto coefReal = transformBuf.begin();
     auto coefPred = coefReal + numAttrs;
@@ -191,13 +192,14 @@ namespace attr {
 
     for (int k = 0; k < numAttrs; k++) {
       std::copy(coefReal[k].begin(), coefReal[k].end(), recReal[k].begin());
-      for (int mode = 0; mode < modes.size(); mode++)
+      for (int mode = !inheritDC; mode < modes.size(); mode++)
         recPred[numAttrs * mode + k][0] = coefReal[k][0];
     }
 
     auto w = weights + 8 + 8 + 8;
     static const std::vector<int> kRahtScanOrder = {4, 2, 1, 6, 5, 3, 7};
-    for (auto i : kRahtScanOrder) {
+    static const std::vector<int> kRahtScanOrderRoot = {0, 4, 2, 1, 6, 5, 3, 7};
+    for (auto i : inheritDC ? kRahtScanOrder : kRahtScanOrderRoot) {
       if (!w[i])
         continue;
 
@@ -240,6 +242,11 @@ namespace attr {
     assert(sum_weight > 1);
     assert(childCount > 1);
 
+    rdo.update(
+      error[Mode::Null] / sum_weight,
+      fpToDouble<32>(
+        ((int64_t(rate[Mode::Null]) << 32) + rdo.entropy[modes[Mode::Null]])
+          / childCount));
     /* A value in the interval [3,5] seens good */
     double lambda = lossless ? 1. : rdo.getLambda(4);
 
@@ -252,11 +259,6 @@ namespace attr {
           ((int64_t(rate[mode]) << 32) + rdo.entropy[modes[mode]])
             / childCount);
     }
-    rdo.update(
-      error[Mode::Null],
-      fpToDouble<32>(
-        ((int64_t(rate[Mode::Null]) << 32) + rdo.entropy[modes[Mode::Null]])
-          / childCount));
 
     for (int i = modes.size() - 1; i > 0; i--) {
       bool selected = true;
@@ -280,7 +282,8 @@ template Mode choseMode<HaarKernel>(
     const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
-    const Qps* nodeQp);
+    const Qps* nodeQp,
+    const bool inheritDC);
 
 template Mode choseMode<RahtKernel>(
     ModeEncoder& rdo,
@@ -290,7 +293,8 @@ template Mode choseMode<RahtKernel>(
     const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
-    const Qps* nodeQp);
+    const Qps* nodeQp,
+    const bool inheritDC);
 
 //============================================================================
 

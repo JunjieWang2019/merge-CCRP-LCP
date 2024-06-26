@@ -214,7 +214,8 @@ namespace attr {
     const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
-    const Qps* nodeQp);
+    const Qps* nodeQp,
+    const bool inheritDC);
 
 }  // namespace AttrPrediction
 

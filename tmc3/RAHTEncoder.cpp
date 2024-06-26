@@ -1400,7 +1400,8 @@ uraht_process_encoder(
         ? getMode(
           coder, nodeCnt, predCtxLevel, enableIntraPred,
           enableInterPred, weightsParentIt->mode, neighborsMode, numAttrs,
-          weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp, upperInferMode)
+          weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp,
+          upperInferMode, inheritDc)
         : Mode::Null;
 
       auto weightsChild = weightsParentIt->firstChild;
@@ -2198,7 +2199,7 @@ regionAdaptiveHierarchicalTransform(
       Mode neighborsMode, int numAttrs, int64_t weights[],
       std::vector<int64_t>::const_iterator attrRecParent,
       VecAttr& transformBuf, std::vector<Mode> modes, const int qpLayer,
-      const Qps* nodeQp, bool upperInferMode) {
+      const Qps* nodeQp, bool upperInferMode, bool inheritDC) {
       if (nodeCnt > 1) {
         if (upperInferMode) {
           if (enableInterPred)
@@ -2231,11 +2232,11 @@ regionAdaptiveHierarchicalTransform(
         if(rahtPredParams.integer_haar_enable_flag) {
           predMode = attr::choseMode<HaarKernel>(
             encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
-            nodeQp);
+            nodeQp, inheritDC);
         } else {
           predMode = attr::choseMode<RahtKernel>(
             encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
-            nodeQp);
+            nodeQp, inheritDC);
         }
         encoder.encode(predCtxMode, predCtxLevel, predMode);
         encoder.updateModeBits(predMode);
