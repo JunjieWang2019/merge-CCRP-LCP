@@ -781,9 +781,13 @@ uraht_process_decoder(
             else {
               bool modeIsNull = !enableIntraPred && !enableInterPred;
               if (!modeIsNull) {
-                neighborsMode = getNeighborsModeDecoder(
-                  parentNeighIdx, weightsParent, voteInterWeight,
-                  voteIntraWeight, weightsLf, modeParents);
+                if (!enableIntraPred) {
+                  neighborsMode = Mode::Inter;
+                } else {
+                  neighborsMode = getNeighborsModeDecoder(
+                    parentNeighIdx, weightsParent, voteInterWeight,
+                    voteIntraWeight, weightsLf, modeParents);
+                }
                 int predCtxMode = attr::getInferredMode(
                   enableIntraPred, enableInterPred, nodeCnt,
                   weightsParentIt->mode, neighborsMode);

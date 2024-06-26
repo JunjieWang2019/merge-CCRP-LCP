@@ -1234,6 +1234,10 @@ uraht_process_encoder(
         weightsParentIt->decoded = true;
       }
 
+      if (!enableIntraPred) {
+        neighborsMode = enableInterPred ? Mode::Inter : Mode::Null;
+      }
+
       if (enableACRDOInterPred) {
         bool interpredlayeravailable =
           enableInterLayerPred && enableInterPred
