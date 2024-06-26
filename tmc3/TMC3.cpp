@@ -794,6 +794,12 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     " 18: two voxels\n"
     " max is QP=54")
 
+  ("quNodeSizeLog2",
+    params.encoder.gbh.qu_size_log2, 0,
+    "Size of local Quality Units for geometry:\n"
+    " 0: disabled\n"
+    " >0: size = trisoupNodeSize * (1 << quNodeSizeLog2)")
+
   ("trisoupCentroidResidualEnabled",
     params.encoder.gbh.trisoup_centroid_vertex_residual_flag, true,
     "Trisoup activate residual position value for the centroid vertex")

@@ -106,6 +106,10 @@ public:
   void encodeNodeQpOffetsPresent(bool);
   void encodeQpOffset(int dqp);
 
+  // local QU
+  void createQU(localQU& qu, Vec3<int32_t> pos, int size, int baseQP);
+  void encodeQU(localQU& qu, int baseQP);
+
   //void encodeIsIdcm(DirectMode mode);
 
  /*void encodeDirectPosition(
@@ -392,6 +396,42 @@ GeometryOctreeEncoder::encodeQpOffset(int dqp)
 
   _arithmeticEncoder->encodeExpGolomb(abs(dqp) - 1, 0, ctx._ctxQpOffsetAbsEgl);
   _arithmeticEncoder->encode(dqp < 0, ctx._ctxQpOffsetSign);
+}
+
+//-------------------------------------------------------------------------
+void
+GeometryOctreeEncoder::createQU(
+  localQU& qu, Vec3<int32_t> pos, int size, int baseQP)
+{
+  // simple encoder decision (for testing purpose):
+  // any node with starting position having a 'y' lower than 800
+  // is encoded with a lower quality
+  // TODO: add encoding parameters for more versatile quality definition
+  if (pos[1]  < 800) {   // [1] is vertical pos
+    qu.isBaseParameters = false;
+    qu.localQP = baseQP + 6;
+  }
+  else {
+    qu.isBaseParameters = true;
+    qu.localQP = baseQP;
+  }
+}
+
+//-------------------------------------------------------------------------
+void
+GeometryOctreeEncoder::encodeQU(localQU& qu, int baseQP)
+{
+  _arithmeticEncoder->encode(qu.isBaseParameters,  ctx._ctxQUflag);
+  if (qu.isBaseParameters)
+    return;
+
+  int diffQP = qu.localQP - baseQP;
+  // sign
+  _arithmeticEncoder->encode(diffQP > 0, ctx._ctxQUSign);
+
+  // magnitude
+  _arithmeticEncoder->encodeExpGolomb(
+    std::abs(diffQP) - 1, 1, ctx._ctxQUQPpref, ctx._ctxQUQPsuf);
 }
 
 //-------------------------------------------------------------------------
@@ -756,6 +796,16 @@ encodeGeometryOctree(
   auto arithmeticEncoderIt = arithmeticEncoders.begin();
   GeometryOctreeEncoder encoder(gps, gbh, ctxtMem, arithmeticEncoderIt->get());
 
+  // local QU
+  if (forTrisoup) {
+    if (gbh.qu_size_log2 > 0) {
+      int quSize = (1 << gbh.qu_size_log2) * gbh.trisoupNodeSize(gps);
+      std::cout << "QU size = " << quSize << "\n";
+    }
+    ctxtMem.quLastIndex = 0;
+    ctxtMem.listOfQUs.clear();
+  }
+
   // saved state for use with parallel bistream coding.
   // the saved state is restored at the start of each parallel octree level
   std::unique_ptr<GeometryOctreeContexts> savedState;
@@ -820,6 +870,9 @@ encodeGeometryOctree(
   // local motion
   node00.hasMotion = 0;
   node00.isCompensated = 0;
+
+  // local QU
+  node00.quIndex = -1;
 
   RasterScanContext rsc(fifo);
 
@@ -1206,6 +1259,20 @@ encodeGeometryOctree(
       //bool occupancyIsPredictable =
       //  predOccupancy && node0.numSiblingsMispredicted <= 5;
 
+      // local QU
+      if (forTrisoup && !tubeIndex && !nodeSliceIndex) {
+        if (gbh.qu_size_log2 && nodeSizeLog2[0] == S2 + gbh.qu_size_log2) {
+
+          ctxtMem.listOfQUs.emplace_back();
+          localQU& qu = ctxtMem.listOfQUs.back();
+          encoder.createQU(
+            qu, (node0.pos << nodeSizeLog2[0] - S2) * S,
+            (1 << nodeSizeLog2[0] - S2) * S, gbh.trisoup_QP);
+          encoder.encodeQU(qu, gbh.trisoup_QP);
+          node0.quIndex = ctxtMem.quLastIndex++;
+        }
+      }
+
       //DirectMode mode = DirectMode::kUnavailable;
       // At the scaling depth, it is possible for a node that has previously
       // been marked as being eligible for idcm to be fully quantised due
@@ -1407,6 +1474,8 @@ encodeGeometryOctree(
             //local motion PU inheritance
             child.hasMotion = node0.hasMotion;
             child.isCompensated = node0.isCompensated;
+
+            child.quIndex = node0.quIndex;
 
             if (node0.hasMotion && !node0.isCompensated) {
               auto& puNode = mvField.puNodes[node0.mvFieldNodeIdx];

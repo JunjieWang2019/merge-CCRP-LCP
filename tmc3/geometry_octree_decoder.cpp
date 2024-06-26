@@ -92,6 +92,9 @@ public:
   bool decodeNodeQpOffsetsPresent();
   int decodeQpOffset();
 
+  // local QU
+  void decodeQU(localQU& qu, int baseQP);
+
   //bool decodeIsIdcm();
 
   /*template<class OutputIt>
@@ -301,6 +304,26 @@ GeometryOctreeDecoder::decodeQpOffset()
   int dqp = _arithmeticDecoder->decodeExpGolomb(0, ctx._ctxQpOffsetAbsEgl) + 1;
   int dqp_sign = _arithmeticDecoder->decode(ctx._ctxQpOffsetSign);
   return dqp_sign ? -dqp : dqp;
+}
+
+//-------------------------------------------------------------------------
+void
+GeometryOctreeDecoder::decodeQU(localQU& qu, int baseQP)
+{
+  qu.isBaseParameters = _arithmeticDecoder->decode(ctx._ctxQUflag);
+  if (qu.isBaseParameters) {
+    qu.localQP = baseQP;
+    return;
+  }
+
+  // sign
+  bool sign = _arithmeticDecoder->decode(ctx._ctxQUSign);
+
+  // magnitude
+  int mag = 1
+    + _arithmeticDecoder->decodeExpGolomb(1, ctx._ctxQUQPpref, ctx._ctxQUQPsuf);
+  qu.localQP = sign ? mag : -mag;
+  qu.localQP += baseQP;
 }
 
 /*
@@ -530,6 +553,17 @@ decodeGeometryOctree(
       = MSOctree(&predPointCloud, -gbh.geomBoxOrigin, std::min(2,log2MinPUSize));
   }
 
+
+  // local QU
+  if (forTrisoup) {
+    if (gbh.qu_size_log2 > 0) {
+      int quSize = (1 << gbh.qu_size_log2) * gbh.trisoupNodeSize(gps);
+      std::cout << "QU size = " << quSize << "\n";
+    }
+    ctxtMem.quLastIndex = 0;
+    ctxtMem.listOfQUs.clear();
+  }
+
   // init main fifo
   //  -- worst case size is the last level containing every input poit
   //     and each point being isolated in the previous level.
@@ -619,6 +653,9 @@ decodeGeometryOctree(
   // local motion
   node00.hasMotion = 0;
   node00.isCompensated = 0;
+
+  // local QU
+  node00.quIndex = -1;
 
   if (!(isInter && gps.gof_geom_entropy_continuation_enabled_flag) && !gbh.entropy_continuation_flag) {
     decoder.clearMap();
@@ -867,6 +904,17 @@ decodeGeometryOctree(
         node0.qp += decoder.decodeQpOffset() << gps.geom_qp_multiplier_log2;
       }
 
+      // local QU
+      if (forTrisoup && !tubeIndex && !nodeSliceIndex) {
+        if (gbh.qu_size_log2 && nodeSizeLog2[0] == S2 + gbh.qu_size_log2) {
+
+          ctxtMem.listOfQUs.emplace_back();
+          localQU& qu = ctxtMem.listOfQUs.back();
+          decoder.decodeQU(qu, gbh.trisoup_QP);
+          node0.quIndex = ctxtMem.quLastIndex++;
+        }
+      }
+
       // make quantisation work with qtbt and planar.
       /*auto codedAxesCurNode = codedAxesCurLvl;
       if (shiftBits != 0) {
@@ -1097,6 +1145,8 @@ decodeGeometryOctree(
             //local motion PU inheritance
             child.hasMotion = node0.hasMotion;
             child.isCompensated = node0.isCompensated;
+
+            child.quIndex = node0.quIndex;
 
             if (node0.hasMotion && !node0.isCompensated) {
               auto& puNode = mvField.puNodes[node0.mvFieldNodeIdx];

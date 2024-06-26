@@ -352,8 +352,11 @@ GeometryOctreeContexts::clearMap()
   // colocated edges
   refFrameEdgeKeys.clear();
   refFrameEdgeValue.clear();
+  refFrameEdgeQP.clear();
+  //colocated centro
   refFrameNodeKeys.clear();
   refFrameCentroValue.clear();
+  refFrameCentroQP.clear();
 }
 
 //============================================================================

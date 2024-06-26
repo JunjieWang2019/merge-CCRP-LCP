@@ -82,9 +82,10 @@ decodeGeometryTrisoup(
     gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, nullptr, refFrame,
     sps, minimum_position, interPredParams, decoder, &rste);
 
-  //std::cout << "\nSize compensatedPointCloud for TriSoup = "
-  //  << interPredParams.compensatedPointCloud.getPointCount() << "\n";
-  //std::cout << "Number of nodes for TriSoup = " << nodes.size() << "\n";
+  std::cout << "\nSize compensatedPointCloud for TriSoup = "
+    << interPredParams.compensatedPointCloud.getPointCount() << "\n";
+  std::cout << "Number of nodes for TriSoup = " << rste.leaves.size() << "\n";
+  std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
 }
 
 //---------------------------------------------------------------------------
@@ -285,7 +286,9 @@ determineCentroidPredictor(
   int driftRef,
   bool possibleSKIPRef,
   int stepQcentro,
-  int scaleQ)
+  int scaleQ,
+  int8_t colocatedCentroidQP,
+  int qpNode)
 {
   int driftQPred = -100;
   int driftQComp = -100;
@@ -338,12 +341,15 @@ determineCentroidPredictor(
   int driftSKIP = 0;
   int qualitySKIP = badQualityRef;
   if (possibleSKIP) {
-    if (possibleSKIPRef)
+    if (possibleSKIPRef) {
       driftSKIP = driftRef;
+      centroidInfo.QP = colocatedCentroidQP;
+    }
 
     if (possibleSKIPComp && (!possibleSKIPRef || badQualityComp < badQualityRef)) {
       driftSKIP = driftComp;
       qualitySKIP = badQualityComp;
+      centroidInfo.QP = qpNode;
     }
   }
 
@@ -418,31 +424,34 @@ encodeCentroidResidual(
   int lowBoundSurface,
   int highBoundSurface,
   int lowBound,
-  int highBound)
+  int highBound,
+  bool isSKIP)
 {
   int driftQPred = centroidInfo.driftQPred;
   bool possibleSKIP = centroidInfo.possibleSKIP;
   int driftSKIP = centroidInfo.driftSKIP;
 
   if (possibleSKIP) {
-    arithmeticEncoder->encode(driftQ == driftSKIP, ctxtMemOctree.ctxDriftSKIP[centroidInfo.qualitySKIP][driftSKIP == 0]);
-    if (driftQ == driftSKIP)
+    arithmeticEncoder->encode(
+      isSKIP,
+      ctxtMemOctree.ctxDriftSKIP[centroidInfo.qualitySKIP][driftSKIP == 0]);
+    if (isSKIP)
       return;
   }
 
-  bool isNotZero = false;
-  isNotZero = possibleSKIP && driftSKIP == 0;
-  if (!isNotZero) {
-    if (driftQPred == -100) //intra
-       arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][0]);
-    else { //inter
-      if (possibleSKIP)
-        arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0Skip[std::min(3, std::abs(driftSKIP))]);
-      else
-        arithmeticEncoder->encode(driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]);
-    }
+  if (driftQPred == -100) //intra
+     arithmeticEncoder->encode(
+      driftQ == 0, ctxtMemOctree.ctxDrift0[ctxMinMax][0]);
+  else { //inter
+    if (possibleSKIP)
+      arithmeticEncoder->encode(
+        driftQ == 0,
+        ctxtMemOctree.ctxDrift0Skip[std::min(3, std::abs(driftSKIP))]);
+    else
+      arithmeticEncoder->encode(
+        driftQ == 0,
+        ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]);
   }
-
 
   // if not 0, drift in [-lowBound; highBound]
   if (driftQ) {
@@ -487,34 +496,36 @@ decodeCentroidResidual(
   int lowBoundSurface,
   int highBoundSurface,
   int lowBound,
-  int highBound)
+  int highBound,
+  bool& isSKIP)
 {
   int driftQPred = centroidInfo.driftQPred;
   bool possibleSKIP = centroidInfo.possibleSKIP;
   int driftSKIP = centroidInfo.driftSKIP;
 
-  bool isSKIP = false;
+  isSKIP = false;
+
   if (possibleSKIP) {
-    isSKIP = arithmeticDecoder->decode(ctxtMemOctree.ctxDriftSKIP[centroidInfo.qualitySKIP][driftSKIP == 0]);
+    isSKIP = arithmeticDecoder->decode(
+      ctxtMemOctree.ctxDriftSKIP[centroidInfo.qualitySKIP][driftSKIP == 0]);
     if (isSKIP)
       return driftSKIP;
   }
 
-  bool isNotZero = false;
-  isNotZero = possibleSKIP && driftSKIP == 0;
   int driftQ = 1;
-  if (!isNotZero) {
-    if (driftQPred == -100) //intra
-      driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][0]) ? 0 : 1;
-    else {//inter
-      if (possibleSKIP)
-        driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0Skip[std::min(3, std::abs(driftSKIP))]) ? 0 : 1;
-      else
-        driftQ = arithmeticDecoder->decode(ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]) ? 0 : 1;
-    }
-    if (driftQ == 0)
-      return 0;
+  if (driftQPred == -100) //intra
+    driftQ = arithmeticDecoder->decode(
+      ctxtMemOctree.ctxDrift0[ctxMinMax][0]) ? 0 : 1;
+  else {//inter
+    if (possibleSKIP)
+      driftQ = arithmeticDecoder->decode(
+        ctxtMemOctree.ctxDrift0Skip[std::min(3, std::abs(driftSKIP))]) ? 0 : 1;
+    else
+      driftQ = arithmeticDecoder->decode(
+        ctxtMemOctree.ctxDrift0[ctxMinMax][1 + std::min(3, std::abs(driftQPred))]) ? 0 : 1;
   }
+  if (driftQ == 0)
+    return 0;
 
   // if not 0, drift in [-lowBound; highBound]
   // code sign

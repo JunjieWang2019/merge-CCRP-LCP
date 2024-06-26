@@ -646,6 +646,9 @@ struct GeometryBrickHeader {
   // quantization parameter for TriSoup edge
   int trisoup_QP;
 
+  // size of quality units (0 = disabled)
+  int qu_size_log2;
+
   // Indicates if a residual is encoded for centroid vertex of a trisoup node
   bool trisoup_centroid_vertex_residual_flag;
 

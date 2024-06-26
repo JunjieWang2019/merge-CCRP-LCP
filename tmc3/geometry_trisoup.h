@@ -46,7 +46,14 @@
 #define PC_PREALLOCATION_SIZE 200000
 
 static const int precDivA = 30;
-static const int LUTdivtriCount[13] = { 32767, 1024, 512, 341, 256, 205, 171, 146, 128, 114, 102, 93, 85 }; // 10 bits precision
+static const int LUTdivtriCount[13] = { // 10 bits precision
+  32767, 1024, 512, 341, 256, 205, 171, 146, 128, 114, 102, 93, 85 };
+static const int LUT_QP_Trisoup[55] = { // 8 bit precision; QP in [0,54]
+  64,    72,    81,    91,    102,   114,   128,   144,   161,   181,   203,
+  228,   256,   287,   323,   362,   406,   456,   512,   575,   645,   724,
+  813,   912,   1024,  1149,  1290,  1448,  1625,  1825,  2048,  2299,  2580,
+  2896,  3251,  3649,  4096,  4598,  5161,  5793,  6502,  7298,  8192,  9195,
+  10321, 11585, 13004, 14596, 16384, 18390, 20643, 23170, 26008, 29193, 32768 };
 
 namespace pcc {
 
@@ -277,6 +284,7 @@ struct CentroidInfo{
   bool possibleSKIP;
   int driftSKIP;
   int qualitySKIP;
+  int QP;
 };
 
 
@@ -290,7 +298,8 @@ void encodeCentroidResidual(
   int lowBoundSurface,
   int highBoundSurface,
   int lowBound,
-  int highBound);
+  int highBound,
+  bool isSKIP);
 
 int decodeCentroidResidual(
   pcc::EntropyDecoder* arithmeticDecoder,
@@ -300,7 +309,8 @@ int decodeCentroidResidual(
   int lowBoundSurface,
   int highBoundSurface,
   int lowBound,
-  int highBound);
+  int highBound,
+  bool& isSKIP);
 
 int findDominantAxis(
   std::vector<Vertex>& leafVertices,
@@ -432,7 +442,9 @@ determineCentroidPredictor(
   int driftRef,
   bool possibleSKIPRef,
   int stepQcentro,
-  int scaleQ);
+  int scaleQ,
+  int8_t colocatedCentroidQP,
+  int qpNode);
 
 int
 determineCentroidResidual(
@@ -487,13 +499,16 @@ struct TrisoupNodeEncoder {
   uint32_t _end;
   uint32_t predStart;
   uint32_t predEnd;
+  // local Quality Unit
+  int quIndex;
 
   TrisoupNodeEncoder(const PCCOctree3Node& from)
     : pos(from.pos),
     _start(from.start),
     _end(from.end),
     predStart(from.predStart),
-    predEnd(from.predEnd)
+    predEnd(from.predEnd),
+    quIndex(from.quIndex)
   {}
 
   int start() const { return _start; }
@@ -504,11 +519,14 @@ struct TrisoupNodeDecoder {
   Vec3<int32_t> pos;
   uint32_t predStart;
   uint32_t predEnd;
+  // local Quality Unit
+  int quIndex;
 
   TrisoupNodeDecoder(const PCCOctree3Node& from)
     : pos(from.pos),
     predStart(from.predStart),
-    predEnd(from.predEnd)
+    predEnd(from.predEnd),
+    quIndex(from.quIndex)
   {}
 
   int start() const { return 0; }
@@ -589,6 +607,7 @@ struct RasterScanTrisoupEdges {
 
   // local variables for loop on wedges
   std::vector<int8_t> TriSoupVerticesQP;
+  std::vector<int8_t> TriSoupEdgeLocalQP;
   std::vector<int8_t> TriSoupVertices2bits;
   std::vector<uint16_t> neighbNodes;
   std::queue<std::array<int, 18>> edgePattern;
@@ -614,6 +633,7 @@ struct RasterScanTrisoupEdges {
   // for colocated centroid tracking
   std::vector<int64_t> currentFrameNodeKeys;
   std::vector<int8_t> CentroValue;
+  std::vector<int8_t> CentroQP;
   int colocatedNodeIdx = 0;
 
   // for rendering
@@ -637,19 +657,16 @@ struct RasterScanTrisoupEdges {
   bool isCentroidDriftActivated;
   bool isFaceVertexActivated;
 
-  int haloTriangle = 0;
-
   // flag to indicate last TriSoup pass
   bool isFinalPass = true;
 
   // quantization
-  int stepQ = 1;
   int midBlock = 1;
   int maxBlock = 1;
   int halfBlock = 1;
-  int stepQcentro = 1;
-  int Qmax = 0;
-  int NbitsQ = 0;
+  int QmaxQP[55] = {};
+  int NbitsQQP[55] = {};
+  int haloTriangleQP[55] = {};
 
   int thVertexDetermination = 0;
 
@@ -686,7 +703,11 @@ struct RasterScanTrisoupEdges {
     int8_t colocatedVertex,
     std::vector<int8_t>& qualityRef,
     std::vector<int8_t>& qualityComp,
-    int i) {
+    int i,
+    int qpEdge)
+  {
+    int Qmax = QmaxQP[qpEdge];
+    int NbitsQ = NbitsQQP[qpEdge];
 
     codeVertexCtxInfo ctxInfo;
     constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices2bits, qualityRef, qualityComp);
@@ -844,7 +865,11 @@ struct RasterScanTrisoupEdges {
     int8_t colocatedVertex,
     std::vector<int8_t>& qualityRef,
     std::vector<int8_t>& qualityComp,
-    int i) {
+    int i,
+    int qpEdge) {
+
+    int Qmax = QmaxQP[qpEdge];
+    int NbitsQ = NbitsQQP[qpEdge];
 
     codeVertexCtxInfo ctxInfo;
     constructCtxInfo(ctxInfo, neigh, patternIdx, TriSoupVertices2bits, qualityRef, qualityComp);
@@ -1015,6 +1040,7 @@ struct RasterScanTrisoupEdges {
   void generateCentroidsInNodeRasterScan(
     const TrisoupNode& leaf,
     const std::vector<int8_t>& TriSoupVerticesQP,
+    const std::vector<int8_t>& TriSoupEdgeLocalQP,
     int& idxSegment,
     Box3<int32_t>& sliceBB,
     const bool isCentroidDriftActivated,
@@ -1023,15 +1049,15 @@ struct RasterScanTrisoupEdges {
     std::vector<int8_t>& qualityComp,
     bool nodeRefExist,
     int8_t colocatedCentroid,
+    int8_t colocatedCentroidQP,
     std::vector<int8_t>& CentroValue,
-    int stepQcentro)
+    std::vector<int8_t>& CentroQP)
   {
     Vec3<int32_t> nodepos, nodew, corner[8];
     nonCubicNode(gps, gbh, leaf.pos, blockWidth, sliceBB, nodepos, nodew, corner);
 
     // Find up to 12 vertices for this leaf.
     std::vector<Vertex> leafVertices;
-
     TrisoupNodeEdgeVertex neVertex;
 
     // inter quality for centroid
@@ -1076,7 +1102,8 @@ struct RasterScanTrisoupEdges {
       if (vertexQ == 0)
         continue;  // skip segments that do not intersect the surface
 
-      int32_t deQVert1 = dequantizeQP(vertexQ)+kTrisoupFpHalf;
+      int qpEdge = TriSoupEdgeLocalQP[uniqueIndex];
+      int32_t deQVert1 = dequantizeQP(vertexQ, qpEdge) + kTrisoupFpHalf;
       int32_t deQVert2 = bmax - deQVert1;
       static const int vertexIdx1 [] = { 0, 0, 2, 1, 0, 2, 3, 1, 4, 4, 6, 5 };
       static const int vertexIdx2 [] = { 1, 2, 3, 3, 4, 6, 7, 5, 5, 6, 7, 7 };
@@ -1093,7 +1120,7 @@ struct RasterScanTrisoupEdges {
       // Get 3D position of point of intersection.
       Vec3<int32_t> point = corner[startCorner[j]] << kTrisoupFpBits;
       point -= kTrisoupFpHalf; // the volume is [-0.5; B-0.5]^3
-      int dequantizedPositionQP = dequantizeQP(vertexQ);
+      int dequantizedPositionQP = dequantizeQP(vertexQ, qpEdge);
       point[LUTsegmentDirection[j]] = dequantizedPositionQP;
 
       // Add vertex to list of vertices.
@@ -1139,6 +1166,11 @@ struct RasterScanTrisoupEdges {
     bool flagCentroOK = isCentroidDriftActivated;
     int scaleQ = 256; // scaled on 8 bits; 256 is one
 
+    int quIndex = leaf.quIndex;
+    int qpNode =
+      quIndex != -1 ? ctxtMemOctree.listOfQUs[quIndex].localQP : gbh.trisoup_QP;
+    int stepQcentro = LUT_QP_Trisoup[qpNode];
+
     determineCentroidAndDominantAxis(
       blockCentroid, dominantAxis, leafVertices, nodew, flagCentroOK, scaleQ, stepQcentro);
 
@@ -1169,13 +1201,23 @@ struct RasterScanTrisoupEdges {
           leafVertices, nodew[dominantAxis], blockWidth, stepQcentro, scaleQ);
 
       flagCentroOK = lowBound != 0 || highBound != 0;
-      if (flagCentroOK || possibleSKIPRef) {
+      bool isSKIP = false;
+      int stepSKIP = stepQcentro;
+      int halfSKIP = half;
+      int DZSKIP = DZ;
 
+      if (flagCentroOK || possibleSKIPRef) {
         CentroidInfo centroidInfo;
+        centroidInfo.QP = qpNode;
         determineCentroidPredictor(
           centroidInfo, normalV, blockCentroid, nodepos,
           compensatedPointCloud, leaf.predStart, leaf.predEnd, lowBound,
-          highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef, stepQcentro, scaleQ);
+          highBound, badQualityComp, badQualityRef, driftRef, possibleSKIPRef,
+          stepQcentro, scaleQ, colocatedCentroidQP, qpNode);
+
+        stepSKIP = LUT_QP_Trisoup[centroidInfo.QP];
+        halfSKIP = stepSKIP >> 1;
+        DZSKIP = 682 * halfSKIP >> 10; // 2 * half / 3;
 
         if (isEncoder) { // encode centroid residual
           int drift = 0;
@@ -1189,35 +1231,45 @@ struct RasterScanTrisoupEdges {
           if (centroidInfo.possibleSKIP) {
             int driftDQSKip = 0;
             if (centroidInfo.driftSKIP) {
-              driftDQSKip =  std::abs(centroidInfo.driftSKIP) * stepQcentro;
-              driftDQSKip += DZ - half;
+              driftDQSKip =  std::abs(centroidInfo.driftSKIP) * stepSKIP;
+              driftDQSKip += DZSKIP - halfSKIP;
+              driftDQSKip = (driftDQSKip * scaleQ) >> 8; //fix
               if (centroidInfo.driftSKIP < 0)
                 driftDQSKip = -driftDQSKip;
             }
 
-            if (std::abs(drift - driftDQSKip) <= DZ + half)
+            if (std::abs(drift - driftDQSKip) <= DZ + half) {
+              isSKIP = true;
               driftQ = centroidInfo.driftSKIP;
+            }
           }
 
           encodeCentroidResidual(
             driftQ, arithmeticEncoder, ctxtMemOctree, centroidInfo, ctxMinMax,
-            lowBoundSurface, highBoundSurface, lowBound, highBound);
+            lowBoundSurface, highBoundSurface, lowBound, highBound, isSKIP);
         }
         else { // decode centroid residual
           driftQ =
             decodeCentroidResidual(
               &arithmeticDecoder, ctxtMemOctree, centroidInfo, ctxMinMax,
-              lowBoundSurface, highBoundSurface, lowBound, highBound);
+              lowBoundSurface, highBoundSurface, lowBound, highBound, isSKIP);
         }
 
       }
       // store centroid residual for next frame
       CentroValue.back() = driftQ;
+      CentroQP.back() = qpNode;
 
       // dequantize and apply drift
-      if (driftQ) {
+      if (driftQ && !isSKIP) {
         driftDQ = std::abs(driftQ) * stepQcentro;
         driftDQ += DZ - half;
+        if (driftQ < 0)
+          driftDQ = -driftDQ;
+      }
+      if (driftQ && isSKIP) {
+        driftDQ = std::abs(driftQ) * stepSKIP;
+        driftDQ += DZSKIP - halfSKIP;
         if (driftQ < 0)
           driftDQ = -driftDQ;
       }
@@ -1456,10 +1508,14 @@ struct RasterScanTrisoupEdges {
     const TrisoupNode& leaf, int i,
     std::vector<int64_t>& renderedBlock,
     Box3<int32_t>& sliceBB,
-    int haloTriangle,
     int thickness,
     bool isFaceVertexActivated)
   {
+    int quIndex = leaf.quIndex;
+    int qpNode  =
+      quIndex != -1 ? ctxtMemOctree.listOfQUs[quIndex].localQP : gbh.trisoup_QP;
+    int haloTriangle = haloTriangleQP[qpNode];
+
     Vec3<int32_t> nodepos, nodew, corner[8];
     nonCubicNode(
       gps, gbh, leaf.pos, blockWidth, sliceBB, nodepos, nodew, corner);
@@ -1628,24 +1684,21 @@ struct RasterScanTrisoupEdges {
     sliceBB.max = sliceBB.min + (gbh.slice_bb_width << gbh.slice_bb_width_log2_scale);
 
     // determine vertex quantization step
-    int LUT_QP_Trisoup[55] = { 64, 72, 81, 91, 102, 114, 128, 144, 161, 181, 203, 228, 256, 287, 323, 362, 406, 456, 512, 575, 645, 724, 813, 912, 1024, 1149, 1290,
-                               1448, 1625, 1825, 2048, 2299, 2580, 2896, 3251, 3649, 4096, 4598, 5161, 5793, 6502, 7298, 8192, 9195, 10321, 11585, 13004, 14596, 16384,
-                               18390, 20643, 23170, 26008, 29193, 32768 }; // 8 bit precision; QP in [0,54]
-    stepQ = LUT_QP_Trisoup[gbh.trisoup_QP];
     midBlock = (blockWidth - 1) << 7; // << 8) >> 1;
     maxBlock = (blockWidth - 1) << 8;
     halfBlock = blockWidth << 7;
 
-    // centro qauntization step
-    stepQcentro = stepQ;
-
     // quantization mapping par half segment
-    Qmax = (midBlock) / stepQ;
+    for (int QP = 0; QP < 55; QP++) {
+      int step = LUT_QP_Trisoup[QP];
+      QmaxQP[QP] = (midBlock) / step;
 
-    // max number of bits of quantization
-    NbitsQ = 0;
-    while ((1 << NbitsQ) < Qmax + 1 )
-      NbitsQ++;
+      // max number of bits of quantization
+      int NbitsQ = 0;
+      while ((1 << NbitsQ) < QmaxQP[QP] + 1)
+        NbitsQ++;
+      NbitsQQP[QP] = NbitsQ;
+    }
 
     // rendering
     renderedBlock.resize(blockWidth * blockWidth * 16, 0);
@@ -1657,12 +1710,16 @@ struct RasterScanTrisoupEdges {
     isFaceVertexActivated = gbh.trisoup_face_vertex_flag;
 
     if (haloFlag) {
-      haloTriangle = std::max(0, stepQ - 256) / blockWidth;
-      haloTriangle = (haloTriangle * 28) >> 5;
-      haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
-      if (blockWidth <= 4)
-        haloTriangle = 0;
+      for (int QP = 0; QP < 55; QP++) {
+        int step = LUT_QP_Trisoup[QP];
+        int haloTriangle = std::max(0, step - 256) / blockWidth;
+        haloTriangle = (haloTriangle * 28) >> 5;
+        haloTriangle = haloTriangle > 36 ? 36 : haloTriangle;
+        if (blockWidth <= 4)
+          haloTriangle = 0;
 
+        haloTriangleQP[QP] = haloTriangle;
+      }
     }
   }
 
@@ -1671,14 +1728,30 @@ struct RasterScanTrisoupEdges {
   void processLocalAttributes(PCCPointSet3& recPointCloud, bool isLast=false);
 
   //---------------------------------------------------------------------------
-  // quantize  accordign to QP
-  int quantizeQP(int dist, int count) {
-    int pos = (dist << 8 ) / count; // division on the encoder side; 8 bit precision !!! division for inter pred
+  int quantizeQP(int dist, int count, int QP) {
+    // division on the encoder side; 8 bit precision !!! division for inter pred
+    int pos = (dist << 8) / count;
     pos -= midBlock;
 
     bool sign = pos >= 0;
     pos = std::abs(pos);
-    int posQ =  std::min(Qmax , pos / stepQ); // division on the encoder side; 8 bit precision !!! division for inter pred
+    int step = LUT_QP_Trisoup[QP];
+    int QmaxQP = (midBlock) / step;
+    // division on the encoder side; 8 bit precision !!! division for inter pred
+    int posQ = std::min(QmaxQP, pos / step);
+
+    return sign ? posQ + 1 : -posQ - 1;
+  }
+
+  int quantizeQP(int pos, int QP) {
+    pos -= midBlock;
+
+    bool sign = pos >= 0;
+    pos = std::abs(pos);
+    int step = LUT_QP_Trisoup[QP];
+    int QmaxQP = (midBlock) / step;
+    // division on the encoder side; 8 bit precision !!! division for inter pred
+    int posQ = std::min(QmaxQP, pos / step);
 
     return sign ? posQ + 1 : -posQ - 1;
   }
@@ -1696,27 +1769,27 @@ struct RasterScanTrisoupEdges {
   }
 
   // dequantize  accordign to QP
-  int dequantizeQP(int posQ) {
+  int dequantizeQP(int posQ, int QP) {
     bool sign = posQ >= 0;
     posQ = std::abs(posQ);
 
-    int pos = (posQ - 1) * stepQ + (stepQ >> 1); // dequantize at center
-    if (posQ * stepQ >= midBlock) // detect extreme interval
-      if (stepQ < 128) // if quantization interval is very small, push to bounds
-        pos = ((posQ - 1) * stepQ + 3 * midBlock) >> 2;
+    int step = LUT_QP_Trisoup[QP];
+    int pos = (posQ - 1) * step + (step >> 1); // dequantize at center
+    if (posQ * step >= midBlock) // detect extreme interval
+      if (step < 128) // if quantization interval is very small, push to bounds
+        pos = ((posQ - 1) * step + 3 * midBlock) >> 2;
       else
-        pos = ((posQ - 1) * stepQ + midBlock) >> 1;
+        pos = ((posQ - 1) * step + midBlock) >> 1;
 
     return sign ? std::min(maxBlock, midBlock + pos) : std::max(0, midBlock - pos);
   }
 
-
-  // map to 2 bits from quantizd value
-  int map2bits(int posQ) {
+  // map to 2 bits from quantized value
+  int map2bits(int posQ, int QP) {
     if (posQ == 0)
       return -1;
 
-    return quantizeQP2bits(dequantizeQP(posQ));
+    return quantizeQP2bits(dequantizeQP(posQ, QP));
   }
 
   //---------------------------------------------------------------------------
@@ -1778,6 +1851,10 @@ struct RasterScanTrisoupEdges {
         int countNearPointsPred = 0;
         int distanceSumPred = 0;
 
+        // local QU
+        int countNodesQU = 0;
+        int QPedge = 0;
+
         for (int neighIdx = 0; neighIdx < 4; ++neighIdx) { // this the loop on the 4 nodes to interesect the edge
           int edgeNeighNodeIdx = edgesNeighNodesIdx[dir][neighIdx]; // gives the neighbour inde in the list of 8 neighbours
 
@@ -1828,6 +1905,13 @@ struct RasterScanTrisoupEdges {
                 }
               }
             }
+
+            // determine QP from QU
+            int quIndex = leaves[neighbNodeIndex].quIndex;
+            countNodesQU++;
+            QPedge += quIndex != -1
+              ? ctxtMemOctree.listOfQUs[quIndex].localQP
+              : gbh.trisoup_QP;
           }
         } // end loop on 4 neighbouring nodes
 
@@ -1860,32 +1944,42 @@ struct RasterScanTrisoupEdges {
           posForEdgeOfVertex.push(currWedgePos);
 
           // for colocated edges
-          int64_t key = (int64_t(currWedgePos[0] + keyshift[0]) << 42) + (int64_t(currWedgePos[1] + keyshift[1]) << 22) + (int64_t(currWedgePos[2] + keyshift[2]) << 2) + dir;
+          int64_t key = dir
+            + (int64_t(currWedgePos[0] + keyshift[0]) << 42)
+            + (int64_t(currWedgePos[1] + keyshift[1]) << 22)
+            + (int64_t(currWedgePos[2] + keyshift[2]) << 2);
           currentFrameEdgeKeys.push_back(key);
           qualityRef.push_back(0);
           qualityComp.push_back(0);
+
+          // QP for edge
+          QPedge /= countNodesQU;
 
           // determine TriSoup Vertex by the encoder
           if (isEncoder)
           {
             int8_t vertexQ = 0;
             if (countNearPoints > thVertexDetermination) {
-              vertexQ = quantizeQP(distanceSum, countNearPoints);
+              vertexQ = quantizeQP(distanceSum, countNearPoints, QPedge);
             }
             TriSoupVerticesQP.push_back(vertexQ);
-            TriSoupVertices2bits.push_back(map2bits(vertexQ));  // map edge two to bits
+            // map edge to two bits
+            TriSoupVertices2bits.push_back(map2bits(vertexQ, QPedge));
           }
+
+          TriSoupEdgeLocalQP.push_back(QPedge);
 
           // determine TriSoup Vertex inter prediction
           if (isInter) {
             int8_t vertexPos = 0;
             if (countNearPointsPred > 0) {
-              vertexPos = quantizeQP(distanceSumPred, countNearPointsPred);
+              vertexPos =
+                quantizeQP(distanceSumPred, countNearPointsPred, QPedge);
             }
             TriSoupVerticesPred.push(vertexPos);
           }
         } // end if on is a TriSoup wedge
-      } // end loop on three deirections
+      } // end loop on three directions
 
       // move to next wedge
       goNextWedge(isNeigbourSane);
@@ -1902,30 +1996,40 @@ struct RasterScanTrisoupEdges {
 
           // colocated edge predictor
           int8_t colocatedVertex = 0;
+          int8_t colocatedVertexQP = gbh.trisoup_QP;
           if (interSkipEnabled) {
             auto keyCurrent = currentFrameEdgeKeys[firstVertexToCode];
-            while (colocatedEdgeIdx < ctxtMemOctree.refFrameEdgeKeys.size() - 1 && ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] < keyCurrent)
+            while (colocatedEdgeIdx < ctxtMemOctree.refFrameEdgeKeys.size() - 1
+                && ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] < keyCurrent)
               colocatedEdgeIdx++;
 
-            if (ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] == keyCurrent)
+            if (ctxtMemOctree.refFrameEdgeKeys[colocatedEdgeIdx] == keyCurrent) {
               colocatedVertex = ctxtMemOctree.refFrameEdgeValue[colocatedEdgeIdx];
+              colocatedVertexQP = ctxtMemOctree.refFrameEdgeQP[colocatedEdgeIdx];
+            }
           }
 
           // code edge
           int8_t vertex;
+          int QPedge = TriSoupEdgeLocalQP[firstVertexToCode];
+          if (colocatedVertex && QPedge != colocatedVertexQP)
+            // requantize colocated edge according to local QP
+            colocatedVertex = quantizeQP(
+              dequantizeQP(colocatedVertex, colocatedVertexQP), QPedge);
+
           if (isEncoder) { // encode vertex
             vertex = TriSoupVerticesQP[firstVertexToCode];
             encodeOneTriSoupVertexRasterScan(
               vertex, arithmeticEncoder, ctxtMemOctree, TriSoupVertices2bits,
               neighbNodes[firstVertexToCode], pattern, interPredictor,
-              colocatedVertex, qualityRef, qualityComp, firstVertexToCode);
+              colocatedVertex, qualityRef, qualityComp, firstVertexToCode, QPedge);
           } else {
             decodeOneTriSoupVertexRasterScan(
               arithmeticDecoder, ctxtMemOctree, TriSoupVerticesQP,TriSoupVertices2bits,
               neighbNodes[firstVertexToCode], pattern, interPredictor,
-              colocatedVertex, qualityRef, qualityComp, firstVertexToCode);
+              colocatedVertex, qualityRef, qualityComp, firstVertexToCode, QPedge);
             vertex = TriSoupVerticesQP[firstVertexToCode];
-            TriSoupVertices2bits.push_back(map2bits(vertex));
+            TriSoupVertices2bits.push_back(map2bits(vertex, QPedge));
           }
           if (vertexMergeFlag) {
             if (vertex != 0) {
@@ -1933,7 +2037,8 @@ struct RasterScanTrisoupEdges {
                 8 << kTrisoupFpBits, blockWidth << kTrisoupFpBits - 2);
               int32_t bmax = blockWidth << kTrisoupFpBits;
               point_t posKey = posForEdgeOfVertex.front();
-              int32_t deQVert = dequantizeQP(vertex) + kTrisoupFpHalf;
+              int QPedge = TriSoupEdgeLocalQP[firstVertexToCode];
+              int32_t deQVert = dequantizeQP(vertex, QPedge) + kTrisoupFpHalf;
               int32_t deQVert2 = bmax - deQVert;
               if (deQVert < th) {
                 triNodeEnable[posKey]++;
@@ -1968,6 +2073,7 @@ struct RasterScanTrisoupEdges {
 
           // centroid predictor
           int8_t colocatedCentroid = 0;
+          int8_t colocatedCentroidQP = gbh.trisoup_QP;
           bool nodeRefExist = false;
           auto nodePos = leaf.pos;
           auto keyCurrent =
@@ -1976,6 +2082,7 @@ struct RasterScanTrisoupEdges {
             + int64_t(nodePos[2] + keyshift[2]);
           currentFrameNodeKeys.push_back(keyCurrent);
           CentroValue.push_back(0);
+          CentroQP.push_back(gbh.trisoup_QP);
 
           if (interSkipEnabled) {
             while (
@@ -1987,16 +2094,18 @@ struct RasterScanTrisoupEdges {
 
             nodeRefExist =
               ctxtMemOctree.refFrameNodeKeys[colocatedNodeIdx] == keyCurrent;
-            if (nodeRefExist)
-              colocatedCentroid =
-              ctxtMemOctree.refFrameCentroValue[colocatedNodeIdx];
+            if (nodeRefExist) {
+              colocatedCentroid = ctxtMemOctree.refFrameCentroValue[colocatedNodeIdx];
+              colocatedCentroidQP = ctxtMemOctree.refFrameCentroQP[colocatedNodeIdx];
+            }
           }
 
 
           generateCentroidsInNodeRasterScan(   // dequantization of vertices is here
-            leaf, TriSoupVerticesQP, idxSegment, sliceBB,
+            leaf, TriSoupVerticesQP, TriSoupEdgeLocalQP, idxSegment, sliceBB,
             isCentroidDriftActivated, segmentUniqueIndex, qualityRef,
-            qualityComp, nodeRefExist, colocatedCentroid, CentroValue, stepQcentro);
+            qualityComp, nodeRefExist, colocatedCentroid, colocatedCentroidQP,
+            CentroValue, CentroQP);
 
           if (isFaceVertexActivated) {
             generateFaceVerticesInNodeRasterScan(nodeIdxC);
@@ -2020,7 +2129,7 @@ struct RasterScanTrisoupEdges {
 
           int nPointsInBlock =
             generateTrianglesInNodeRasterScan(
-              leaf, firstNodeToRender, renderedBlock, sliceBB, haloTriangle,
+              leaf, firstNodeToRender, renderedBlock, sliceBB,
               thickness, isFaceVertexActivated);
           flush2PointCloud(
             useLocalAttr ? nRecPointsLocal :
@@ -2041,10 +2150,12 @@ struct RasterScanTrisoupEdges {
     // store edges for colocated next frame
     ctxtMemOctree.refFrameEdgeKeys = currentFrameEdgeKeys;
     ctxtMemOctree.refFrameEdgeValue = TriSoupVerticesQP;
+    ctxtMemOctree.refFrameEdgeQP = TriSoupEdgeLocalQP;
 
     // store centroids for colocated next frame
     ctxtMemOctree.refFrameNodeKeys = currentFrameNodeKeys;
     ctxtMemOctree.refFrameCentroValue = CentroValue;
+    ctxtMemOctree.refFrameCentroQP = CentroQP;
 
     if (useLocalAttr) {
       // rendering attributes of last slab

@@ -1002,6 +1002,7 @@ write(
   if (gps.trisoup_enabled_flag) {
     bs.writeUe(gbh.trisoup_node_size);
     bs.writeUe(gbh.trisoup_QP);
+    bs.writeUe(gbh.qu_size_log2);
     bs.write(gbh.trisoup_centroid_vertex_residual_flag);
     if( gbh.trisoup_centroid_vertex_residual_flag ){
       bs.write(gbh.trisoup_face_vertex_flag);
@@ -1102,6 +1103,7 @@ parseGbh(
   if (gps.trisoup_enabled_flag) {
     bs.readUe(&gbh.trisoup_node_size);
     bs.readUe(&gbh.trisoup_QP);
+    bs.readUe(&gbh.qu_size_log2);
     bs.read(&gbh.trisoup_centroid_vertex_residual_flag);
     if( gbh.trisoup_centroid_vertex_residual_flag ){
       bs.read(&gbh.trisoup_face_vertex_flag);

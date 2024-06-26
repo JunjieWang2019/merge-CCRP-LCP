@@ -83,6 +83,7 @@ struct PCCOctree3Node {
   , hasMotion(cp.hasMotion)
   //, idcmEligible(cp.idcmEligible)
   , qp(cp.qp)
+  , quIndex(cp.quIndex)
   {
   }
   // 3D position of the current node's origin (local x,y,z = 0).
@@ -95,6 +96,9 @@ struct PCCOctree3Node {
   // Range of prediction's point indexes spanned by node
   uint32_t predStart;
   uint32_t predEnd;
+
+  // local Quality Unit
+  int quIndex = -1;
 
   // encoder only, count of childs once ordered
   std::array<int32_t, 8> childCounts = {};
@@ -786,6 +790,14 @@ int maskPlanarZ(const OctreeNodePlanar& planar);
 void maskPlanar(OctreeNodePlanar& planar, int mask[3], int codedAxes);
 
 //============================================================================
+// for local QU
+struct localQU {
+  bool isBaseParameters = true;
+  int localQP;
+};
+
+
+//============================================================================
 
 struct GeometryOctreeContexts {
   static constexpr int kLeavesBufferSize =
@@ -809,10 +821,12 @@ struct GeometryOctreeContexts {
   // colocated edge
   std::vector<int64_t> refFrameEdgeKeys;
   std::vector<int8_t> refFrameEdgeValue;
+  std::vector<int8_t> refFrameEdgeQP;
 
   //colocated centroid
   std::vector<int64_t> refFrameNodeKeys;
   std::vector<int8_t> refFrameCentroValue;
+  std::vector<int8_t> refFrameCentroQP;
 
   // ctx and OBUF for Octree
   CtxModelDynamicOBUF _CtxMapDynamicOBUF[6];
@@ -845,6 +859,16 @@ struct GeometryOctreeContexts {
 
   uint8_t _BufferOBUFleavesTrisoup[kLeavesBufferSize];
   int _OBUFleafNumberTrisoup = 0;
+
+  // vector of local QU
+  int quLastIndex = 0;
+  std::vector<localQU> listOfQUs;
+
+  AdaptiveBitModel _ctxQUflag;
+  AdaptiveBitModel _ctxQUSign;
+  AdaptiveBitModel _ctxQUQPpref[3];
+  AdaptiveBitModel _ctxQUQPsuf[3];
+
 };
 
 //----------------------------------------------------------------------------
