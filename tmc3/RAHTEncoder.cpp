@@ -894,7 +894,10 @@ uraht_process_encoder(
     intraLayerACCoeffcients.resize(numPoints * numAttrs);
     interLayerACCoeffcients.resize(numPoints * numAttrs);
   }
-  int sumNodes = 0;
+  // number of coded coefficients (=nodes) in the layer
+  // n.b. in first layer there is also the DC coefficient (=root node) to count
+  int sumNodes = 1;
+
   int preLayerCodeMode = 0;
 
   for (int level = levelHfPos.size() - 1, isFirst = 1; level > 0; /*nop*/) {
