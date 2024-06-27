@@ -2199,11 +2199,12 @@ regionAdaptiveHierarchicalTransform(
           else
             return Mode::Null;
         }
-        int predCtxMode = attr::getInferredMode(enableIntraPred,
-          enableInterPred, nodeCnt, parentMode, neighborsMode);
 
         if (predCtxLevel < 0)
           return enableIntraPred ? Mode::Intra : Mode::Null;
+
+        int predCtxMode = attr::getInferredMode(enableIntraPred,
+          enableInterPred, nodeCnt, parentMode, neighborsMode);
 
         if (encoder.isInterEnabled()) {
           if (!enableIntraPred && enableInterPred) {

@@ -259,8 +259,8 @@ translateLayerDecoder(
 {
   bool flagMCmatchCurrent = true;
   // associate mean attribute of MC PC to each unique node
-  auto layer = layerAttr.begin();
   layerAttr.resize(weightsLf.size() * numAttrs);
+  auto layer = layerAttr.begin();
   for (int i = 0, j = 0;
       i < weightsLf.size() && j < count_mc;
       i++, layer += numAttrs) {
@@ -1102,8 +1102,11 @@ uraht_process_decoder(
 
       // preLayerCodeMode == 2 -> 1 INTRA, preLayerCodeMode == 1 -> 2 INTER
       modeParents = (pcc::attr::Mode)(3 - preLayerCodeMode);
-      ++depth;
     }
+    else
+      modeParents = attr::Mode::size;
+
+    ++depth;
   } // end loop on depth
 
 
