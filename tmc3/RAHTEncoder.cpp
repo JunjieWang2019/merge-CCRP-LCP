@@ -1346,28 +1346,30 @@ uraht_process_encoder(
 
         for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
           for (int k = 0; k < numAttrs; k++) {
-            if (predCtxLevel < 0) {
-              attrPredIntra[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                attrPredIntra[k][nodeIdx].val * weightIntra
-                + attrPredInter[k][nodeIdx].val * weightInter);
-              attrPredIntraTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                attrPredIntraTransformIt[k][nodeIdx].val * weightIntra
-                + attrPredInterTransformIt[k][nodeIdx].val * weightInter);
-              if (haarFlag) {
-                attrPredIntra[k][nodeIdx].val &= FixedPoint::kIntMask;
-                attrPredIntraTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+            if (enableIntraPred && enableInterPred) {
+              if (predCtxLevel < 0) {
+                attrPredIntra[k][nodeIdx].val = fpReduce<kFPFracBits>(
+                  attrPredIntra[k][nodeIdx].val * weightIntra
+                  + attrPredInter[k][nodeIdx].val * weightInter);
+                attrPredIntraTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
+                  attrPredIntraTransformIt[k][nodeIdx].val * weightIntra
+                  + attrPredInterTransformIt[k][nodeIdx].val * weightInter);
+                if (haarFlag) {
+                  attrPredIntra[k][nodeIdx].val &= FixedPoint::kIntMask;
+                  attrPredIntraTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+                }
               }
-            }
-            else {
-              attrPredInter[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                attrPredIntra[k][nodeIdx].val * weightIntra
-                + attrPredInter[k][nodeIdx].val * weightInter);
-              attrPredInterTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                attrPredIntraTransformIt[k][nodeIdx].val * weightIntra
-                + attrPredInterTransformIt[k][nodeIdx].val * weightInter);
-              if (haarFlag) {
-                attrPredInter[k][nodeIdx].val &= FixedPoint::kIntMask;
-                attrPredInterTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+              else {
+                attrPredInter[k][nodeIdx].val = fpReduce<kFPFracBits>(
+                  attrPredIntra[k][nodeIdx].val * weightIntra
+                  + attrPredInter[k][nodeIdx].val * weightInter);
+                attrPredInterTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
+                  attrPredIntraTransformIt[k][nodeIdx].val * weightIntra
+                  + attrPredInterTransformIt[k][nodeIdx].val * weightInter);
+                if (haarFlag) {
+                  attrPredInter[k][nodeIdx].val &= FixedPoint::kIntMask;
+                  attrPredInterTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+                }
               }
             }
             if (enableAverageLayerPrediction) {
