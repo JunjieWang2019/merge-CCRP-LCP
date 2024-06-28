@@ -131,7 +131,8 @@ namespace pcc {
     bool isInter,
     int8_t TriSoupVerticesPred,
     int8_t colocatedVertex,
-    int pos2Pred);
+    int pos2Pred,
+    int& mapIdx);
 
   void constructCtxPos2(
     int& ctxMap1,
@@ -143,7 +144,8 @@ namespace pcc {
     int Nshift4Mag,
     int v,
     int8_t colocatedVertex,
-    int blockWidthLog2);
+    int blockWidthLog2,
+    int& mapIdx);
 
   void constructCtxPos3(
     int& ctxMap1,
@@ -761,10 +763,12 @@ struct RasterScanTrisoupEdges {
       int blockWidthLog2 = ilog2(uint32_t(blockWidth));
 
       // first position bit is for left vs right  -> sign of vertexQP
-      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex, pos2Pred);
+      constructCtxPos1(
+        ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor,
+        colocatedVertex, pos2Pred, mapIdx);
       int bit = vertexQP > 0;
 
-      ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].getEvolve(
+      ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[mapIdx][1].getEvolve(
         bit, ctxMap2, ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
         ctxtMemOctree._BufferOBUFleavesTrisoup);
       arithmeticEncoder->encode(
@@ -777,12 +781,14 @@ struct RasterScanTrisoupEdges {
       int minMagBitIs1 = (partialMag << 1) | 1 ;
       minMagBitIs1 <<= b > 0 ? b : 0;
       if (b >= 0) {
-        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, Nshift4Mag, v, colocatedVertex, blockWidthLog2);
+        constructCtxPos2(
+          ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor,
+          Nshift4Mag, v, colocatedVertex, blockWidthLog2, mapIdx);
 
         bit = (magQP >> b--) & 1;
 
         if (minMagBitIs1 <= Qmax ) {
-          ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].getEvolve(
+          ctxTrisoup = ctxtMemOctree.MapOBUFTriSoup[mapIdx][2].getEvolve(
             bit, ctxMap2, (ctxMap1 << 1) + v,
             &ctxtMemOctree._OBUFleafNumberTrisoup,
             ctxtMemOctree._BufferOBUFleavesTrisoup);
@@ -911,9 +917,11 @@ struct RasterScanTrisoupEdges {
       int blockWidthLog2 = ilog2(uint32_t(blockWidth));
 
       // first position bit is for left vs right  -> sign of vertexQP
-      constructCtxPos1(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, colocatedVertex, pos2Pred);
+      constructCtxPos1(
+        ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor,
+        colocatedVertex, pos2Pred, mapIdx);
 
-      int bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][1].decodeEvolve(
+      int bit = ctxtMemOctree.MapOBUFTriSoup[mapIdx][1].decodeEvolve(
         &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[1][ctxInter], ctxMap2,
         ctxMap1, &ctxtMemOctree._OBUFleafNumberTrisoup,
         ctxtMemOctree._BufferOBUFleavesTrisoup);
@@ -926,10 +934,12 @@ struct RasterScanTrisoupEdges {
       minMagBitIs1 <<= b > 0 ? b : 0;
 
       if (b >= 0) {
-        constructCtxPos2(ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor, Nshift4Mag, v, colocatedVertex, blockWidthLog2);
+        constructCtxPos2(
+          ctxMap1, ctxMap2, ctxInter, ctxInfo, isInter, interPredictor,
+          Nshift4Mag, v, colocatedVertex, blockWidthLog2, mapIdx);
 
         if (minMagBitIs1 <= Qmax)
-          bit = ctxtMemOctree.MapOBUFTriSoup[ctxInter][2].decodeEvolve(
+          bit = ctxtMemOctree.MapOBUFTriSoup[mapIdx][2].decodeEvolve(
             &arithmeticDecoder, ctxtMemOctree.ctxTriSoup[2][ctxInter], ctxMap2,
             (ctxMap1 << 1) + v, &ctxtMemOctree._OBUFleafNumberTrisoup,
             ctxtMemOctree._BufferOBUFleavesTrisoup);

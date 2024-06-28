@@ -701,7 +701,8 @@ constructCtxPos1(
   bool isInter,
   int8_t TriSoupVerticesPred,
   int8_t colocatedVertex,
-  int pos2Pred) {
+  int pos2Pred,
+  int& mapIdx) {
 
   int ctxFullNbounds = (4 * (ctxInfo.ctx0 <= 1 ? 0 : (ctxInfo.ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctxInfo.ctx1) - 1)) * 2 + (ctxInfo.ctxE == 3);
   ctxMap1 = ctxFullNbounds * 2 + (ctxInfo.nclosestStart > 0);
@@ -715,20 +716,19 @@ constructCtxPos1(
   bool isInterGood = isInter && ((isGoodRef && ctxInfo.nBadPredRef2 <= 0) || ctxInfo.nBadPredComp1 <= 4);
 
   ctxInter = 0;
+  mapIdx = 0;
   if (isInterGood) {
-    ctxInter = TriSoupVerticesPred != 0 ? 1 + (TriSoupVerticesPred > 0 ? 1 : 0) : 0;
-
-    if (ctxInter > 0 )
+    ctxInter =
+      TriSoupVerticesPred != 0 ? 1 + (TriSoupVerticesPred > 0 ? 1 : 0) : 0;
+    if (ctxInter > 0) {
       ctxInter += 2 * (pos2Pred == 1 || pos2Pred == 2);
+      mapIdx = ctxInter;
+      ctxInter = ctxInter * 3 - 2;
 
-
-    int goodPresence = colocatedVertex != 0 && ctxInfo.nBadPredRef2 <= 0;
-    ctxMap2 |= goodPresence << 16;
-    if (goodPresence)
-      ctxMap2 |= (colocatedVertex > 0 ? 1 : 0) << 15;
-  }
-  else {
-    ctxMap2 <<= 2;
+      int goodPresence = colocatedVertex != 0 && ctxInfo.nBadPredRef2 <= 0;
+      if (goodPresence)
+        ctxInter += (colocatedVertex > 0 ? 2 : 1);
+    }
   }
 }
 
@@ -744,7 +744,8 @@ constructCtxPos2(
   int Nshift4Mag,
   int v,
   int8_t colocatedVertex,
-  int blockWidthLog2){
+  int blockWidthLog2,
+  int& mapIdx){
 
   int ctxFullNbounds = (4 * (ctxInfo.ctx0 <= 1 ? 0 : (ctxInfo.ctx0 >= 3 ? 2 : 1)) + (std::max(1, ctxInfo.ctx1) - 1)) * 2 + (ctxInfo.ctxE == 3);
   ctxMap1 = ctxFullNbounds * 2 + (ctxInfo.nclosestStart > 0);
@@ -756,17 +757,20 @@ constructCtxPos2(
   ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
 
   ctxInter = 0;
+  mapIdx = 0;
   if (isInter) {
-    ctxInter = TriSoupVerticesPred != 0  ? 1 + (!!((std::abs(TriSoupVerticesPred) - 1) >> Nshift4Mag)) : 0;
-
-    int goodPresence = colocatedVertex != 0 ? 1 : 0;
-    goodPresence = goodPresence  && ((colocatedVertex > 0 ? 1 : 0) == v) && ctxInfo.nBadPredRef2 <= blockWidthLog2 - 2;
-    ctxMap2 |= goodPresence << 16;
-    if (goodPresence)
-      ctxMap2 |= (!!((std::abs(colocatedVertex) - 1) >> Nshift4Mag)) << 15;
-  }
-  else {
-    ctxMap2 <<= 2;
+    ctxInter = TriSoupVerticesPred != 0
+      ? 1 + (!!((std::abs(TriSoupVerticesPred) - 1) >> Nshift4Mag)) : 0;
+    mapIdx = ctxInter;
+    if (ctxInter > 0) {
+      ctxInter = ctxInter * 3 - 2;//1,4
+      int goodPresence = colocatedVertex != 0 ? 1 : 0;
+      goodPresence = goodPresence
+        && ((colocatedVertex > 0 ? 1 : 0) == v)
+        && ctxInfo.nBadPredRef2 <= blockWidthLog2 - 2;
+      if (goodPresence)
+        ctxInter += (!!((std::abs(colocatedVertex) - 1) >> Nshift4Mag)) ? 2 : 1;
+    }
   }
 }
 
