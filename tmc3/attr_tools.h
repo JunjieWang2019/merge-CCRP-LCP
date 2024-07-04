@@ -58,6 +58,7 @@ struct UrahtNodeLight {
   std::array<int16_t, 2> qp;
   attr::Mode mode = attr::Mode::size;
   attr::Mode _mode = attr::Mode::size;
+  attr::Mode grand_mode = attr::Mode::size;
 };
 
 struct UrahtNode {
@@ -67,6 +68,7 @@ struct UrahtNode {
   bool decoded = false;
   attr::Mode mode = attr::Mode::size;
   attr::Mode _mode = attr::Mode::size;
+  attr::Mode grand_mode = attr::Mode::size;
 
   uint8_t occupancy;
   std::vector<UrahtNodeLight>::iterator firstChild;
@@ -78,6 +80,7 @@ struct UrahtNode {
     qp = node.qp;
     mode = node.mode;
     _mode = node._mode;
+    grand_mode = node.grand_mode;
     occupancy = 0;
     decoded = false;
   }
@@ -89,6 +92,7 @@ struct UrahtNodeDecoder {
   std::array<int16_t, 2> qp;
   bool decoded = false;
   attr::Mode mode = attr::Mode::size;
+  attr::Mode grand_mode = attr::Mode::size;
   uint8_t occupancy = 0;
 
   int firstChildIdx;

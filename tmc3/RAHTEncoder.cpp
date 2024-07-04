@@ -1119,6 +1119,13 @@ uraht_process_encoder(
 
         occupancy |= 1 << nodeIdx;
 
+        //store grandmode
+        if (depth >= 1) {
+          weightsLf[j0].grand_mode = weightsParentIt->mode;
+        } else {
+          weightsLf[j0].grand_mode = Mode::Null;
+        }
+
         for (int k = 0; k < numAttrs; k++)
           attrReal[k][nodeIdx] = attrsLf[j0 * numAttrs + k];
       }
@@ -1343,6 +1350,15 @@ uraht_process_encoder(
         voteInterWeight += 12 * isInter(weightsParentIt->mode) + 6 * flag;
         voteIntraWeight += 12 * isIntra(weightsParentIt->mode) + 6 * flag;
 
+        if (depth > 1) {
+          bool flag_grand = !isInter(weightsParentIt->grand_mode)
+            && !isIntra(weightsParentIt->grand_mode);
+          voteInterWeight +=
+            28 * isInter(weightsParentIt->grand_mode) + 14 * flag_grand;
+          voteIntraWeight +=
+            28 * isIntra(weightsParentIt->grand_mode) + 14 * flag_grand;
+        }
+
         weightIntra = divApprox(voteIntraWeight << kFPFracBits, voteInterWeight + voteIntraWeight, 0);
         weightInter = (1 << kFPFracBits) - weightIntra;
 
@@ -1354,6 +1370,15 @@ uraht_process_encoder(
 
           voteInterLayerWeight += 12 * isInter(weightsParentIt->mode) + 6 * flag;
           voteIntraLayerWeight += 12 * isIntra(weightsParentIt->mode) + 6 * flag;
+
+          if (depth > 1) {
+            bool flag_grand = !isInter(weightsParentIt->grand_mode)
+              && !isIntra(weightsParentIt->grand_mode);
+            voteInterLayerWeight +=
+              28 * isInter(weightsParentIt->grand_mode) + 14 * flag_grand;
+            voteIntraLayerWeight +=
+              28 * isIntra(weightsParentIt->grand_mode) + 14 * flag_grand;
+          }
 
           weightIntraLayer = divApprox(
             voteIntraLayerWeight << kFPFracBits,

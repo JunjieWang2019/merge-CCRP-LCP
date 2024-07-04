@@ -681,6 +681,13 @@ uraht_process_decoder(
         nodeQp[nodeIdx][0] = weightsLf[j0].qp[0] >> regionQpShift;
         nodeQp[nodeIdx][1] = weightsLf[j0].qp[1] >> regionQpShift;
         occupancy |= 1 << nodeIdx;
+
+        //store grandmode
+        if (depth >= 1) {
+          weightsLf[j0].grand_mode = weightsParentIt->mode;
+        } else {
+          weightsLf[j0].grand_mode = Mode::Null;
+        }
       }
       weightsParentIt->occupancy = occupancy;
       int64_t sumweights = weightsParentIt->weight;
@@ -906,6 +913,15 @@ uraht_process_decoder(
 
           voteInterWeight += 12 * isInter(weightsParentIt->mode) + 6 * flag;
           voteIntraWeight += 12 * isIntra(weightsParentIt->mode) + 6 * flag;
+
+           if (depth > 1) {
+            bool flag_grand = !isInter(weightsParentIt->grand_mode)
+              && !isIntra(weightsParentIt->grand_mode);
+            voteInterWeight +=
+              28 * isInter(weightsParentIt->grand_mode) + 14 * flag_grand;
+            voteIntraWeight +=
+              28 * isIntra(weightsParentIt->grand_mode) + 14 * flag_grand;
+          }
 
           int64_t weightIntra = divApprox(
             voteIntraWeight << kFPFracBits,
