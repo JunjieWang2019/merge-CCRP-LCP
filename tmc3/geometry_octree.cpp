@@ -292,12 +292,23 @@ GeometryOctreeContexts::resetMap(bool forTrisoup)
   if (!forTrisoup)
     return;
 
+  const int sizeOfOBUFforTriSOup[5] = { 3, 5, 5, 3 ,3 };
+
   for (int i = 0; i < 5; i++) {
-    MapOBUFTriSoup[i][0].reset(14 + 1 + 0, 7);      // flag
-    MapOBUFTriSoup[i][1].reset(10 + 1 + 3 + 1 + 0, 6);      // first bit position
-    MapOBUFTriSoup[i][2].reset(10 + 1 + 3 + 1 + 0, 6 + 1);  // second bit position
-    MapOBUFTriSoup[i][3].reset(10 + 1 + 3 + 1 + 2, 6 + 2);  // third bit position
-    MapOBUFTriSoup[i][4].reset(10 + 1 + 3 + 1 + 2, 6 + 3);  // fourth bit position
+    if (i < sizeOfOBUFforTriSOup[0])
+      MapOBUFTriSoup[i][0].reset(15, 7);      // flag
+
+    if (i < sizeOfOBUFforTriSOup[1])
+      MapOBUFTriSoup[i][1].reset(15, 6);      // first bit position
+
+    if (i < sizeOfOBUFforTriSOup[2])
+      MapOBUFTriSoup[i][2].reset(15, 6 + 1);  // second bit position
+
+    if (i < sizeOfOBUFforTriSOup[3])
+      MapOBUFTriSoup[i][3].reset(15, 6 + 2);  // third bit position
+
+    if (i < sizeOfOBUFforTriSOup[4])
+      MapOBUFTriSoup[i][4].reset(13, 6 + 3);  // fourth bit position
   }
 
   _OBUFleafNumberTrisoup = 0;
@@ -317,7 +328,7 @@ GeometryOctreeContexts::resetMap(bool forTrisoup)
   MapOBUFTriSoup[1][0].init(initValue0_inter0);
   MapOBUFTriSoup[2][0].init(initValue0_inter1);
 
-  // bit1 pos
+  // inter first bit position
   static const uint8_t initValue1_inter0[64] = { 141,127,39,15,96,44,15,15,111,15,15,15,47,15,21,15,127,127,64,42,123,57,36,17,76,15,20,15,57,15,132,15,175,127,105,49,229,110,132,54,207,51,73,32,119,38,100,61,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,};
   static const uint8_t initValue1_inter1[64] = { 127,127,39,46,110,80,28,15,80,15,48,15,96,15,62,28,152,127,106,73,139,61,96,72,100,15,61,43,56,15,104,49,203,127,69,96,207,133,96,82,130,85,141,66,173,78,192,121,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,};
   static const uint8_t initValue1_inter2[64] = { 127,127,153,105,127,105,149,46,121,55,144,25,127,47,182,81,175,116,197,105,181,153,214,133,116,132,200,135,152,75,134,120,240,116,187,116,240,210,202,86,240,140,203,137,194,68,203,161,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,};

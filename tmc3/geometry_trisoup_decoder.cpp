@@ -794,7 +794,7 @@ constructCtxPos3(
   ctxMap2 |= (ctxInfo.patternClosest & 1) << 6;
   ctxMap2 |= ctxInfo.direction << 4;
   ctxMap2 |= (ctxInfo.patternClose & (0b00011111)) >> 1;
-  ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
+  ctxMap2 = (ctxMap2 << 2) + (ctxInfo.orderedPcloseParPos >> 2);
 
   ctxInter = 0;
   if (isInter) {
@@ -804,10 +804,10 @@ constructCtxPos3(
     int goodPresence = colocatedVertex != 0 ? 1 : 0;
     goodPresence = goodPresence && ((colocatedVertex > 0 ? 1 : 0) == (v >> 1));
     goodPresence = goodPresence && (!!((std::abs(colocatedVertex) - 1) >> Nshift4Mag)) == (v & 1) && ctxInfo.nBadPredRef2 <= blockWidthLog2 - 2;
-    ctxMap2 |= goodPresence << 16;
+    ctxMap2 |= goodPresence << 14;
     if (goodPresence) {
       int temp2 = ((std::abs(colocatedVertex) - 1) >> std::max(0, Nshift4Mag - 1)) & 1;
-      ctxMap2 |= temp2 << 15;
+      ctxMap2 |= temp2 << 13;
     }
   }
   else {
@@ -837,7 +837,6 @@ constructCtxPos4(
   ctxMap2 |= (ctxInfo.patternClosest & 1) << 6;
   ctxMap2 |= ctxInfo.direction << 4;
   ctxMap2 |= (ctxInfo.patternClose & (0b00011111)) >> 1;
-  ctxMap2 = (ctxMap2 << 4) + ctxInfo.orderedPcloseParPos;
 
   ctxInter = 0;
   if (isInter) {
@@ -848,10 +847,10 @@ constructCtxPos4(
     goodPresence = goodPresence && ((colocatedVertex > 0 ? 1 : 0) == (v >> 2));
     goodPresence = goodPresence && (!!((std::abs(colocatedVertex) - 1) >> Nshift4Mag)) == ((v >> 1) & 1);
     goodPresence = goodPresence && (((std::abs(colocatedVertex) - 1) >> std::max(0, Nshift4Mag - 1)) & 1) == (v & 1) && ctxInfo.nBadPredRef2 <= blockWidthLog2 - 2;
-    ctxMap2 |= goodPresence << 16;
+    ctxMap2 |= goodPresence << 12;
     if (goodPresence) {
       int temp2 = ((std::abs(colocatedVertex) - 1) >> std::max(0, Nshift4Mag - 2)) & 1;
-      ctxMap2 |= temp2 << 15;
+      ctxMap2 |= temp2 << 11;
     }
   }
   else {
