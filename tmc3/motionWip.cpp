@@ -1523,7 +1523,7 @@ MSOctree::apply_motion(
   }
 
   node0->predStart = compensatedPointCloud->size();
-  compensatedPointCloud->appendPartition(*pointCloud, indices);
+  compensatedPointCloud->appendPartition(*pointCloud, indices, false);
   node0->predEnd = compensatedPointCloud->size();
 
   for (int i = node0->predStart; i < node0->predEnd; ++i) {
