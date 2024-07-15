@@ -461,8 +461,15 @@ AttributeEncoder::encode(
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
     attrInterPredParams.mortonCode_mc.clear();
     attrInterPredParams.attributes_mc.clear();
-    if (attr_aps.mcap_to_rec_geom_flag)
-      attrInterPredParams.compensatedPointCloud = pointCloud;
+    if (attr_aps.mcap_to_rec_geom_flag) {
+      // copy geometry but not attributes
+      //attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
+      attrInterPredParams.compensatedPointCloud.clear();
+      attrInterPredParams.compensatedPointCloud.appendPartition(
+        pointCloud, 0, pointCloud.size(), false);
+      // allocates attributes
+      attrInterPredParams.compensatedPointCloud.addRemoveAttributes(pointCloud);
+    }
     if (attr_aps.dual_motion_field_flag)
       attrInterPredParams.encodeMotionAndBuildCompensated(
         attr_aps.motion, _pEncoder->arithmeticEncoder,
@@ -539,8 +546,15 @@ void AttributeEncoder::encodeSlab(
     tmp.swap(attrInterPredParams.compensatedPointCloud);
     attrInterPredParams.mortonCode_mc.clear();
     attrInterPredParams.attributes_mc.clear();
-    if (attr_aps.mcap_to_rec_geom_flag)
-      attrInterPredParams.compensatedPointCloud = slabPointCloud;
+    if (attr_aps.mcap_to_rec_geom_flag) {
+      // copy geometry but not attributes
+      //attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
+      attrInterPredParams.compensatedPointCloud.clear();
+      attrInterPredParams.compensatedPointCloud.appendPartition(
+        slabPointCloud, 0, slabPointCloud.size(), false);
+      // allocates attributes
+      attrInterPredParams.compensatedPointCloud.addRemoveAttributes(slabPointCloud);
+    }
     if (attr_aps.dual_motion_field_flag)
       attrInterPredParams.encodeMotionAndBuildCompensated(
         attr_aps.motion, _pEncoder->arithmeticEncoder,
