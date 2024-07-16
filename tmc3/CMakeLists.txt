@@ -129,6 +129,7 @@ file(GLOB PROJECT_CPP_FILES
   "geometry_octree.cpp"
   "geometry_octree_decoder.cpp"
   "geometry_octree_encoder.cpp"
+  "geometry_trisoup.cpp"
   "geometry_trisoup_decoder.cpp"
   "geometry_trisoup_encoder.cpp"
   "io_hls.cpp"

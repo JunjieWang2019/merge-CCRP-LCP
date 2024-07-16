@@ -509,11 +509,10 @@ decodeGeometryOctree(
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
   PCCTMC3Decoder3& rootDecoder,
-  RasterScanTrisoupEdges* rste)
+  RasterScanTrisoupEdgesDecoder* rste)
 {
   if (forTrisoup) {
     assert(rste);
-    assert(nodesRemaining);
   }
 
   PCCPointSet3& compensatedPointCloud = interPredParams.compensatedPointCloud;
@@ -767,6 +766,10 @@ decodeGeometryOctree(
     };
 
     bool isLastDepth = depth == maxDepth - 1;
+
+    if (forTrisoup && isLastDepth) {
+      rste->leaves.reserve(8 * fifo.size());
+    }
 
     // planar mode as a container for QTBT at depth level
     OctreeNodePlanar planar;
@@ -1123,8 +1126,8 @@ decodeGeometryOctree(
 
             if (forTrisoup) {
               if (isLastDepth) {
-                nodesRemaining->push_back(child);
-                nodesRemaining->back().pos *= S;
+                rste->leaves.emplace_back(child);
+                rste->leaves.back().pos *= S;
 
                 if (flagNonPow2) {
                   int maskS = (1 << S2) - 1;
@@ -1185,21 +1188,19 @@ decodeGeometryOctree(
   if (!forTrisoup)
     pointCloud.resize(processedPointCount);
 
-  if (nodesRemaining) {
-    if (forTrisoup) {
-      // TriSoup final pass (true)
-      rste->callTriSoupSlice(true);
-      rste->finishSlice();
-    } else {
-      // return partial coding result
-      //  - add missing levels to node positions and inverse quantise
-      auto nodeSizeLog2 = lvlNodeSizeLog2[maxDepth];
-      for (auto& node : fifo) {
-        node.pos <<= nodeSizeLog2 - QuantizerGeom::qpShift(node.qp);
-        node.pos = invQuantPosition(node.qp, posQuantBitMasks, node.pos);
-      }
-      *nodesRemaining = std::move(fifo);
+  if (forTrisoup) {
+    // TriSoup final pass (true)
+    rste->callTriSoupSlice(true);
+    rste->finishSlice();
+  } else if (nodesRemaining) {
+    // return partial coding result
+    //  - add missing levels to node positions and inverse quantise
+    auto nodeSizeLog2 = lvlNodeSizeLog2[maxDepth];
+    for (auto& node : fifo) {
+      node.pos <<= nodeSizeLog2 - QuantizerGeom::qpShift(node.qp);
+      node.pos = invQuantPosition(node.qp, posQuantBitMasks, node.pos);
     }
+    *nodesRemaining = std::move(fifo);
   }
 }
 
@@ -1218,7 +1219,7 @@ decodeGeometryOctree<true>(
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
   PCCTMC3Decoder3& rootDecoder,
-  RasterScanTrisoupEdges* rste);
+  RasterScanTrisoupEdgesDecoder* rste);
 
 // instanciate for Octree
 template void
@@ -1235,7 +1236,7 @@ decodeGeometryOctree<false>(
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
   PCCTMC3Decoder3& rootDecoder,
-  RasterScanTrisoupEdges* rste);
+  RasterScanTrisoupEdgesDecoder* rste);
 
 //-------------------------------------------------------------------------
 

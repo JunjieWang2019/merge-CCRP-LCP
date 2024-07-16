@@ -38,57 +38,43 @@
 #include "pointset_processing.h"
 #include "geometry.h"
 #include "geometry_octree.h"
+
 #include "PCCTMC3Encoder.h"
+#include "PCCTMC3Decoder.h"
 
 namespace pcc {
 
 //============================================================================
+
+// instanciate for Encoder
+template void RasterScanTrisoupEdges<true, TrisoupNodeEncoder>::processLocalAttributes(
+  PCCPointSet3& recPointCloud, bool isLast);
+
+// instanciate for Decoder
+template void RasterScanTrisoupEdges<false, TrisoupNodeDecoder>::processLocalAttributes(
+  PCCPointSet3& recPointCloud, bool isLast);
+
+//---
+
+template <bool isEncoder, typename TrisoupNode>
 void
-encodeGeometryTrisoup(
-  const EncoderParams& encParams,
-  const GeometryParameterSet& gps,
-  GeometryBrickHeader& gbh,
-  PCCPointSet3& pointCloud,
-  GeometryOctreeContexts& ctxtMemOctree,
-  std::vector<std::unique_ptr<EntropyEncoder>>& arithmeticEncoders,
-  const CloudFrame& refFrame,
-  const SequenceParameterSet& sps,
-  InterPredParams& interPredParams,
-  PCCTMC3Encoder3& encoder)
+RasterScanTrisoupEdges<isEncoder, TrisoupNode>::processLocalAttributes(
+  PCCPointSet3& recPointCloud, bool isLast)
 {
-  bool isInter = gbh.interPredictionEnabledFlag;
+  auto allocatedSizeLocal = localPointCloud.size();
+  localPointCloud.resize(nRecPointsLocal);
+  if (isEncoder)
+    encoder->processNextSlabAttributes(localPointCloud, xStartLocalSlab, isLast);
+  else
+    decoder->processNextSlabAttributes(localPointCloud, xStartLocalSlab, isLast);
+  localPointCloud.resize(allocatedSizeLocal);
 
-  // prepare TriSoup parameters
-  int blockWidth = gbh.trisoupNodeSize(gps);
+  if (recPointCloud.getPointCount() < nRecPoints + nRecPointsLocal)
+    recPointCloud.resize(nRecPoints + nRecPointsLocal + PC_PREALLOCATION_SIZE);
 
-  std::cout << "TriSoup QP = " << gbh.trisoup_QP << "\n";
-
-  // get first encoder
-  pcc::EntropyEncoder* arithmeticEncoder = arithmeticEncoders.begin()->get();
-
-  // trisoup uses octree coding until reaching the triangulation level.
-  EntropyDecoder foo;
-  RasterScanTrisoupEdgesEncoder rste(blockWidth, pointCloud,
-    1, isInter, interPredParams.compensatedPointCloud,
-    gps, gbh, arithmeticEncoder, foo, ctxtMemOctree);
-  rste.useLocalAttr = sps.localized_attributes_enabled_flag;
-  if (rste.useLocalAttr) {
-    rste.encoder = &encoder;
-    rste.slabThickness = sps.localized_attributes_slab_thickness_minus1 + 1;
-  }
-  rste.init();
-  rste.thVertexDetermination = encParams.trisoup.thVertexDetermination;
-
-  // octree
-  encodeGeometryOctree<true>(
-    encParams, gps, gbh, pointCloud, ctxtMemOctree, arithmeticEncoders, nullptr,
-    refFrame, sps, interPredParams, encoder, &rste);
-
-  std::cout << "Size compensatedPointCloud for TriSoup = "
-    << interPredParams.compensatedPointCloud.getPointCount() << "\n";
-  std::cout << "Number of nodes for TriSoup = " << rste.leaves.size() << "\n";
-  std::cout << "TriSoup gives " << pointCloud.getPointCount() << " points \n";
-
+  recPointCloud.setFromPartition(localPointCloud, 0, nRecPointsLocal, nRecPoints);
+  nRecPoints += nRecPointsLocal;
+  nRecPointsLocal = 0; // point cloud buffer has been rendered
 }
 
 //============================================================================

@@ -59,7 +59,14 @@ const int MAX_NUM_DM_LEAF_POINTS = 2;
 //----------------------------------------------------------------------------
 
 struct EncoderParams;
+struct TrisoupNodeEncoder;
+struct TrisoupNodeDecoder;
+
+template <bool isEncoder, typename TrisoupNode>
 struct RasterScanTrisoupEdges;
+
+using RasterScanTrisoupEdgesEncoder = RasterScanTrisoupEdges<true, TrisoupNodeEncoder>;
+using RasterScanTrisoupEdgesDecoder = RasterScanTrisoupEdges<false, TrisoupNodeDecoder>;
 
 //============================================================================
 
@@ -85,6 +92,10 @@ struct PCCOctree3Node {
   uint32_t start;
   uint32_t end;
 
+  // Range of prediction's point indexes spanned by node
+  uint32_t predStart;
+  uint32_t predEnd;
+
   // encoder only, count of childs once ordered
   std::array<int32_t, 8> childCounts = {};
 
@@ -108,10 +119,6 @@ struct PCCOctree3Node {
 
   // store the the neighborhood pattern for further passes on the node
   uint8_t neighPattern;
-
-  // Range of prediction's point indexes spanned by node
-  uint32_t predStart;
-  uint32_t predEnd;
 
   // The number of mispredictions in determining the occupancy
   // map of the child nodes in this node's parent.
@@ -869,7 +876,7 @@ void encodeGeometryOctree(
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
   struct PCCTMC3Encoder3& encoder,
-  RasterScanTrisoupEdges* rste = nullptr);
+  RasterScanTrisoupEdgesEncoder* rste = nullptr);
 
 template <bool forTrisoup>
 void decodeGeometryOctree(
@@ -885,7 +892,7 @@ void decodeGeometryOctree(
   const Vec3<int> minimum_position,
   InterPredParams& interPredParams,
   struct PCCTMC3Decoder3& decoder,
-  RasterScanTrisoupEdges* rste = nullptr);
+  RasterScanTrisoupEdgesDecoder* rste = nullptr);
 
 //============================================================================
 

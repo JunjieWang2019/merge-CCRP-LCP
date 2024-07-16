@@ -728,14 +728,13 @@ encodeGeometryOctree(
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
   PCCTMC3Encoder3& rootEncoder,
-  RasterScanTrisoupEdges* rste
+  RasterScanTrisoupEdgesEncoder* rste
   )
 {
   const OctreeEncOpts& params = encParams.geom;
 
   if (forTrisoup) {
     assert(rste);
-    assert(nodesRemaining);
   }
 
   PCCPointSet3& compensatedPointCloud = interPredParams.compensatedPointCloud;
@@ -1067,6 +1066,10 @@ encodeGeometryOctree(
     };
 
     bool isLastDepth = depth == maxDepth - 1;
+
+    if (forTrisoup && isLastDepth) {
+      rste->leaves.reserve(8 * fifo.size());
+    }
 
     // planar mode as a container for QTBT at depth level
     OctreeNodePlanar planar;
@@ -1469,8 +1472,8 @@ encodeGeometryOctree(
 
             if (forTrisoup) {
               if (isLastDepth) {
-                nodesRemaining->push_back(child);
-                nodesRemaining->back().pos  *= S;
+                rste->leaves.emplace_back(child);
+                rste->leaves.back().pos *= S;
                 if (flagNonPow2) {
                   int maskS = (1 << S2) - 1;
                   for (int np = child.start; np < child.end; np++) {
@@ -1519,23 +1522,22 @@ encodeGeometryOctree(
   // save the context state for re-use by a future slice if required
   //ctxtMem = encoder.getCtx(); // ctxtMem is now directly used
 
-  if (nodesRemaining) {
-    if (forTrisoup) {
-      // TriSoup final pass (true)
-      rste->callTriSoupSlice(true);
-      rste->finishSlice();
-    } else {
-      // return partial coding result
-      //  - add missing levels to node positions
-      //  - inverse quantise the point cloud
-      // todo(df): this does not yet support inverse quantisation of node.pos
-      auto nodeSizeLog2 = lvlNodeSizeLog2[maxDepth];
-      for (auto& node : fifo) {
-        node.pos <<= nodeSizeLog2;
-        geometryScale(pointCloud, node, quantNodeSizeLog2);
-      }
-      *nodesRemaining = std::move(fifo);
+  if (forTrisoup) {
+    // TriSoup final pass (true)
+    rste->callTriSoupSlice(true);
+    rste->finishSlice();
+    return;
+  } else if (nodesRemaining) {
+    // return partial coding result
+    //  - add missing levels to node positions
+    //  - inverse quantise the point cloud
+    // todo(df): this does not yet support inverse quantisation of node.pos
+    auto nodeSizeLog2 = lvlNodeSizeLog2[maxDepth];
+    for (auto& node : fifo) {
+      node.pos <<= nodeSizeLog2;
+      geometryScale(pointCloud, node, quantNodeSizeLog2);
     }
+    *nodesRemaining = std::move(fifo);
     return;
   }
 
@@ -1590,7 +1592,7 @@ encodeGeometryOctree<true>(
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
   PCCTMC3Encoder3& rootEncoder,
-  RasterScanTrisoupEdges* rste);
+  RasterScanTrisoupEdgesEncoder* rste);
 
 // instanciate for Octree
 template void
@@ -1606,7 +1608,7 @@ encodeGeometryOctree<false>(
   const SequenceParameterSet& sps,
   InterPredParams& interPredParams,
   PCCTMC3Encoder3& rootEncoder,
-  RasterScanTrisoupEdges* rste);
+  RasterScanTrisoupEdgesEncoder* rste);
 
 //============================================================================
 

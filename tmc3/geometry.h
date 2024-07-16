@@ -51,7 +51,6 @@ namespace pcc {
 
 struct GeometryOctreeContexts;
 struct CloudFrame;
-struct RasterScanTrisoupEdges;
 struct MSOctree;
 struct EncoderParams;
 struct InterPredParams;

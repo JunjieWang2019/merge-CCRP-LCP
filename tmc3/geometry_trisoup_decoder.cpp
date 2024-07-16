@@ -42,7 +42,6 @@
 #include "geometry.h"
 #include "geometry_octree.h"
 
-#include "PCCTMC3Encoder.h"
 #include "PCCTMC3Decoder.h"
 
 namespace pcc {
@@ -68,8 +67,7 @@ decodeGeometryTrisoup(
   std::cout << "TriSoup QP = " << gbh.trisoup_QP << "\n";
 
   // trisoup uses octree coding until reaching the triangulation level.
-  std::vector<PCCOctree3Node> nodes;
-  RasterScanTrisoupEdges rste(nodes, blockWidth, pointCloud, false,
+  RasterScanTrisoupEdgesDecoder rste(blockWidth, pointCloud,
     1 /*distanceSearchEncoder*/, isInter, interPredParams.compensatedPointCloud,
     gps, gbh, NULL, arithmeticDecoder, ctxtMemOctree);
   rste.useLocalAttr = sps.localized_attributes_enabled_flag;
@@ -81,7 +79,7 @@ decodeGeometryTrisoup(
 
   // octree
   decodeGeometryOctree<true>(
-    gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, &nodes, refFrame,
+    gps, gbh, 0, pointCloud, ctxtMemOctree, arithmeticDecoder, nullptr, refFrame,
     sps, minimum_position, interPredParams, decoder, &rste);
 
   //std::cout << "\nSize compensatedPointCloud for TriSoup = "
@@ -1064,28 +1062,6 @@ void rayTracingAlongdirection_samp1_optimZ(
     }// loop g2
   }//loop g1
 }
-
-
-//--
-void
-RasterScanTrisoupEdges::processLocalAttributes(PCCPointSet3& recPointCloud, bool isLast)
-{
-  auto allocatedSizeLocal = localPointCloud.size();
-  localPointCloud.resize(nRecPointsLocal);
-  if (isEncoder)
-    encoder->processNextSlabAttributes(localPointCloud, xStartLocalSlab, isLast);
-  else
-    decoder->processNextSlabAttributes(localPointCloud, xStartLocalSlab, isLast);
-  localPointCloud.resize(allocatedSizeLocal);
-
-  if (recPointCloud.getPointCount() < nRecPoints + nRecPointsLocal)
-    recPointCloud.resize(nRecPoints + nRecPointsLocal + PC_PREALLOCATION_SIZE);
-
-  recPointCloud.setFromPartition(localPointCloud, 0, nRecPointsLocal, nRecPoints);
-  nRecPoints += nRecPointsLocal;
-  nRecPointsLocal = 0; // point cloud buffer has been rendered
-}
-
 
 //============================================================================
 }  // namespace pcc

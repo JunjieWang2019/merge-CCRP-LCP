@@ -481,8 +481,50 @@ struct TrisoupNodeFaceVertex {
 };
 
 //============================================================================
+struct TrisoupNodeEncoder {
+  Vec3<int32_t> pos;
+  uint32_t _start;
+  uint32_t _end;
+  uint32_t predStart;
+  uint32_t predEnd;
 
+  TrisoupNodeEncoder(const PCCOctree3Node& from)
+    : pos(from.pos),
+    _start(from.start),
+    _end(from.end),
+    predStart(from.predStart),
+    predEnd(from.predEnd)
+  {}
+
+  int start() const { return _start; }
+  int end() const { return _end; }
+};
+
+struct TrisoupNodeDecoder {
+  Vec3<int32_t> pos;
+  uint32_t predStart;
+  uint32_t predEnd;
+
+  TrisoupNodeDecoder(const PCCOctree3Node& from)
+    : pos(from.pos),
+    predStart(from.predStart),
+    predEnd(from.predEnd)
+  {}
+
+  int start() const { return 0; }
+  int end() const { return 0; }
+};
+
+template <bool isEncoder, typename TrisoupNode>
+struct RasterScanTrisoupEdges;
+
+using RasterScanTrisoupEdgesEncoder = RasterScanTrisoupEdges<true, TrisoupNodeEncoder>;
+using RasterScanTrisoupEdgesDecoder = RasterScanTrisoupEdges<false, TrisoupNodeDecoder>;
+
+
+template <bool isEncoder, typename TrisoupNode>
 struct RasterScanTrisoupEdges {
+
   const int32_t blockWidth;
   // Eight corners of block.
   const Vec3<int32_t> pos000{ 0, 0, 0 };
@@ -515,9 +557,8 @@ struct RasterScanTrisoupEdges {
   Vec3<int32_t> currWedgePos = { INT32_MIN,INT32_MIN,INT32_MIN };
   int lastWedgex = 0;
 
-  const std::vector<PCCOctree3Node>& leaves;
+  std::vector<TrisoupNode> leaves;
   PCCPointSet3& pointCloud;
-  const bool isEncoder;
   const int distanceSearchEncoder;
   const bool isInter;
   const bool interSkipEnabled;
@@ -613,13 +654,12 @@ struct RasterScanTrisoupEdges {
   int thVertexDetermination = 0;
 
   // constructor
-  RasterScanTrisoupEdges(const std::vector<PCCOctree3Node>& leaves, int blockWidth, PCCPointSet3& pointCloud, bool isEncoder,
+  RasterScanTrisoupEdges(int blockWidth, PCCPointSet3& pointCloud,
     int distanceSearchEncoder, bool isInter, const PCCPointSet3& compensatedPointCloud,
     const GeometryParameterSet& gps, const GeometryBrickHeader& gbh, pcc::EntropyEncoder* arithmeticEncoder, pcc::EntropyDecoder& arithmeticDecoder, GeometryOctreeContexts& ctxtMemOctree)
-    : leaves(leaves)
+    : leaves()
     , blockWidth(blockWidth)
     , pointCloud(pointCloud)
-    , isEncoder(isEncoder)
     , distanceSearchEncoder(distanceSearchEncoder)
     , isInter(isInter)
     , interSkipEnabled(isInter&& gps.trisoup_skip_mode_enabled_flag)
@@ -973,7 +1013,7 @@ struct RasterScanTrisoupEdges {
   }
 
   void generateCentroidsInNodeRasterScan(
-    const PCCOctree3Node& leaf,
+    const TrisoupNode& leaf,
     const std::vector<int8_t>& TriSoupVerticesQP,
     int& idxSegment,
     Box3<int32_t>& sliceBB,
@@ -1142,7 +1182,8 @@ struct RasterScanTrisoupEdges {
           driftQ =
             determineCentroidResidual(
               normalV, blockCentroid, nodepos, pointCloud,
-              leaf.start, leaf.end, lowBound, highBound, stepQcentro, scaleQ, drift);
+              leaf.start(), leaf.end(), lowBound, highBound, stepQcentro,
+              scaleQ, drift);
 
           // naive RDO
           if (centroidInfo.possibleSKIP) {
@@ -1322,8 +1363,7 @@ struct RasterScanTrisoupEdges {
 
 
 
-  void generateFaceVerticesInNodeRasterScan(
-    const std::vector<PCCOctree3Node>& leaves, const int nodeIdx, bool isEncoder)
+  void generateFaceVerticesInNodeRasterScan(const int nodeIdx)
   {
     const int32_t tmin1 = 2 * 4;
     Box3<int32_t> sliceBB;
@@ -1379,14 +1419,14 @@ struct RasterScanTrisoupEdges {
           int32_t weight1 = 0;
 
           // current-node
-          for (int k = leaves[i].start; k < leaves[i].end; k++) {
+          for (int k = leaves[i].start(); k < leaves[i].end(); k++) {
             Vec3<int32_t> dist = fVert[0].pos - (pointCloud[k] - leaves[i].pos << kTrisoupFpBits);
             int32_t d = dist.abs().max() + kTrisoupFpHalf >> kTrisoupFpBits;
             weight1 += d < tmin1;
           }
 
           // nei-node
-          for (int k = leaves[ii].start; k < leaves[ii].end; k++) {
+          for (int k = leaves[ii].start(); k < leaves[ii].end(); k++) {
             Vec3<int32_t> dist = fVert[1].pos - (pointCloud[k] - leaves[ii].pos << kTrisoupFpBits);
             int32_t d = dist.abs().max() + kTrisoupFpHalf >> kTrisoupFpBits;
             weight1 += d < tmin1;
@@ -1413,7 +1453,7 @@ struct RasterScanTrisoupEdges {
 
   //---------------------------------------------------------------------------
   int generateTrianglesInNodeRasterScan(
-    const PCCOctree3Node& leaf, int i,
+    const TrisoupNode& leaf, int i,
     std::vector<int64_t>& renderedBlock,
     Box3<int32_t>& sliceBB,
     int haloTriangle,
@@ -1768,7 +1808,7 @@ struct RasterScanTrisoupEdges {
             const int pos1 = currWedgePos[dir1] - offset1;
             const int pos2 = currWedgePos[dir2] - offset2;
             if (isEncoder) {
-              for (int j = leaves[neighbNodeIndex].start; j < leaves[neighbNodeIndex].end; j++) {
+              for (int j = leaves[neighbNodeIndex].start(); j < leaves[neighbNodeIndex].end(); j++) {
                 Vec3<int> voxel = pointCloud[j];
                 if (voxel[dir1] == pos1 && voxel[dir2] == pos2) {
                   countNearPoints++;
@@ -1959,7 +1999,7 @@ struct RasterScanTrisoupEdges {
             qualityComp, nodeRefExist, colocatedCentroid, CentroValue, stepQcentro);
 
           if (isFaceVertexActivated) {
-            generateFaceVerticesInNodeRasterScan(leaves, nodeIdxC, isEncoder);
+            generateFaceVerticesInNodeRasterScan(nodeIdxC);
           }
           nodeIdxC++;
         }
