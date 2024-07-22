@@ -942,11 +942,6 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.dual_motion_field_flag, false,
     "Controls the use of a dual motion field for the attributes")
 
-  ("mcapToRecGeomEnabled",
-    params_attr.aps.mcap_to_rec_geom_flag, true,
-    "Controls the use of motion compensated attributes projection from \n"
-    "reference frame onto reconstructed geometry")
-
   ("transformType",
     params_attr.aps.attr_encoding, AttributeEncoding::kRAHTransform,
     "Coding method to use for attribute:\n"

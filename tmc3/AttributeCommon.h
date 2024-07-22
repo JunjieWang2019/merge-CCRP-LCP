@@ -85,13 +85,11 @@ struct AttributeInterPredParams: InterPredParams {
 
   void encodeMotionAndBuildCompensated(
     const ParameterSetMotion& mvPS,
-    EntropyEncoder& arithmeticEncoder,
-    bool mcap_to_rec_geom_flag
+    EntropyEncoder& arithmeticEncoder
   );
 
   void buildCompensatedSlab(
-    const ParameterSetMotion& mvPS,
-    bool mcap_to_rec_geom_flag
+    const ParameterSetMotion& mvPS
   );
 
   void prepareEncodeMotion(
@@ -110,8 +108,7 @@ struct AttributeInterPredParams: InterPredParams {
 
   void decodeMotionAndBuildCompensated(
     const ParameterSetMotion& mvPS,
-    EntropyDecoder& arithmeticDecoder,
-    bool mcap_to_rec_geom_flag
+    EntropyDecoder& arithmeticDecoder
   );
 
   void extractMotionForSlab(int startX, int thickness)

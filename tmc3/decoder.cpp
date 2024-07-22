@@ -411,8 +411,7 @@ PCCTMC3Decoder3::decodeCurrentBrick()
     });
 
   attrInterPredParams.compensatedPointCloud.clear();
-  attrInterPredParams.compensatedPointCloud.addRemoveAttributes(hasColour, hasReflectance);
-  attrInterPredParams.mortonCode_mc.clear();
+  attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
   attrInterPredParams.attributes_mc.clear();
   _currentPointCloud.clear();
   _currentPointCloud.addRemoveAttributes(hasColour, hasReflectance);
@@ -625,9 +624,7 @@ PCCTMC3Decoder3::decodeCurrentBrick()
       auto& clock_user = clock_user_attr[attrIdx];
       clock_user.start();
 
-      if (attrInterPredParams.enableAttrInterPred
-          && (attr_aps.dual_motion_field_flag
-              || attr_aps.mcap_to_rec_geom_flag))
+      if (attrInterPredParams.enableAttrInterPred)
         attrInterPredParams.prepareDecodeMotion(
           attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
           *_gps, _gbh, _currentPointCloud);
@@ -710,7 +707,6 @@ PCCTMC3Decoder3::decodeGeometryBrick(
 
   attrInterPredParams.compensatedPointCloud.clear();
   attrInterPredParams.compensatedPointCloud.addRemoveAttributes(hasColour, hasReflectance);
-  attrInterPredParams.mortonCode_mc.clear();
   attrInterPredParams.attributes_mc.clear();
   _currentPointCloud.clear();
   _currentPointCloud.addRemoveAttributes(hasColour, hasReflectance);
@@ -890,9 +886,7 @@ PCCTMC3Decoder3::decodeAttributeBrick(const PayloadBuffer& buf)
   if (!_attrDecoder)
     _attrDecoder = makeAttributeDecoder();
 
-  if (attrInterPredParams.enableAttrInterPred
-      && (attr_aps.dual_motion_field_flag
-          || attr_aps.mcap_to_rec_geom_flag))
+  if (attrInterPredParams.enableAttrInterPred)
     attrInterPredParams.prepareDecodeMotion(
       attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
       *_gps, _gbh, _currentPointCloud);
@@ -954,9 +948,7 @@ PCCTMC3Decoder3::processNextSlabAttributes(
     auto& clock_user = clock_user_attr[attrIdx];
     clock_user.start();
 
-    if (attrInterPredParams.enableAttrInterPred
-        && (attr_aps.dual_motion_field_flag
-            || attr_aps.mcap_to_rec_geom_flag)) {
+    if (attrInterPredParams.enableAttrInterPred) {
       attrInterPredParams.prepareDecodeMotion(
         attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
         *_gps, _gbh, slabPointCloud);

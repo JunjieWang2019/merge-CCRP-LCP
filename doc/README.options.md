@@ -630,11 +630,6 @@ flag is equal to one, a dedicated motion search is performed for the
 attributes and the corresponding motion field is encoded in the slice 
 attributes data.
 
-###  `--mcapToRecGeomEnabled=0|1`
-Controls the use of motion compensated attributes projection from 
-reference frame onto reconstructed geometry. The result is used for 
-attributes prediction.
-
 ### `--transformType=0|1|3`
 Coding method to use for the current attribute:
 

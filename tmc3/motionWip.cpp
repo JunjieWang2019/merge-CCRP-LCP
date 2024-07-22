@@ -436,8 +436,7 @@ bounded_splitPU_MC(
   point_t nodeSizeLog2,
   point_t boundPos0,
   point_t boundPos1,
-  PCCPointSet3* compensatedPointCloud,
-  bool recolor)
+  PCCPointSet3* compensatedPointCloud)
 {
   const int node_size = 1 << nodeSizeLog2[0];
 
@@ -448,8 +447,6 @@ bounded_splitPU_MC(
     // use MV
     point_t MV = mvField.mvPool[puNode._mvIdx];
 
-    point_t MVd = MV;
-
     auto node0pos0 = node0->pos << nodeSizeLog2[0];
     auto node0pos1 = (node0->pos + 1 << nodeSizeLog2[0]) - 1;
 
@@ -458,13 +455,9 @@ bounded_splitPU_MC(
       node0pos1[k] = std::min(boundPos1[k], node0pos1[k]);
     }
 
-    if (!recolor) {
-      mSOctree.apply_motion(
-        node0pos0, node0pos1,
-        MVd, node0, compensatedPointCloud, mSOctree.depth);
-    } else {
-      mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
-    }
+    // motion compensated attribute projection
+    mSOctree.apply_recolor_motion(MV, node0, *compensatedPointCloud);
+
     node0->isCompensated = true;
     return;
   }
@@ -474,6 +467,7 @@ bounded_splitPU_MC(
 
 //----------------------------------------------------------------------------
 
+template <bool mcap>
 void
 encode_splitPU_MV_MC(
   const MSOctree& mSOctree,
@@ -486,8 +480,7 @@ encode_splitPU_MV_MC(
   PCCPointSet3* compensatedPointCloud,
   bool flagNonPow2,
   int S,
-  int S2,
-  bool recolor)
+  int S2)
 {
   MotionEntropyEncoder motionEncoder(arithmeticEncoder);
 
@@ -502,15 +495,13 @@ encode_splitPU_MV_MC(
     point_t MV = mvField.mvPool[puNode._mvIdx];
     motionEncoder.encodeVector(MV);
 
-    point_t MVd = MV;
-
-    if (!recolor) {
+    if (!mcap) {
       mSOctree.apply_motion(
         node0->pos * nodeSize,
         (node0->pos + 1) * nodeSize - 1,
-        MVd, node0, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
+        MV, node0, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
     } else {
-      mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
+      mSOctree.apply_recolor_motion(MV, node0, *compensatedPointCloud);
     }
     node0->isCompensated = true;
     return;
@@ -520,8 +511,37 @@ encode_splitPU_MV_MC(
   motionEncoder.encodeSplitPu(1);
 }
 
+// instanciate for geometry
+template void encode_splitPU_MV_MC<false>(
+  const MSOctree& mSOctree,
+  PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
+  const ParameterSetMotion& param,
+  int nodeSize,
+  EntropyEncoder* arithmeticEncoder,
+  PCCPointSet3* compensatedPointCloud,
+  bool flagNonPow2,
+  int S,
+  int S2);
+
+// instanciate for mcap
+template void encode_splitPU_MV_MC<true>(
+  const MSOctree& mSOctree,
+  PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
+  const ParameterSetMotion& param,
+  int nodeSize,
+  EntropyEncoder* arithmeticEncoder,
+  PCCPointSet3* compensatedPointCloud,
+  bool flagNonPow2,
+  int S,
+  int S2);
+
 //----------------------------------------------------------------------------
 
+template <bool mcap>
 void
 decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
@@ -534,8 +554,7 @@ decode_splitPU_MV_MC(
   PCCPointSet3* compensatedPointCloud,
   bool flagNonPow2,
   int S,
-  int S2,
-  bool recolor)
+  int S2)
 {
   // Note:
   // geometry mvField is stored only for attributes and local attributes processing
@@ -554,20 +573,18 @@ decode_splitPU_MV_MC(
   if (!split) {  // not split
                  // decode MV
     point_t MV = 0;
-    point_t MVd = 0.;
     motionDecoder.decodeVector(&MV);
-    MVd = MV;
     puNode._childsMask = 0;
     puNode._mvIdx = mvField.mvPool.size();
-    mvField.mvPool.emplace_back(MVd);
+    mvField.mvPool.emplace_back(MV);
 
-    if (!recolor) {
+    if (!mcap) {
       mSOctree.apply_motion(
         node0->pos * nodeSize,
         (node0->pos + 1) * nodeSize - 1,
-        MVd, node0, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
+        MV, node0, compensatedPointCloud, mSOctree.depth, flagNonPow2, S, S2);
     } else {
-      mSOctree.apply_recolor_motion(MVd, node0, *compensatedPointCloud);
+      mSOctree.apply_recolor_motion(MV, node0, *compensatedPointCloud);
     }
 
     node0->isCompensated = true;
@@ -576,6 +593,34 @@ decode_splitPU_MV_MC(
 
   // split; nothing to do
 }
+
+// instanciate for geometry
+template void decode_splitPU_MV_MC<false>(
+  const MSOctree& mSOctree,
+  PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
+  const ParameterSetMotion& param,
+  int nodeSize,
+  EntropyDecoder* arithmeticDecoder,
+  PCCPointSet3* compensatedPointCloud,
+  bool flagNonPow2,
+  int S,
+  int S2);
+
+// instanciate for mcap
+template void decode_splitPU_MV_MC<true>(
+  const MSOctree& mSOctree,
+  PCCOctree3Node* node0,
+  MVField& mvField,
+  uint32_t puNodeIdx,
+  const ParameterSetMotion& param,
+  int nodeSize,
+  EntropyDecoder* arithmeticDecoder,
+  PCCPointSet3* compensatedPointCloud,
+  bool flagNonPow2,
+  int S,
+  int S2);
 
 //============================================================================
 

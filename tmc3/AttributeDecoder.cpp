@@ -266,24 +266,19 @@ AttributeDecoder::decode(
 
   if (attrInterPredParams.enableAttrInterPred
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
-    attrInterPredParams.mortonCode_mc.clear();
     attrInterPredParams.attributes_mc.clear();
-    if (attr_aps.mcap_to_rec_geom_flag) {
-      // copy geometry but not attributes
-      //attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
-      attrInterPredParams.compensatedPointCloud.clear();
-      attrInterPredParams.compensatedPointCloud.appendPartition(
-        pointCloud, 0, pointCloud.size(), false);
-      // allocates attributes
-      attrInterPredParams.compensatedPointCloud.addRemoveAttributes(pointCloud);
-    }
+    // copy geometry but not attributes
+    //attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
+    attrInterPredParams.compensatedPointCloud.clear();
+    attrInterPredParams.compensatedPointCloud.appendPartition(
+      pointCloud, 0, pointCloud.size(), false);
+    // allocates attributes
+    attrInterPredParams.compensatedPointCloud.addRemoveAttributes(pointCloud);
     if (attr_aps.dual_motion_field_flag)
       attrInterPredParams.decodeMotionAndBuildCompensated(
-        attr_aps.motion, decoder.arithmeticDecoder,
-        attr_aps.mcap_to_rec_geom_flag);
+        attr_aps.motion, decoder.arithmeticDecoder);
     else
-      attrInterPredParams.buildCompensatedSlab(
-        gps.motion, attr_aps.mcap_to_rec_geom_flag);
+      attrInterPredParams.buildCompensatedSlab(gps.motion);
   }
 
   if (attr_desc.attr_num_dimensions_minus1 == 0) {
@@ -350,24 +345,19 @@ AttributeDecoder::decodeSlab(
       && !attrInterPredParams.mSOctreeRef.nodes.empty()) {
     // compensatedPointCloud is needed by geometry
     tmp.swap(attrInterPredParams.compensatedPointCloud);
-    attrInterPredParams.mortonCode_mc.clear();
     attrInterPredParams.attributes_mc.clear();
-    if (attr_aps.mcap_to_rec_geom_flag) {
-      // copy geometry but not attributes
-      //attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
-      attrInterPredParams.compensatedPointCloud.clear();
-      attrInterPredParams.compensatedPointCloud.appendPartition(
-        slabPointCloud, 0, slabPointCloud.size(), false);
-      // allocates attributes
-      attrInterPredParams.compensatedPointCloud.addRemoveAttributes(slabPointCloud);
-    }
+    // copy geometry but not attributes
+    //attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
+    attrInterPredParams.compensatedPointCloud.clear();
+    attrInterPredParams.compensatedPointCloud.appendPartition(
+      slabPointCloud, 0, slabPointCloud.size(), false);
+    // allocates attributes
+    attrInterPredParams.compensatedPointCloud.addRemoveAttributes(slabPointCloud);
     if (attr_aps.dual_motion_field_flag)
       attrInterPredParams.decodeMotionAndBuildCompensated(
-        attr_aps.motion, _pDecoder->arithmeticDecoder,
-        attr_aps.mcap_to_rec_geom_flag);
+        attr_aps.motion, _pDecoder->arithmeticDecoder);
     else
-      attrInterPredParams.buildCompensatedSlab(
-        gps.motion, attr_aps.mcap_to_rec_geom_flag);
+      attrInterPredParams.buildCompensatedSlab(gps.motion);
   }
   if (attr_desc.attr_num_dimensions_minus1 == 0) {
     switch (attr_aps.attr_encoding) {
@@ -543,24 +533,15 @@ decodeRaht(
         aps.rahtPredParams, layerIdx, codeModeSize);
     }
 
-    auto& mortonCode_mc = attrInterPredParams.mortonCode_mc;
     auto& attributes_mc = attrInterPredParams.attributes_mc;
-    if (mortonCode_mc.empty()) {
-      if (aps.mcap_to_rec_geom_flag) {
-        sortedPointCloud(
-          attribCount, attrInterPredParams.compensatedPointCloud, indexOrd,
-          attributes_mc);
-      } else {
-        sortedPointCloud(
-          attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
-          attributes_mc);
-      }
-    }
+    sortedPointCloud(
+      attribCount, attrInterPredParams.compensatedPointCloud, indexOrd,
+      attributes_mc);
 
     regionAdaptiveHierarchicalInverseTransform(
       aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
       voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
-      aps.mcap_to_rec_geom_flag ? mortonCode.data() : mortonCode_mc.data(),
+      mortonCode.data(),
       attributes_mc.data(), coefficients.data(), predDecoder);
   } else {
     predDecoder.reset();
@@ -629,45 +610,21 @@ AttributeDecoder::decodeRAHTperBlock(
       int(attrInterPredParams.compensatedPointCloud.getPointCount());
     //std::cout << "Using inter MC for prediction" << std::endl;
 
-    auto& mortonCode_mc = attrInterPredParams.mortonCode_mc;
     auto& attributes_mc = attrInterPredParams.attributes_mc;
-    if (mortonCode_mc.empty()) {
-      if (aps.mcap_to_rec_geom_flag) {
-        sortedPointCloud(
-          attribCount, attrInterPredParams.compensatedPointCloud, indexOrd,
-          attributes_mc);
-      } else {
-        sortedPointCloud(
-          attribCount, attrInterPredParams.compensatedPointCloud, mortonCode_mc,
-          attributes_mc);
-      }
-    }
+    sortedPointCloud(
+      attribCount, attrInterPredParams.compensatedPointCloud, indexOrd,
+      attributes_mc);
 
     abh.attr_layer_code_mode.resize(aps.block_size_log2);
 
     int block_pc_begin = 0;
-    int block_mc_begin = 0;
     while (block_pc_begin < voxelCount) {
       int64_t prefix = mortonCode[block_pc_begin] >> prefix_shift;
 
-      int block_mc_end;
       int block_pc_end = block_pc_begin + 1;
       while (block_pc_end < voxelCount
              && (mortonCode[block_pc_end] >> prefix_shift) == prefix)
         block_pc_end++;
-
-      if (aps.mcap_to_rec_geom_flag) {
-        block_mc_begin = block_pc_begin;
-        block_mc_end = block_pc_end;
-      } else {
-        while (block_mc_begin < voxelCount_mc
-               && (mortonCode_mc[block_mc_begin] >> prefix_shift) < prefix)
-          block_mc_begin++;
-        block_mc_end = block_mc_begin;
-        while (block_mc_end < voxelCount_mc
-               && (mortonCode_mc[block_mc_end] >> prefix_shift) == prefix)
-          block_mc_end++;
-      }
 
       rahtEntropyDecoder<3>(
         block_pc_end - block_pc_begin,
@@ -686,13 +643,12 @@ AttributeDecoder::decodeRAHTperBlock(
         attribCount, block_pc_end - block_pc_begin,
         mortonCode.data() + block_pc_begin,
         attributes.data() + attribCount * block_pc_begin,
-        block_mc_end - block_mc_begin,
-        (aps.mcap_to_rec_geom_flag ? mortonCode.data() : mortonCode_mc.data())
-          + block_mc_begin, attributes_mc.data() + attribCount * block_mc_begin,
+        block_pc_end - block_pc_begin,
+        mortonCode.data() + block_pc_begin,
+        attributes_mc.data() + attribCount * block_pc_begin,
         coefficients.data() + attribCount * block_pc_begin, predDecoder);
 
       block_pc_begin = block_pc_end;
-      block_mc_begin = block_mc_end;
     }
   } else {
     predDecoder.reset();

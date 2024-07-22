@@ -189,9 +189,9 @@ void bounded_splitPU_MC(
   point_t nodeSizeLog2,
   point_t boundPos0,
   point_t boundPos1,
-  PCCPointSet3* compensatedPointCloud,
-  bool recolor = false);
+  PCCPointSet3* compensatedPointCloud);
 
+template <bool mcap>
 void encode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
@@ -203,11 +203,11 @@ void encode_splitPU_MV_MC(
   PCCPointSet3* compensatedPointCloud,
   bool flagNonPow2 = false,
   int S = -1,
-  int S2 = -1,
-  bool recolor = false);
+  int S2 = -1);
 
 // motion decoder
 
+template <bool mcap>
 void decode_splitPU_MV_MC(
   const MSOctree& mSOctree,
   PCCOctree3Node* node0,
@@ -219,8 +219,7 @@ void decode_splitPU_MV_MC(
   PCCPointSet3* compensatedPointCloud,
   bool flagNonPow2 = false,
   int S = -1,
-  int S2 = -1,
-  bool recolor = false);
+  int S2 = -1);
 
   //============================================================================
 
@@ -341,7 +340,6 @@ struct InterPredParams {
   // Motion
   MVField mvField;
   // TMP hack
-  mutable std::vector<int64_t> mortonCode_mc;
   mutable std::vector<int> attributes_mc;
 };
 

@@ -1109,7 +1109,7 @@ encodeGeometryOctree(
         // code split PU flag. If not split, code  MV and apply MC
         // results of MC are stacked in compensatedPointCloud that starts empty
         if (node0.mvFieldNodeIdx != -1) {
-          encode_splitPU_MV_MC(mSOctree,
+          encode_splitPU_MV_MC<false>(mSOctree,
             &node0, mvField, node0.mvFieldNodeIdx, gps.motion, nodeSize,
             encoder._arithmeticEncoder, &compensatedPointCloud,
             flagNonPow2, S, S2);

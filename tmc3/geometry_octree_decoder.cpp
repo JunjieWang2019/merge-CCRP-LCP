@@ -781,7 +781,7 @@ decodeGeometryOctree(
 
           // decode LPU/PU/MV
           if (node0.hasMotion && !node0.isCompensated) {
-            decode_splitPU_MV_MC(mSOctree,
+            decode_splitPU_MV_MC<false>(mSOctree,
               &node0, mvField, node0.mvFieldNodeIdx,
               gps.motion, nodeSize,
               &arithmeticDecoder, &compensatedPointCloud,

@@ -811,7 +811,6 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
   if (aps_extension_flag) {
     bs.write(aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
-      bs.write(aps.mcap_to_rec_geom_flag);
       bs.write(aps.dual_motion_field_flag);
       if (aps.dual_motion_field_flag) {
         bs.writeUe(aps.motion.motion_block_size);
@@ -895,7 +894,6 @@ parseAps(const PayloadBuffer& buf)
   aps.rahtPredParams.subnode_prediction_enabled_flag = false;
   aps.attrInterPredictionEnabled = false;
   aps.dual_motion_field_flag = false;
-  aps.mcap_to_rec_geom_flag = false;
   aps.rahtPredParams.enable_average_prediction = false;
   aps.rahtPredParams.upper_mode_level_for_average_prediction = 0;
   aps.rahtPredParams.lower_mode_level_for_average_prediction = 0;
@@ -903,7 +901,6 @@ parseAps(const PayloadBuffer& buf)
   if (aps_extension_flag) {
     bs.read(&aps.attrInterPredictionEnabled);
     if (aps.attrInterPredictionEnabled) {
-      bs.read(&aps.mcap_to_rec_geom_flag);
       bs.read(&aps.dual_motion_field_flag);
       if (aps.dual_motion_field_flag) {
         bs.readUe(&aps.motion.motion_block_size);

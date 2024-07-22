@@ -114,16 +114,9 @@ AttributeInterPredParams::findMotion(
 void
 AttributeInterPredParams::encodeMotionAndBuildCompensated(
   const ParameterSetMotion& mvPS,
-  EntropyEncoder& arithmeticEncoder,
-  bool mcap_to_rec_geom_flag
+  EntropyEncoder& arithmeticEncoder
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
-
-  if (!mcap_to_rec_geom_flag) {
-    compensatedPointCloud.clear();
-    mortonCode_mc.clear();
-    attributes_mc.clear();
-  }
 
   int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size - 1)) + 1;
   auto currentPUTrees = motionPUTrees;
@@ -142,10 +135,10 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
       assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
       int puNodeIdx = currentPUTrees[i].first;
 
-      encode_splitPU_MV_MC(mSOctree,
+      encode_splitPU_MV_MC<true>(mSOctree,
         &node0, dualMotion, puNodeIdx, mvPS, 1 << nodeSizeLog2,
         &arithmeticEncoder, &compensatedPointCloud,
-        false, -1, -1, mcap_to_rec_geom_flag);
+        false, -1, -1);
 
       if (!node0.isCompensated && 1 << nodeSizeLog2 > mvPS.motion_min_pu_size) {
         auto& puNode = dualMotion.puNodes[puNodeIdx];
@@ -170,16 +163,9 @@ AttributeInterPredParams::encodeMotionAndBuildCompensated(
 
 void
 AttributeInterPredParams::buildCompensatedSlab(
-  const ParameterSetMotion& mvPS,
-  bool mcap_to_rec_geom_flag
+  const ParameterSetMotion& mvPS
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
-
-  if (!mcap_to_rec_geom_flag) {
-    compensatedPointCloud.clear();
-    mortonCode_mc.clear();
-    attributes_mc.clear();
-  }
 
   int nodeSizeLog2 = ilog2(uint32_t(mvPS.motion_block_size));
   decltype(motionPUTrees) currentPUTrees;
@@ -187,10 +173,7 @@ AttributeInterPredParams::buildCompensatedSlab(
   for (int i = 0; i < dualMotion.numRoots; ++i) {
     currentPUTrees.emplace_back(
       std::make_pair(
-        i,
-        mcap_to_rec_geom_flag
-          ? mSOctreeCurr.nodeIdx(dualMotion.puNodes[i].pos0(), nodeSizeLog2)
-          : -1/*not used when not mcap*/));
+        i, mSOctreeCurr.nodeIdx(dualMotion.puNodes[i].pos0(), nodeSizeLog2)));
   }
   // Note : CurrentPUTrees might not be necessary and all nodes
   //   be processed with successive node indexes (because of breadth first
@@ -206,17 +189,15 @@ AttributeInterPredParams::buildCompensatedSlab(
     for (int i = 0; i < currentPUTrees.size(); ++i) {
       int puNodeIdx = currentPUTrees[i].first;
       auto& node = dualMotion.puNodes[puNodeIdx];
-      if (mcap_to_rec_geom_flag) {
-        auto msoNodeIdx = currentPUTrees[i].second;
-        if (msoNodeIdx == -1)
-          // motion PU does not intersect octree node in current slab
-          continue;
-        auto& msoNode = mSOctreeCurr.nodes[msoNodeIdx];
-        node0.start = msoNode.start;
-        node0.end = msoNode.end;
-        // TODO: will we need support for non powers of 2 here?
-        assert((1 << nodeSizeLog2) - 1 == msoNode.sizeMinus1);
-      }
+      auto msoNodeIdx = currentPUTrees[i].second;
+      if (msoNodeIdx == -1)
+        // motion PU does not intersect octree node in current slab
+        continue;
+      auto& msoNode = mSOctreeCurr.nodes[msoNodeIdx];
+      node0.start = msoNode.start;
+      node0.end = msoNode.end;
+      // TODO: will we need support for non powers of 2 here?
+      assert((1 << nodeSizeLog2) - 1 == msoNode.sizeMinus1);
       node0.pos = node.pos0() >> nodeSizeLog2;
       node0.isCompensated = false;
       assert(nodeSizeLog2 == node._puSizeLog2);
@@ -225,8 +206,7 @@ AttributeInterPredParams::buildCompensatedSlab(
         &node0, dualMotion, puNodeIdx, mvPS, nodeSizeLog2,
         point_t(slabStartX, 0, 0),
         point_t(slabStartX + slabThickness - 1, INT32_MAX, INT32_MAX),
-        &compensatedPointCloud,
-        mcap_to_rec_geom_flag);
+        &compensatedPointCloud);
 
       if (!node0.isCompensated && 1 << childSizeLog2 >= mvPS.motion_min_pu_size) {
         auto& puNode = dualMotion.puNodes[puNodeIdx];
@@ -238,18 +218,12 @@ AttributeInterPredParams::buildCompensatedSlab(
             // populated in motion field
             // but might be outside of the slab if motion field is inherited
             // from geometry
-            int msoNodeChildIdx;
-            if (mcap_to_rec_geom_flag) {
-              msoNodeChildIdx = mSOctreeCurr.nodes[currentPUTrees[i].second].child[j];
-              if (!msoNodeChildIdx)
-                continue;
-            }
+            int msoNodeChildIdx =
+              mSOctreeCurr.nodes[currentPUTrees[i].second].child[j];
+            if (!msoNodeChildIdx)
+              continue;
             nextLevelPUTrees.emplace_back(
-              std::make_pair(
-                childPUIdx++,
-                mcap_to_rec_geom_flag
-                  ? msoNodeChildIdx
-                  : -1/*not used when not mcap*/));
+              std::make_pair( childPUIdx++, msoNodeChildIdx));
           }
         }
       }
@@ -297,16 +271,9 @@ AttributeInterPredParams::prepareDecodeMotion(
 void
 AttributeInterPredParams::decodeMotionAndBuildCompensated(
   const ParameterSetMotion& mvPS,
-  EntropyDecoder& arithmeticDecoder,
-  bool mcap_to_rec_geom_flag
+  EntropyDecoder& arithmeticDecoder
 ) {
   const MSOctree& mSOctree = mSOctreeRef;
-
-  if (!mcap_to_rec_geom_flag) {
-    compensatedPointCloud.clear();
-    mortonCode_mc.clear();
-    attributes_mc.clear();
-  }
 
   auto& fifo = mSOctreeCurr.a;
   auto& fifo_next = mSOctreeCurr.b;
@@ -350,10 +317,10 @@ AttributeInterPredParams::decodeMotionAndBuildCompensated(
       node0.isCompensated = false;
       assert((1 << nodeSizeLog2) - 1 == node.sizeMinus1);
 
-      decode_splitPU_MV_MC(mSOctree,
+      decode_splitPU_MV_MC<true>(mSOctree,
         &node0, dualMotion, currPUIdx, mvPS, 1 << nodeSizeLog2,
         &arithmeticDecoder, &compensatedPointCloud,
-        false, -1, -1, mcap_to_rec_geom_flag);
+        false, -1, -1);
 
       if (!node0.isCompensated && 1 << nodeSizeLog2 > mvPS.motion_min_pu_size) {
         uint32_t occupancy = 0;

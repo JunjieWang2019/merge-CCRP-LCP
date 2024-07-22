@@ -743,7 +743,7 @@ PCCTMC3Encoder3::compressPartition(
 
   // geometry encoding
   attrInterPredParams.compensatedPointCloud.clear();
-  attrInterPredParams.mortonCode_mc.clear();
+  attrInterPredParams.compensatedPointCloud.addRemoveAttributes(false, false);
   attrInterPredParams.attributes_mc.clear();
 
   payload_geom = PayloadBuffer(PayloadType::kGeometryBrick);
@@ -906,9 +906,7 @@ PCCTMC3Encoder3::compressPartition(
 
         if (!params->sps.localized_attributes_enabled_flag) {
           // local motion search performed on the whole frame
-          if (attrInterPredParams.enableAttrInterPred
-              && (attr_aps.dual_motion_field_flag
-                  || attr_aps.mcap_to_rec_geom_flag)) {
+          if (attrInterPredParams.enableAttrInterPred) {
             attrInterPredParams.prepareEncodeMotion(
               attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
               *_gps, _gbh, pointCloud);
@@ -923,9 +921,7 @@ PCCTMC3Encoder3::compressPartition(
             attrInterPredParams, predCoder);
         } else {
           // local motion search performed by slab
-          if (attrInterPredParams.enableAttrInterPred
-              && (attr_aps.dual_motion_field_flag
-                  || attr_aps.mcap_to_rec_geom_flag)) {
+          if (attrInterPredParams.enableAttrInterPred) {
             attrInterPredParams.prepareEncodeMotion(
               attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
               *_gps, _gbh, slabPointCloud);
@@ -1066,9 +1062,7 @@ PCCTMC3Encoder3::processNextSlabAttributes(
       clock_user_attr[attrIdx].start();
 
       // local motion search performed by slab
-      if (attrInterPredParams.enableAttrInterPred
-          && (attr_aps.dual_motion_field_flag
-              || attr_aps.mcap_to_rec_geom_flag)) {
+      if (attrInterPredParams.enableAttrInterPred) {
         attrInterPredParams.prepareEncodeMotion(
           attr_aps.dual_motion_field_flag ? attr_aps.motion : _gps->motion,
           *_gps, _gbh, slabPointCloud);
