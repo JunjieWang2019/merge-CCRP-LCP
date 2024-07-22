@@ -517,8 +517,6 @@ decodeRaht(
 
   if (attrInterPredParams.hasLocalMotion()) {
     predDecoder.set(&decoder.arithmeticDecoder);
-    const int voxelCount_mc =
-      int(attrInterPredParams.compensatedPointCloud.getPointCount());
     uint64_t maxMortonCode = mortonCode.back() | 7;
     int depth = 0;
     while (maxMortonCode) {
@@ -540,8 +538,7 @@ decodeRaht(
 
     regionAdaptiveHierarchicalInverseTransform(
       aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
-      voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
-      mortonCode.data(),
+      voxelCount, mortonCode.data(), attributes.data(),
       attributes_mc.data(), coefficients.data(), predDecoder);
   } else {
     predDecoder.reset();
@@ -549,7 +546,7 @@ decodeRaht(
 
     regionAdaptiveHierarchicalInverseTransform(
       aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
-      voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
+      voxelCount, mortonCode.data(), attributes.data(), nullptr,
       coefficients.data(), predDecoder);
   }
 
@@ -606,8 +603,6 @@ AttributeDecoder::decodeRAHTperBlock(
   abh.attr_layer_code_mode.clear();
   if (attrInterPredParams.hasLocalMotion()) {
     predDecoder.set(&decoder.arithmeticDecoder);
-    const int voxelCount_mc =
-      int(attrInterPredParams.compensatedPointCloud.getPointCount());
     //std::cout << "Using inter MC for prediction" << std::endl;
 
     auto& attributes_mc = attrInterPredParams.attributes_mc;
@@ -643,8 +638,6 @@ AttributeDecoder::decodeRAHTperBlock(
         attribCount, block_pc_end - block_pc_begin,
         mortonCode.data() + block_pc_begin,
         attributes.data() + attribCount * block_pc_begin,
-        block_pc_end - block_pc_begin,
-        mortonCode.data() + block_pc_begin,
         attributes_mc.data() + attribCount * block_pc_begin,
         coefficients.data() + attribCount * block_pc_begin, predDecoder);
 
@@ -672,7 +665,7 @@ AttributeDecoder::decodeRAHTperBlock(
         aps.rahtPredParams, abh, qpSet, pointQpOffsets.data() + block_pc_begin,
         attribCount, block_pc_end - block_pc_begin,
         mortonCode.data() + block_pc_begin,
-        attributes.data() + attribCount * block_pc_begin, 0, nullptr, nullptr,
+        attributes.data() + attribCount * block_pc_begin, nullptr,
         coefficients.data() + attribCount * block_pc_begin, predDecoder);
 
       block_pc_begin = block_pc_end;

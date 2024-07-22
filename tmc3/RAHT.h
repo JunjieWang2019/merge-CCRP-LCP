@@ -73,8 +73,6 @@ void regionAdaptiveHierarchicalInverseTransform(
   const int voxelCount,
   int64_t* mortonCode,
   int* attributes,
-  const int voxelCount_mc,
-  int64_t* mortonCode_mc,
   int* attributes_mc,
   int* coefficients,
   attr::ModeDecoder& decoder);

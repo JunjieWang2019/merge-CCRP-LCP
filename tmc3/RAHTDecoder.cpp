@@ -248,56 +248,54 @@ findNeighboursChildrenDecoder(
 // translateLayer
 
 template<bool haarFlag, int numAttrs>
-bool
+void
 translateLayerDecoder(
   std::vector<int64_t>& layerAttr,
-  size_t level,
-  size_t count_mc,
-  int64_t* morton_mc,
   int* attr_mc,
   std::vector<UrahtNodeDecoder>& weightsLf)
 {
-  bool flagMCmatchCurrent = true;
   // associate mean attribute of MC PC to each unique node
   layerAttr.resize(weightsLf.size() * numAttrs);
   auto layer = layerAttr.begin();
   for (int i = 0, j = 0;
-      i < weightsLf.size() && j < count_mc;
+      i < weightsLf.size();
       i++, layer += numAttrs) {
-    int64_t pos = weightsLf[i].pos >> level;
 
-    while (j < count_mc && pos > (morton_mc[j] >> level))
-      j++;
-
-    for (size_t k = 0; k < numAttrs; k++)
+   for (int k = 0; k < numAttrs; k++)
       layer[k] = -1;
 
-    int64_t weight = 0;
+    int weight = weightsLf[i].weight;
+    int jEnd = j + weight;
+
     auto attr = &attr_mc[numAttrs * j];
-    int64_t sumAtt[3] = { 0,0,0 };
-    while (j < count_mc && pos == (morton_mc[j] >> level)) {
-      weight++;
-      for (size_t k = 0; k < numAttrs; k++)
-        sumAtt[k] += static_cast<int64_t>(*attr++) << kFPFracBits;
-      j++;
+
+    std::array<int, numAttrs> sumAtt;
+    std::fill_n(sumAtt.begin(), numAttrs, 0);
+
+    for (; j < jEnd; ++j) {
+      for (int k = 0; k < numAttrs; k++)
+        sumAtt[k] += *attr++;
     }
 
     if (weight) {
-      for (int k = 0; k < numAttrs; k++)
-        layer[k] = sumAtt[k];
+      if (haarFlag)
+        for (int k = 0; k < numAttrs; k++)
+          layer[k] = int64_t(sumAtt[k]);
+      else
+        for (int k = 0; k < numAttrs; k++)
+          layer[k] = int64_t(sumAtt[k]) << kFPFracBits;
 
       if (weight != 1) {
         for (int k = 0; k < numAttrs; k++) {
           layer[k] /= weight;
-          if (haarFlag)
-            layer[k] = (layer[k] >> kFPFracBits) << kFPFracBits;
         }
       }
-    }
 
-    flagMCmatchCurrent = flagMCmatchCurrent && (weight > 0);
+      if (haarFlag)
+        for (int k = 0; k < numAttrs; k++)
+          layer[k] <<= kFPFracBits;
+    }
   }
-  return flagMCmatchCurrent;
 }
 
 //============================================================================
@@ -436,8 +434,6 @@ uraht_process_decoder(
   const int numPoints,
   int64_t* positions,
   int* attributes,
-  const int numPoints_mc,
-  int64_t* positions_mc,
   int* attributes_mc,
   int32_t* coeffBufIt,
   attr::ModeDecoder& coder)
@@ -507,7 +503,7 @@ uraht_process_decoder(
 
   const int RDOCodingDepth = abh.attr_layer_code_mode.size();
   const bool enableACInterPred =
-    rahtPredParams.enable_inter_prediction && (numPoints_mc > 0);
+    rahtPredParams.enable_inter_prediction && attributes_mc;
 
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag && enableACInterPred);
@@ -608,11 +604,9 @@ uraht_process_decoder(
       && !upperInferMode && coder.isInterEnabled();
 
     // Motion compensation
-    bool flagMCmatchCurrent = true;
     if (coder.isInterEnabled()) {
-      flagMCmatchCurrent = translateLayerDecoder<haarFlag, numAttrs>(
-        interTree, level, numPoints_mc, positions_mc, attributes_mc,
-        weightsLf);
+      translateLayerDecoder<haarFlag, numAttrs>(
+        interTree, attributes_mc, weightsLf);
     }
 
     // initial scan position of the coefficient buffer
@@ -699,24 +693,8 @@ uraht_process_decoder(
       }
 
       // inter prediction
-      if (enableInterPred || enableInterLayerPred) {
-        if (!flagMCmatchCurrent) {
-          auto inter = std::next(
-            interTree.begin(), weightsParentIt->firstChildIdx * numAttrs);
-          int availablePrediction = 0;
-          for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
-            if (!((occupancy >> nodeIdx) & 0x1))
-              continue;
-
-            if (!(*inter < 0))
-              availablePrediction |= 0x1 << nodeIdx;
-            inter += numAttrs;
-          }
-          // always true if projection on decoded geo.
-          enableInterPred = availablePrediction == occupancy;
-        }
-        else
-          enableInterPred = true;
+      if (enableInterLayerPred) {
+        enableInterPred = true;
       }
 
 
@@ -853,38 +831,11 @@ uraht_process_decoder(
         auto inter = std::next(
           interTree.begin(), weightsParentIt->firstChildIdx * numAttrs);
 
-        if (!flagMCmatchCurrent) {
-          bool notCalculatedParentDc = true;
-          int64_t parentDc[3];
-          for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
-            if (!((occupancy >> nodeIdx) & 0x1))
-              continue;
-
-            if (*inter < 0) { // always wrong if projection on decoded geo.
-              inter += numAttrs;
-              if (notCalculatedParentDc) {
-                computeParentDc<haarFlag, numAttrs>(
-                  sumweights, attrRecParentUsIt, parentDc);
-                notCalculatedParentDc = false;
-              }
-              for (int k = 0; k < numAttrs; k++)
-                pred[8 * k + nodeIdx] = parentDc[k];
-            }
-            else {
-              for (int k = 0; k < numAttrs; k++) {
-                pred[8 * k + nodeIdx] = *(inter++);
-              }
-            }
-          }
+        for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
+          if ((occupancy >> nodeIdx) & 0x1)
+            for (int k = 0; k < numAttrs; k++)
+              pred[8 * k + nodeIdx] = *(inter++);
         }
-        else { // MC matches current
-          for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
-            if ((occupancy >> nodeIdx) & 0x1)
-              for (int k = 0; k < numAttrs; k++)
-                pred[8 * k + nodeIdx] = *(inter++);
-          }
-        }
-
       }
 
 
@@ -1220,8 +1171,6 @@ regionAdaptiveHierarchicalInverseTransform(
   const int voxelCount,
   int64_t* mortonCode,
   int* attributes,
-  const int voxelCount_mc,
-  int64_t* mortonCode_mc,
   int* attributes_mc,
   int* coefficients,
   attr::ModeDecoder& decoder)
@@ -1231,12 +1180,12 @@ regionAdaptiveHierarchicalInverseTransform(
     if (!rahtPredParams.integer_haar_enable_flag)
       uraht_process_decoder<false, 3>(
         rahtPredParams, abh,qpset, pointQpOffsets, voxelCount, mortonCode,
-        attributes, voxelCount_mc, mortonCode_mc, attributes_mc, coefficients,
+        attributes, attributes_mc, coefficients,
         decoder);
     else
       uraht_process_decoder<true, 3>(
         rahtPredParams, abh, qpset, pointQpOffsets, voxelCount, mortonCode,
-        attributes, voxelCount_mc, mortonCode_mc, attributes_mc, coefficients,
+        attributes, attributes_mc, coefficients,
         decoder);
     break;
   default:
