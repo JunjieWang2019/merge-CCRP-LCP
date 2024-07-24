@@ -1018,6 +1018,14 @@ ParseParameters(int argc, char* argv[], Parameters& params)
     params_attr.aps.rahtPredParams.cross_chroma_component_prediction_flag, true,
     "Use first chroma component to predict the second chroma component")
 
+  ("rahtCrossComponentResidualPrediction",
+    params_attr.aps.rahtPredParams.cross_component_residual_prediction_flag, true,
+    "Use luma residual to predict chroma residual")
+
+  ("rahtNumLayersOfCrossComponentResidualPrediction",
+    params_attr.aps.rahtPredParams.numlayer_CCRP_enabled, 3,
+    "last N layers CCRP enabled")
+
   ("rahtBlockSizeLog2", params_attr.aps.block_size_log2, 4,
     "RAHT block size (RAHT per block only)")
 

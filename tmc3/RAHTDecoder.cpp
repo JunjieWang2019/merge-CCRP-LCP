@@ -508,6 +508,15 @@ uraht_process_decoder(
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag && enableACInterPred);
 
+  const bool CbCrEnabled =
+    !coder.isInterEnabled()
+    && rahtPredParams.cross_chroma_component_prediction_flag;
+
+  const bool CCRPEnabled =
+    rahtPredParams.cross_component_residual_prediction_flag;
+
+  const int maxlevelCCPenabled = (rahtPredParams.numlayer_CCRP_enabled - 1) * 3;
+
   // reconstruction buffers
   std::vector<int32_t> attrRec, attrRecParent;
   attrRec.resize(numPoints * numAttrs);
@@ -640,6 +649,11 @@ uraht_process_decoder(
       curLevelEnableLayerModeCoding = abh.attr_layer_code_mode[depth];
       curLevelEnableACInterPred = abh.attr_layer_code_mode[depth] == 1;
     }
+    //CCRP parameters
+    const bool CCRPFlag =
+      !haarFlag && CCRPEnabled && level <= maxlevelCCPenabled && !CbCrEnabled;
+
+    CCRPFilter ccrpFilter;
 
     // -------------- loop on nodes of the depth --------------
     int i = 0;
@@ -943,6 +957,8 @@ uraht_process_decoder(
         !haarFlag && rahtPredParams.cross_chroma_component_prediction_flag
         && !coder.isInterEnabled();
 
+      CCRPFilter::Corr curCorr = { 0, 0, 0 };
+
       scanBlock(weights, [&](int idx) {
         // skip the DC coefficient unless at the root of the tree
         if (inheritDc && !idx)
@@ -950,6 +966,9 @@ uraht_process_decoder(
 
         // The RAHT transform
         auto quantizers = qpset.quantizers(qpLayer, nodeQp[idx]);
+
+        int64_t quantizedLuma = 0, quantizedChroma = 0;
+
         for (int k = 0; k < numAttrs; k++) {
           auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
@@ -957,6 +976,7 @@ uraht_process_decoder(
           skipinverse = skipinverse && (coeff == 0);
           CoeffRecBuf[nodelvlSum][k] = divExp2RoundHalfUp(
             q.scale(coeff), kFixedPointAttributeShift);
+          int64_t quantizedValue = CoeffRecBuf[nodelvlSum][k];
           transformRecBuf[k] = fpExpand<kFPFracBits>(
             CoeffRecBuf[nodelvlSum][k]);
           BestRecBuf[k][idx] = transformRecBuf[k];
@@ -964,6 +984,27 @@ uraht_process_decoder(
           if (haarFlag) {
             // Transform Domain Pred for Lossless case
             BestRecBuf[k][idx] += attrBestPredTransform[8 * k + idx];
+          }
+          if(CCRPFlag){
+            if (k == 0) {
+              quantizedLuma = quantizedValue;
+              curCorr.yy += quantizedLuma * quantizedLuma;
+            } else {
+              int64_t CCRPFilt =
+                (k == 1) ? ccrpFilter.getYCbFilt() : ccrpFilter.getYCrFilt();
+
+              int64_t CCRPPred =
+                quantizedLuma * CCRPFilt >> kCCRPFiltPrecisionbits;
+
+              quantizedChroma = quantizedValue;
+              quantizedChroma += CCRPPred;
+              BestRecBuf[k][idx] = fpExpand<kFPFracBits>(quantizedChroma);
+              skipinverse = skipinverse && (quantizedChroma == 0);
+              if (k == 1)
+                curCorr.ycb += quantizedLuma * quantizedChroma;
+              else
+                curCorr.ycr += quantizedLuma * quantizedChroma;
+            }
           }
         }
 
@@ -976,6 +1017,10 @@ uraht_process_decoder(
 
         nodelvlSum++;
         });
+
+      if (CCRPFlag) {
+        ccrpFilter.update(curCorr);
+      }
 
       // compute last component coefficient
       if (numAttrs == 3 && nodeCnt > 1 && enableCCCP) {

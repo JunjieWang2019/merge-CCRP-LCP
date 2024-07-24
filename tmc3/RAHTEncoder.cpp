@@ -736,6 +736,15 @@ uraht_process_encoder(
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag && enableACInterPred);
 
+  const bool CbCrEnabled =
+    !coder.isInterEnabled()
+    && rahtPredParams.cross_chroma_component_prediction_flag;
+
+  const bool CCRPEnabled =
+    rahtPredParams.cross_component_residual_prediction_flag;
+
+  const int maxlevelCCPenabled = (rahtPredParams.numlayer_CCRP_enabled - 1) * 3;
+
   int RDOCodingDepth = abh.attr_layer_code_mode.size();
   std::vector<int64_t> interTree;
 
@@ -1053,6 +1062,14 @@ uraht_process_encoder(
     double distintraLayer = 0;
     double distMCPredLayer = 0;
     double dlambda = 1.0;
+
+    //CCRP Parameters
+    const bool CCRPFlag =
+      !haarFlag && CCRPEnabled && level <= maxlevelCCPenabled && !CbCrEnabled;
+
+    CCRPFilter ccrpFilter;
+    CCRPFilter ccrpFilterIntra;
+    CCRPFilter ccrpFilterInter;
 
     int i = 0;
     for (auto weightsParentIt = weightsParent.begin();
@@ -1476,6 +1493,10 @@ uraht_process_encoder(
       int nodelvlSum = 0;
       int64_t transformRecBuf[3] = {0,0,0};
 
+      CCRPFilter::Corr curCorr = { 0, 0, 0 };
+      CCRPFilter::Corr curCorrIntra  = { 0, 0, 0 };
+      CCRPFilter::Corr curCorrInter  = { 0, 0, 0 };
+
       scanBlock(weights, [&](int idx) {
         // skip the DC coefficient unless at the root of the tree
         if (inheritDc && !idx)
@@ -1643,6 +1664,11 @@ uraht_process_encoder(
 
         // The RAHT transform
         auto quantizers = qpset.quantizers(qpLayer, nodeQp[idx]);
+
+        int64_t quantizedLuma = 0, quantizedChroma = 0;
+        int64_t quantizedLumaIntra = 0, quantizedChromaIntra = 0;
+        int64_t quantizedLumaInter = 0, quantizedChromaInter = 0;
+
         for (int k = 0; k < numAttrs; k++) {
           if (flagRDOQ) { // apply RDOQ
             transformBuf[k][idx].val = 0;
@@ -1663,6 +1689,44 @@ uraht_process_encoder(
 
           auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
+          int64_t CCRPPred = 0, CCRPPredIntra = 0, CCRPPredInter = 0;
+
+          if(k && CCRPFlag){
+            int64_t CCRPFilt =
+              (k == 1) ? ccrpFilter.getYCbFilt() : ccrpFilter.getYCrFilt();
+
+            CCRPPred = quantizedLuma * CCRPFilt >> kCCRPFiltPrecisionbits;
+
+            transformBuf[k][idx].val =
+              transformBuf[k][idx].val - fpExpand<kFPFracBits>(CCRPPred);
+
+            if(enableACRDOInterPred){
+              int64_t CCRPFiltIntra =
+                (k == 1)
+                ? ccrpFilterIntra.getYCbFilt()
+                : ccrpFilterIntra.getYCrFilt();
+
+              CCRPPredIntra =
+                quantizedLumaIntra * CCRPFiltIntra >> kCCRPFiltPrecisionbits;
+
+              transformIntraLayerBuf[k][idx] =
+                transformIntraLayerBuf[k][idx]
+                - fpExpand<kFPFracBits>(CCRPPredIntra);
+
+              int64_t CCRPFiltInter =
+                (k == 1)
+                ? ccrpFilterInter.getYCbFilt()
+                : ccrpFilterInter.getYCrFilt();
+
+              CCRPPredInter =
+                quantizedLumaInter * CCRPFiltInter >> kCCRPFiltPrecisionbits;
+
+              transformInterLayerBuf[k][idx] =
+                transformInterLayerBuf[k][idx]
+                - fpExpand<kFPFracBits>(CCRPPredInter);
+            }
+          }
+
           auto coeff = transformBuf[k][idx].round();
           assert(coeff <= INT_MAX && coeff >= INT_MIN);
           coeff =
@@ -1682,9 +1746,27 @@ uraht_process_encoder(
             }
             CoeffRecBuf[nodelvlSum][k] = fpReduce<kFPFracBits>(
               transformRecBuf[k]);
-          } else
-            BestRecBuf[k][idx] = fpExpand<kFPFracBits>(
-              divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift));
+          } else {
+            int64_t quantizedValue =
+              divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+            BestRecBuf[k][idx] = fpExpand<kFPFracBits>(quantizedValue);
+
+            if(CCRPFlag){
+              if (k == 0) {
+                quantizedLuma = quantizedValue;
+                curCorr.yy += quantizedLuma * quantizedLuma;
+              } else {
+                quantizedChroma = quantizedValue;
+                quantizedChroma += CCRPPred;
+                BestRecBuf[k][idx] = fpExpand<kFPFracBits>(quantizedChroma);
+                skipinverse = skipinverse && (quantizedChroma == 0);
+                if (k == 1)
+                  curCorr.ycb += quantizedLuma * quantizedChroma;
+                else
+                  curCorr.ycr += quantizedLuma * quantizedChroma;
+              }
+            }
+          }
 
           if (enableACRDOInterPred)
             curEstimate.updateCostBits(coeff, k);
@@ -1707,10 +1789,25 @@ uraht_process_encoder(
 
               *intraLayerCoeffBufItK[k]++ = intraLayerCoeff;
               skipinverseintralayer = skipinverseintralayer && (intraLayerCoeff == 0);
-              BestRecBufIntraLayer[k][idx] = fpExpand<kFPFracBits>(
-                divExp2RoundHalfUp(
-                  q.scale(intraLayerCoeff), kFixedPointAttributeShift));
+              int64_t quantizedValueIntra =
+                divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
+              BestRecBufIntraLayer[k][idx] = fpExpand<kFPFracBits>(quantizedValueIntra);
               intraLayerEstimate.resStatUpdate(intraLayerCoeff, k);
+              if(CCRPFlag){
+                if (k == 0) {
+                  quantizedLumaIntra = quantizedValueIntra;
+                  curCorrIntra.yy += quantizedLumaIntra * quantizedLumaIntra;
+                } else {
+                  quantizedChromaIntra = quantizedValueIntra;
+                  quantizedChromaIntra += CCRPPredIntra;
+                  BestRecBufIntraLayer[k][idx] = fpExpand<kFPFracBits>(quantizedChromaIntra);
+                  skipinverseintralayer = skipinverseintralayer && (quantizedChromaIntra == 0);
+                  if (k == 1)
+                    curCorrIntra.ycb += quantizedLumaIntra * quantizedChromaIntra;
+                  else
+                    curCorrIntra.ycr += quantizedLumaIntra * quantizedChromaIntra;
+                }
+              }
             }
 
             if (!upperInferMode) {
@@ -1725,11 +1822,27 @@ uraht_process_encoder(
               skipinverseinterlayer = skipinverseinterlayer && (interLayerCoeff == 0);
               *interLayerCoeffBufItK[k]++ = interLayerCoeff;
               // still in RAHT domain
-              BestRecBufInterLayer[k][idx] = fpExpand<kFPFracBits>(
-                divExp2RoundHalfUp(
-                  q.scale(interLayerCoeff), kFixedPointAttributeShift));
+              int64_t quantizedValueInter =
+                divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift);
+              BestRecBufInterLayer[k][idx] = fpExpand<kFPFracBits>(quantizedValueInter);
 
               interLayerEstimate.resStatUpdate(interLayerCoeff, k);
+
+              if(CCRPFlag){
+                if (k == 0) {
+                  quantizedLumaInter = quantizedValueInter;
+                  curCorrInter.yy += quantizedLumaInter * quantizedLumaInter;
+                } else {
+                  quantizedChromaInter = quantizedValueInter;
+                  quantizedChromaInter += CCRPPredInter;
+                  BestRecBufInterLayer[k][idx] = fpExpand<kFPFracBits>(quantizedChromaInter);
+                  skipinverseinterlayer = skipinverseinterlayer && (quantizedChromaInter == 0);
+                  if (k == 1)
+                    curCorrInter.ycb += quantizedLumaInter * quantizedChromaInter;
+                  else
+                    curCorrInter.ycr += quantizedLumaInter * quantizedChromaInter;
+                }
+              }
             }
 
             int64_t iresidueinterLayer = 0;
@@ -1784,6 +1897,14 @@ uraht_process_encoder(
         }
         nodelvlSum++;
       });
+
+      if (CCRPFlag) {
+        ccrpFilter.update(curCorr);
+        if (enableACRDOInterPred) {
+          ccrpFilterIntra.update(curCorrIntra);
+          ccrpFilterInter.update(curCorrInter);
+        }
+      }
 
        // compute last component coefficient
       if (numAttrs == 3 && nodeCnt > 1 && !haarFlag

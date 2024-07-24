@@ -466,6 +466,8 @@ struct RahtPredictionParams {
   std::vector<int> predWeightParent;
   std::vector<int> predWeightChild;
   bool cross_chroma_component_prediction_flag;
+  bool cross_component_residual_prediction_flag;
+  int numlayer_CCRP_enabled;
 
   RahtPredictionParams()
   {

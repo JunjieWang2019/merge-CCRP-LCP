@@ -799,6 +799,8 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
     }
     bs.write(aps.rahtPredParams.integer_haar_enable_flag);
     bs.write(aps.rahtPredParams.cross_chroma_component_prediction_flag);
+    bs.write(aps.rahtPredParams.cross_component_residual_prediction_flag);
+    bs.writeUe(aps.rahtPredParams.numlayer_CCRP_enabled);
   }
 
   if (aps.attr_encoding == AttributeEncoding::kRaw)
@@ -884,6 +886,8 @@ parseAps(const PayloadBuffer& buf)
     }
     bs.read(&aps.rahtPredParams.integer_haar_enable_flag);
     bs.read(&aps.rahtPredParams.cross_chroma_component_prediction_flag);
+    bs.read(&aps.rahtPredParams.cross_component_residual_prediction_flag);
+    bs.readUe(&aps.rahtPredParams.numlayer_CCRP_enabled);
   }
 
   if (aps.attr_encoding == AttributeEncoding::kRaw)

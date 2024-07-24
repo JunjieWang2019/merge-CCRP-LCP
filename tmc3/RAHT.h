@@ -269,6 +269,94 @@ private:
 };
 
 //============================================================================
+// Compute CCRP filter by floor division
+
+static constexpr int kCCRPFiltPrecisionbits = 3;
+static constexpr int kCCRPtemplatesize = 16;
+
+template<int precbits=kCCRPFiltPrecisionbits, int buflen=kCCRPtemplatesize>
+struct _CCRPFilter {
+
+  struct Corr {
+    int64_t yy;
+    int64_t ycb;
+    int64_t ycr;
+
+    void operator -=(const Corr& other) {
+      yy -= other.yy;
+      ycb -= other.ycb;
+      ycr -= other.ycr;
+    }
+
+    void operator +=(const Corr& other) {
+      yy += other.yy;
+      ycb += other.ycb;
+      ycr += other.ycr;
+    }
+  };
+
+  void update(const Corr& curCorr) {
+    if (window.size() == buflen) {
+      sum -= window.front();
+      window.pop();
+    }
+    window.push(curCorr);
+    sum += curCorr;
+
+    _YCbFilt = getFilterTap(sum.yy+1, sum.ycb);
+    _YCrFilt = getFilterTap(sum.yy+1, sum.ycr);
+  }
+
+  int getYCbFilt() const { return _YCbFilt; }
+  int getYCrFilt() const { return _YCrFilt; }
+
+private:
+  Corr sum {0, 0, 0};
+
+  int _YCbFilt = 0;
+  int _YCrFilt = 0;
+
+  ringbuf<Corr> window = ringbuf<Corr>(buflen);
+public: // TMP
+  static int getFilterTap (int64_t autocorr, int64_t crosscorr)
+  {
+    constexpr int unity = 1 << precbits;
+    //binary search to replace divison. ( returns 128*crosscorr/autocorr)
+    if (crosscorr == 0)
+      return 0;
+
+    const bool isneg = crosscorr < 0;
+    crosscorr = std::abs(crosscorr);
+
+    if (crosscorr == autocorr)
+      return isneg ? -unity : unity;
+
+    int tapint = 0, tapfrac = -1;
+
+    //determine integer part by repeated subtraction
+    while (crosscorr >= autocorr) {
+      crosscorr -= autocorr;
+      tapint += unity;
+    }
+
+    if (crosscorr == 0) {
+      return isneg ? -tapint : tapint;
+    }
+
+    const int64_t numerator = crosscorr << precbits;
+    const int64_t denominator = autocorr;
+
+    for(int64_t cumsum = 0; cumsum <= numerator; cumsum += denominator) {
+      tapfrac++;
+    }
+
+    return isneg ? -tapint - tapfrac : tapint + tapfrac;
+  }
+};
+
+using CCRPFilter = _CCRPFilter<>;
+
+//============================================================================
 
 } /* namespace RAHT */
 
