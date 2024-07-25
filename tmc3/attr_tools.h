@@ -36,7 +36,6 @@
 #pragma once
 #include <cstdint>
 
-#include "FixedPoint.h"
 #include "quantization.h"
 #include "hls.h"
 #include <vector>
@@ -47,8 +46,6 @@
 #include "ModeCoder.h"
 
 namespace pcc {
-
-using VecAttr = std::vector<std::array<pcc::FixedPoint, 8>>;
 
 //============================================================================
 
@@ -212,7 +209,7 @@ namespace attr {
   template<class Kernel>
   Mode choseMode(
     ModeEncoder& rdo,
-    const VecAttr& transformBuf,
+    const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
     const int numAttrs,
@@ -228,7 +225,7 @@ namespace RAHT {
 //============================================================================
 
 // Fixed Point precision for RAHT
-static constexpr int64_t kFPFracBits = FixedPoint::kFracBits;
+static constexpr int kFPFracBits = 15;
 static constexpr int64_t kFPOneHalf = 1 << (kFPFracBits - 1);
 static constexpr int64_t kFPDecMask = ((1 << kFPFracBits) - 1);
 static constexpr int64_t kFPIntMask = ~kFPDecMask;
@@ -305,7 +302,7 @@ public:
 template<class Kernel>
 void
 fwdTransformBlock222(
-  const int numBufs, VecAttr::iterator buf, const int64_t weights[])
+  const int numBufs, int64_t* buf, const int64_t weights[])
 {
   static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
   static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
@@ -322,7 +319,7 @@ fwdTransformBlock222(
     if (!w0 || !w1) {
       if (!w0) {
         for (int k = 0; k < numBufs; k++)
-          std::swap(buf[k][i0], buf[k][i1]);
+          std::swap(buf[8 * k + i0], buf[8 * k + i1]);
       }
       continue;
     }
@@ -330,7 +327,7 @@ fwdTransformBlock222(
     // actual transform
     Kernel kernel(w0, w1, true);
     for (int k = 0; k < numBufs; k++) {
-      kernel.fwdTransform(buf[k][i0].val, buf[k][i1].val);
+      kernel.fwdTransform(buf[8 * k + i0], buf[8 * k + i1]);
     }
   }
 }
@@ -354,7 +351,7 @@ fwdTransformBlock222(int64_t* buf, const int64_t weights[])
     if (!w0 || !w1) {
       if (!w0) {
         for (int k = 0; k < numBufs; k++)
-          std::swap(buf[8*k+i0], buf[8*k+i1]);
+          std::swap(buf[8 * k + i0], buf[8 * k + i1]);
       }
       continue;
     }
@@ -362,7 +359,7 @@ fwdTransformBlock222(int64_t* buf, const int64_t weights[])
     // actual transform
     Kernel kernel(w0, w1, true);
     for (int k = 0; k < numBufs; k++) {
-      kernel.fwdTransform(buf[8*k+i0], buf[8*k+i1]);
+      kernel.fwdTransform(buf[8 * k + i0], buf[8 * k + i1]);
     }
   }
 }

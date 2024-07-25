@@ -36,7 +36,6 @@
 #pragma once
 #include <cstdint>
 
-#include "FixedPoint.h"
 #include "quantization.h"
 #include "hls.h"
 #include "attr_tools.h"

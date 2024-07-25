@@ -410,9 +410,9 @@ intraDcPred(
   It firstChild,
   It2 intraLayerFirstChild,
   It2 interLayerFirstChild,
-  VecAttr::iterator predBuf,
-  VecAttr::iterator intraLayerPredBuf,
-  VecAttr::iterator interLayerPredBuf,
+  int64_t* predBuf,
+  int64_t* intraLayerPredBuf,
+  int64_t* interLayerPredBuf,
   const RahtPredictionParams &rahtPredParams,
   const bool& enableLayerCoding)
 {
@@ -424,11 +424,11 @@ intraDcPred(
   const auto& predWeightChild = rahtPredParams.predWeightChild;
   int weightSum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-  std::fill_n(&predBuf[0][0], 8 * numAttrs, FixedPoint(0));
+  std::fill_n(predBuf, 8 * numAttrs, 0);
 
   if (isEncoder && enableLayerCoding) {
-    std::fill_n(&intraLayerPredBuf[0][0], 8 * numAttrs, FixedPoint(0));
-    std::fill_n(&interLayerPredBuf[0][0], 8 * numAttrs, FixedPoint(0));
+    std::fill_n(intraLayerPredBuf, 8 * numAttrs, 0);
+    std::fill_n(interLayerPredBuf, 8 * numAttrs, 0);
   }
 
   int64_t neighValue[3];
@@ -468,10 +468,10 @@ intraDcPred(
       if (mask & 1) {
         weightSum[j] += predWeightParent[i];
         for (int k = 0; k < numAttrs; k++) {
-          predBuf[k][j].val += neighValue[k];
+          predBuf[8 * k + j] += neighValue[k];
           if (isEncoder && enableLayerCoding) {
-            intraLayerPredBuf[k][j].val += neighValue[k];
-            interLayerPredBuf[k][j].val += neighValue[k];
+            intraLayerPredBuf[8 * k + j] += neighValue[k];
+            interLayerPredBuf[8 * k + j] += neighValue[k];
           }
         }
       }
@@ -506,7 +506,7 @@ intraDcPred(
                 * predWeightChild[i];
 
             for (int k = 0; k < numAttrs; k++)
-              predBuf[k][j].val += childNeighValue[k];
+              predBuf[8 * k + j] += childNeighValue[k];
 
             if (isEncoder && enableLayerCoding) {
               auto intraChildNeighValueIt =
@@ -515,7 +515,7 @@ intraDcPred(
                 intraLayerChildNeighValue[k] =
                 (*intraChildNeighValueIt++) * predWeightChild[i];
               for (int k = 0; k < numAttrs; k++)
-                intraLayerPredBuf[k][j].val += intraLayerChildNeighValue[k];
+                intraLayerPredBuf[8 * k + j] += intraLayerChildNeighValue[k];
 
               auto interChildNeighValueIt =
                 std::next(interLayerFirstChild, numAttrs * childNeighIdx[i][j]);
@@ -523,16 +523,16 @@ intraDcPred(
                 interLayerChildNeighValue[k] =
                 (*interChildNeighValueIt++) * predWeightChild[i];
               for (int k = 0; k < numAttrs; k++) {
-                interLayerPredBuf[k][j].val += interLayerChildNeighValue[k];
+                interLayerPredBuf[8 * k + j] += interLayerChildNeighValue[k];
               }
             }
           } else {
             weightSum[j] += predWeightParent[7 + i];
             for (int k = 0; k < numAttrs; k++) {
-              predBuf[k][j].val += neighValue[k];
+              predBuf[8 * k + j] += neighValue[k];
               if (isEncoder && enableLayerCoding) {
-                intraLayerPredBuf[k][j].val += neighValue[k];
-                interLayerPredBuf[k][j].val += neighValue[k];
+                intraLayerPredBuf[8 * k + j] += neighValue[k];
+                interLayerPredBuf[8 * k + j] += neighValue[k];
               }
             }
           }
@@ -548,19 +548,22 @@ intraDcPred(
       if (w > 1) {
         ApproxNormalize div(w);
         for (int k = 0; k < numAttrs; k++) {
-          div(predBuf[k][i].val);
+          div(predBuf[8 * k + i]);
           if (isEncoder && enableLayerCoding) {
-            div(intraLayerPredBuf[k][i].val);
-            div(interLayerPredBuf[k][i].val);
+            div(intraLayerPredBuf[8 * k + i]);
+            div(interLayerPredBuf[8 * k + i]);
           }
         }
       }
       if (haarFlag) {
         for (int k = 0; k < numAttrs; k++) {
-          predBuf[k][i] = predBuf[k][i].round();
+          predBuf[8 * k + i] = fpExpand<kFPFracBits>(
+            fpReduce<kFPFracBits>(predBuf[8 * k + i]));
           if (isEncoder && enableLayerCoding) {
-            intraLayerPredBuf[k][i] = intraLayerPredBuf[k][i].round();
-            interLayerPredBuf[k][i] = interLayerPredBuf[k][i].round();
+            intraLayerPredBuf[8 * k + i] = fpExpand<kFPFracBits>(
+              fpReduce<kFPFracBits>(intraLayerPredBuf[8 * k + i]));
+            interLayerPredBuf[8 * k + i] = fpExpand<kFPFracBits>(
+              fpReduce<kFPFracBits>(interLayerPredBuf[8 * k + i]));
           }
         }
       }
@@ -818,54 +821,45 @@ uraht_process_encoder(
   int childNeighIdx[12][8];
 
   // Prediction buffers
-  VecAttr SampleDomainBuff;
-  VecAttr transformBuf;
-  int bufferSize = (2 + coder.isInterEnabled()) * numAttrs;
-  transformBuf.resize(bufferSize);
-  SampleDomainBuff.resize(bufferSize);
+  int64_t SampleDomainBuff[3 * numAttrs * 8];
+  int64_t transformBuf[3 * numAttrs * 8];
 
-  VecAttr::iterator attrPred;
-  VecAttr::iterator attrPredTransform;
-  VecAttr::iterator attrReal;
-  VecAttr::iterator attrRealTransform;
-  VecAttr::iterator attrPredIntra;
-  VecAttr::iterator attrPredInter;
-  VecAttr::iterator attrBestPredIt;
-  VecAttr::iterator attrPredIntraTransformIt;
-  VecAttr::iterator attrPredInterTransformIt;
-  VecAttr::iterator attrBestPredTransformIt;
+  const int numBuffers = (2 + coder.isInterEnabled()) * numAttrs;
+  constexpr size_t sizeofBuf = sizeof(int64_t) * 8;
+  const size_t sizeofBufs = sizeofBuf * numBuffers;
+
+  int64_t* attrPred;
+  int64_t* attrPredTransform;
+  int64_t* attrReal;
+  int64_t* attrRealTransform;
+  int64_t* attrPredIntra;
+  int64_t* attrPredInter;
+  int64_t* attrBestPredIt;
+  int64_t* attrPredIntraTransformIt;
+  int64_t* attrPredInterTransformIt;
+  int64_t* attrBestPredTransformIt;
 
   std::vector<Mode> modes;
 
-  VecAttr SampleLayerBuf;
-  VecAttr transformLayerBuf;
-  VecAttr  attrInterPredLayer;
-  VecAttr  attrInterPredLayerTransform;
-  VecAttr::iterator attrPredIntraLayer;
-  VecAttr::iterator attrPredInterLayer;
-  VecAttr::iterator attrOrgPredInterLayer;
-  VecAttr::iterator attrPredIntraLayerTransformIt;
-  VecAttr::iterator attrPredInterLayerTransformIt;
-  VecAttr::iterator attrOrgPredInterLayerTransformIt;
+  int64_t SampleLayerBuf[2 * numAttrs * 8];
+  int64_t transformLayerBuf[2 * numAttrs * 8];
 
-  if (enableACRDOInterPred) {
-    SampleLayerBuf.resize(2 * numAttrs);
-    attrPredInterLayer = SampleLayerBuf.begin();
-    attrPredIntraLayer = std::next(attrPredInterLayer, numAttrs);
-    attrInterPredLayer.resize(numAttrs);
-    attrOrgPredInterLayer = attrInterPredLayer.begin();
+  const int numLayerBuffers = 2 * coder.isInterEnabled() * numAttrs;
+  const size_t sizeofLayerBuf = sizeofBuf * numLayerBuffers;
 
-    transformLayerBuf.resize(2 * numAttrs);
-    attrPredInterLayerTransformIt = transformLayerBuf.begin();
-    attrPredIntraLayerTransformIt = std::next(attrPredInterLayerTransformIt, numAttrs);
-    attrInterPredLayerTransform.resize(numAttrs);
-    attrOrgPredInterLayerTransformIt = attrInterPredLayerTransform.begin();
-  }
+  int64_t attrInterPredLayer[1 * numAttrs * 8];
+  int64_t attrInterPredLayerTransform[1 * numAttrs * 8];
+  int64_t* attrPredIntraLayer = SampleLayerBuf + 8 * numAttrs;
+  int64_t* attrPredInterLayer = SampleLayerBuf;
+  int64_t* attrOrgPredInterLayer = attrInterPredLayer;
+  int64_t* attrPredIntraLayerTransformIt = transformLayerBuf + 8 * numAttrs;
+  int64_t* attrPredInterLayerTransformIt = transformLayerBuf;
+  int64_t* attrOrgPredInterLayerTransformIt = attrInterPredLayerTransform;
 
-  attrReal = SampleDomainBuff.begin();
-  attrRealTransform = transformBuf.begin();
-  attrPred = std::next(attrReal, numAttrs);
-  attrPredTransform = std::next(attrRealTransform, numAttrs);
+  attrReal = SampleDomainBuff;
+  attrRealTransform = transformBuf;
+  attrPred = SampleDomainBuff + 8 * numAttrs;
+  attrPredTransform = transformBuf + 8 * numAttrs;
 
   modes.push_back(Mode::Null);
 
@@ -873,8 +867,8 @@ uraht_process_encoder(
     attrPredInter = attrPred;
     attrPredInterTransformIt = attrPredTransform;
     modes.push_back(Mode::Inter);
-    attrPred = std::next(attrPred, numAttrs);
-    attrPredTransform = std::next(attrPredTransform, numAttrs);
+    attrPred += 8 * numAttrs;
+    attrPredTransform += 8 * numAttrs;
   }
 
   attrPredIntra = attrPred;
@@ -1076,21 +1070,16 @@ uraht_process_encoder(
         weightsParentIt < weightsParent.end();
         weightsParentIt++) {
 
-      for (auto& buf : SampleDomainBuff) {
-        std::fill(buf.begin(), buf.end(), FixedPoint(0));
-      }
-      for (auto& buf : SampleLayerBuf) {
-        std::fill(buf.begin(), buf.end(), FixedPoint(0));
-      }
-      for (auto& buf : transformBuf) {
-        std::fill(buf.begin(), buf.end(), FixedPoint(0));
-      }
-      for (auto& buf : transformLayerBuf) {
-        std::fill(buf.begin(), buf.end(), FixedPoint(0));
+      memset(SampleDomainBuff, 0, sizeofBufs);
+      memset(transformBuf, 0, sizeofBufs);
+
+      if (enableACRDOInterPred) {
+        memset(SampleLayerBuf, 0, sizeofLayerBuf);
+        memset(transformLayerBuf, 0, sizeofLayerBuf);
       }
 
-      int64_t transformIntraLayerBuf[3][8] = {};
-      int64_t transformInterLayerBuf[3][8] = {};
+      int64_t transformIntraLayerBuf[numAttrs][8] = {};
+      int64_t transformInterLayerBuf[numAttrs][8] = {};
 
       int64_t weights[8 + 8 + 8 + 8 + 24] = {};
       int64_t sqrtweightsbuf[8] = {};
@@ -1127,7 +1116,7 @@ uraht_process_encoder(
         }
 
         for (int k = 0; k < numAttrs; k++)
-          attrReal[k][nodeIdx] = attrsLf[j0 * numAttrs + k];
+          attrReal[8 * k + nodeIdx] = fpExpand<kFPFracBits>(attrsLf[j0 * numAttrs + k]);
       }
       int64_t sumweights = weightsParentIt->weight;
       mkWeightTree<false, RahtKernel>(weights);
@@ -1196,11 +1185,11 @@ uraht_process_encoder(
               notCalculatedParentDc = false;
             }
             for (int k = 0; k < numAttrs; k++)
-              pred[k][nodeIdx].val = parentDc[k];
+              pred[8 * k + nodeIdx] = parentDc[k];
           } else {
             availablePrediction |= 0x1 << nodeIdx;
             for (int k = 0; k < numAttrs; k++) {
-              pred[k][nodeIdx].val = *(inter++);
+              pred[8 * k + nodeIdx] = *(inter++);
             }
           }
         }
@@ -1275,12 +1264,12 @@ uraht_process_encoder(
       }
 
       if (haarFlag) {
-        std::copy(SampleDomainBuff.begin(), SampleDomainBuff.end(), transformBuf.begin());
-        fwdTransformBlock222<HaarKernel>(bufferSize, transformBuf.begin(), weights);
+        memcpy(transformBuf, SampleDomainBuff, sizeofBufs);
+        fwdTransformBlock222<HaarKernel>(numBuffers, transformBuf, weights);
         if (enableACRDOInterPred) {
-          std::copy(SampleLayerBuf.begin(), SampleLayerBuf.end(), transformLayerBuf.begin());
+          memcpy(transformLayerBuf, SampleLayerBuf, sizeofLayerBuf);
           fwdTransformBlock222<HaarKernel>(
-            transformLayerBuf.size(), transformLayerBuf.begin(), weights);
+            numLayerBuffers, transformLayerBuf, weights);
         }
       } else {
         // normalise coefficients
@@ -1295,44 +1284,43 @@ uraht_process_encoder(
           int shift = 5 * ((w > 1024) + (w > 1048576));
           int64_t rsqrtWeight = fastIrsqrt(w) >> 40 - shift - kFPFracBits;
           for (int k = 0; k < numAttrs; k++) {
-            SampleDomainBuff[k][childIdx].val = fpReduce<kFPFracBits>(
-              (SampleDomainBuff[k][childIdx].val >> shift) * rsqrtWeight);
+            SampleDomainBuff[8 * k + childIdx] = fpReduce<kFPFracBits>(
+              (SampleDomainBuff[8 * k + childIdx] >> shift) * rsqrtWeight);
           }
 
           // Predicted attribute values
           int64_t sqrtWeight = fastIsqrt(weights[childIdx]);
           sqrtweightsbuf[childIdx] = sqrtWeight;
-          attrPred = SampleDomainBuff.begin() + numAttrs;
-          while (attrPred < SampleDomainBuff.end()) {
+
+          for (auto buf = SampleDomainBuff + 8 * numAttrs;
+              buf < SampleDomainBuff + 8 * numBuffers;
+              buf += 8 * numAttrs) {
             for (int k = 0; k < numAttrs; k++)
-              attrPred[k][childIdx].val = fpReduce<kFPFracBits>(
-                attrPred[k][childIdx].val * sqrtWeight);
-            attrPred += numAttrs;
+              buf[8 * k + childIdx] = fpReduce<kFPFracBits>(
+                buf[8 * k + childIdx] * sqrtWeight);
           }
           if (enableACRDOInterPred) {
-            auto attrPredLayer = SampleLayerBuf.begin();
-            while (attrPredLayer < SampleLayerBuf.end()) {
+            for (auto buf = SampleLayerBuf;
+                buf < SampleLayerBuf + 8 * numLayerBuffers;
+                buf += 8 * numAttrs) {
               for (int k = 0; k < numAttrs; k++)
-                attrPredLayer[k][childIdx].val = fpReduce<kFPFracBits>(
-                  attrPredLayer[k][childIdx].val * sqrtWeight);
-              attrPredLayer += numAttrs;
+                buf[8 * k + childIdx] = fpReduce<kFPFracBits>(
+                  buf[8 * k + childIdx] * sqrtWeight);
             }
           }
         }
-        std::copy(SampleDomainBuff.begin(), SampleDomainBuff.end(), transformBuf.begin());
-        fwdTransformBlock222<RahtKernel>(
-          bufferSize, transformBuf.begin(), weights);
+        memcpy(transformBuf, SampleDomainBuff, sizeofBufs);
+        fwdTransformBlock222<RahtKernel>(numBuffers, transformBuf, weights);
         if (enableACRDOInterPred) {
-          std::copy(SampleLayerBuf.begin(), SampleLayerBuf.end(), transformLayerBuf.begin());
+          memcpy(transformLayerBuf, SampleLayerBuf, sizeofLayerBuf);
           fwdTransformBlock222<RahtKernel>(
-            transformLayerBuf.size(), transformLayerBuf.begin(), weights);
+            numLayerBuffers, transformLayerBuf, weights);
         }
       } //else normalize
 
-      if (enableACRDOInterPred)
-      {
-        std::copy_n((int64_t*) &transformBuf[0][0], 8 * numAttrs, &transformIntraLayerBuf[0][0]);
-        std::copy_n((int64_t*) &transformBuf[0][0], 8 * numAttrs, &transformInterLayerBuf[0][0]);
+      if (enableACRDOInterPred) {
+        std::copy_n(transformBuf, 8 * numAttrs, &transformIntraLayerBuf[0][0]);
+        std::copy_n(transformBuf, 8 * numAttrs, &transformInterLayerBuf[0][0]);
       }
 
       const bool enableAveragePrediction =
@@ -1365,8 +1353,8 @@ uraht_process_encoder(
 
 
         if (enableAverageLayerPrediction) {
-          std::copy_n(&attrPredInter[0][0], 8 * numAttrs, &attrOrgPredInterLayer[0][0]);
-          std::copy_n(&attrPredInterTransformIt[0][0], 8 * numAttrs, &attrOrgPredInterLayerTransformIt[0][0]);
+          std::copy_n(attrPredInter, 8 * numAttrs, attrOrgPredInterLayer);
+          std::copy_n(attrPredInterTransformIt, 8 * numAttrs, attrOrgPredInterLayerTransformIt);
 
           voteInterLayerWeight += 12 * isInter(weightsParentIt->mode) + 6 * flag;
           voteIntraLayerWeight += 12 * isIntra(weightsParentIt->mode) + 6 * flag;
@@ -1390,40 +1378,40 @@ uraht_process_encoder(
           for (int k = 0; k < numAttrs; k++) {
             if (enableIntraPred && enableInterPred) {
               if (predCtxLevel < 0) {
-                attrPredIntra[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                  attrPredIntra[k][nodeIdx].val * weightIntra
-                  + attrPredInter[k][nodeIdx].val * weightInter);
-                attrPredIntraTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                  attrPredIntraTransformIt[k][nodeIdx].val * weightIntra
-                  + attrPredInterTransformIt[k][nodeIdx].val * weightInter);
+                attrPredIntra[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                  attrPredIntra[8 * k + nodeIdx] * weightIntra
+                  + attrPredInter[8 * k + nodeIdx] * weightInter);
+                attrPredIntraTransformIt[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                  attrPredIntraTransformIt[8 * k + nodeIdx] * weightIntra
+                  + attrPredInterTransformIt[8 * k + nodeIdx] * weightInter);
                 if (haarFlag) {
-                  attrPredIntra[k][nodeIdx].val &= FixedPoint::kIntMask;
-                  attrPredIntraTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+                  attrPredIntra[8 * k + nodeIdx] &= kFPIntMask;
+                  attrPredIntraTransformIt[8 * k + nodeIdx] &= kFPIntMask;
                 }
               }
               else {
-                attrPredInter[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                  attrPredIntra[k][nodeIdx].val * weightIntra
-                  + attrPredInter[k][nodeIdx].val * weightInter);
-                attrPredInterTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                  attrPredIntraTransformIt[k][nodeIdx].val * weightIntra
-                  + attrPredInterTransformIt[k][nodeIdx].val * weightInter);
+                attrPredInter[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                  attrPredIntra[8 * k + nodeIdx] * weightIntra
+                  + attrPredInter[8 * k + nodeIdx] * weightInter);
+                attrPredInterTransformIt[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                  attrPredIntraTransformIt[8 * k + nodeIdx] * weightIntra
+                  + attrPredInterTransformIt[8 * k + nodeIdx] * weightInter);
                 if (haarFlag) {
-                  attrPredInter[k][nodeIdx].val &= FixedPoint::kIntMask;
-                  attrPredInterTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+                  attrPredInter[8 * k + nodeIdx] &= kFPIntMask;
+                  attrPredInterTransformIt[8 * k + nodeIdx] &= kFPIntMask;
                 }
               }
             }
             if (enableAverageLayerPrediction) {
-              attrPredInterLayer[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                attrPredInterLayer[k][nodeIdx].val * weightIntraLayer
-                + attrOrgPredInterLayer[k][nodeIdx].val * weightInterLayer);
-              attrPredInterLayerTransformIt[k][nodeIdx].val = fpReduce<kFPFracBits>(
-                attrPredInterLayerTransformIt[k][nodeIdx].val * weightIntraLayer
-                + attrOrgPredInterLayerTransformIt[k][nodeIdx].val * weightInterLayer);
+              attrPredInterLayer[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                attrPredInterLayer[8 * k + nodeIdx] * weightIntraLayer
+                + attrOrgPredInterLayer[8 * k + nodeIdx] * weightInterLayer);
+              attrPredInterLayerTransformIt[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                attrPredInterLayerTransformIt[8 * k + nodeIdx] * weightIntraLayer
+                + attrOrgPredInterLayerTransformIt[8 * k + nodeIdx] * weightInterLayer);
               if (haarFlag) {
-                attrPredInterLayer[k][nodeIdx].val &= FixedPoint::kIntMask;
-                attrPredInterLayerTransformIt[k][nodeIdx].val &= FixedPoint::kIntMask;
+                attrPredInterLayer[8 * k + nodeIdx] &= kFPIntMask;
+                attrPredInterLayerTransformIt[8 * k + nodeIdx] &= kFPIntMask;
               }
             }
           }
@@ -1431,8 +1419,8 @@ uraht_process_encoder(
       }
       else {  //!enableAveragePrediction
         if (enableInterLayerPred && enableInterPred) {
-          std::copy_n(&attrPredInter[0][0], 8 * numAttrs, &attrPredInterLayer[0][0]);
-          std::copy_n(&attrPredInterTransformIt[0][0], 8 * numAttrs, &attrPredInterLayerTransformIt[0][0]);
+          std::copy_n(attrPredInter, 8 * numAttrs, attrPredInterLayer);
+          std::copy_n(attrPredInterTransformIt, 8 * numAttrs, attrPredInterLayerTransformIt);
         }
       }
 
@@ -1465,13 +1453,12 @@ uraht_process_encoder(
 
       if (attr::isNull(predMode)) {
         skipinverse = false;
-        attrBestPredIt = std::next(SampleDomainBuff.begin(), numAttrs);
-        attrBestPredTransformIt = std::next(transformBuf.begin(), numAttrs);
-        for (int k = 0; k < numAttrs; k++){
-          std::fill(attrBestPredIt[k].begin(), attrBestPredIt[k].end(), FixedPoint(0));
-          std::fill(attrBestPredTransformIt[k].begin(), attrBestPredTransformIt[k].end(), FixedPoint(0));
+        attrBestPredIt = SampleDomainBuff + 8 * numAttrs;
+        attrBestPredTransformIt = transformBuf + 8 * numAttrs;
+        std::fill_n(attrBestPredIt, 8 * numAttrs, 0);
+        std::fill_n(attrBestPredTransformIt, 8 * numAttrs, 0);
+        for (int k = 0; k < numAttrs; k++)
           PredDC[k] = 0;
-        }
       } else if (attr::isIntra(predMode)) {
         attrBestPredIt = attrPredIntra;
         attrBestPredTransformIt = attrPredIntraTransformIt;
@@ -1493,13 +1480,13 @@ uraht_process_encoder(
             for (int k = 0; k < numAttrs; k++){
               if (!attr::isNull(predMode)) {
                 PredDC[k] += fpReduce<kFPFracBits>(
-                  normSqrtW * attrBestPredIt[k][childIdx].val);
+                  normSqrtW * attrBestPredIt[8 * k + childIdx]);
               }
               if (enableACRDOInterPred) {
                 PredDCIntraLayer[k] += fpReduce<kFPFracBits>(
-                  normSqrtW * attrPredIntraLayer[k][childIdx].val);
+                  normSqrtW * attrPredIntraLayer[8 * k + childIdx]);
                 PredDCInterLayer[k] += fpReduce<kFPFracBits>(
-                  normSqrtW * attrPredInterLayer[k][childIdx].val);
+                  normSqrtW * attrPredInterLayer[8 * k + childIdx]);
               }
             }
           }
@@ -1510,13 +1497,13 @@ uraht_process_encoder(
       //  - subtract transform domain prediction (encoder)
       //  - write out/read in quantised coefficients
       //  - inverse quantise + add transform domain prediction
-      int64_t BestRecBuf[3][8] = { 0 };
-      int64_t BestRecBufIntraLayer[3][8] = { 0 };
-      int64_t BestRecBufInterLayer[3][8] = { 0 };
+      int64_t BestRecBuf[numAttrs][8] = { 0 };
+      int64_t BestRecBufIntraLayer[numAttrs][8] = { 0 };
+      int64_t BestRecBufInterLayer[numAttrs][8] = { 0 };
 
-      int64_t CoeffRecBuf[8][3] = {0};
+      int64_t CoeffRecBuf[8][numAttrs] = { 0 };
       int nodelvlSum = 0;
-      int64_t transformRecBuf[3] = {0,0,0};
+      int64_t transformRecBuf[numAttrs] = { 0 };
 
       CCRPFilter::Corr curCorr = { 0, 0, 0 };
       CCRPFilter::Corr curCorrIntra  = { 0, 0, 0 };
@@ -1530,17 +1517,17 @@ uraht_process_encoder(
         // subtract transformed prediction (skipping DC)
         if (!attr::isNull(predMode)) {
           for (int k = 0; k < numAttrs; k++) {
-            transformBuf[k][idx] -= attrBestPredTransformIt[k][idx];
+            transformBuf[8 * k + idx] -= attrBestPredTransformIt[8 * k + idx];
           }
         }
 
         if (enableACRDOInterPred) {
           for (int k = 0; k < numAttrs; k++) {
             if (!realInferInLowerLevel)
-              transformIntraLayerBuf[k][idx] -= attrPredIntraLayerTransformIt[k][idx].val;
+              transformIntraLayerBuf[k][idx] -= attrPredIntraLayerTransformIt[8 * k + idx];
 
             if (!upperInferMode)
-              transformInterLayerBuf[k][idx] -= attrPredInterLayerTransformIt[k][idx].val;
+              transformInterLayerBuf[k][idx] -= attrPredInterLayerTransformIt[8 * k + idx];
           }
         }
 
@@ -1576,7 +1563,7 @@ uraht_process_encoder(
             //auto q = Quantizer(qpLayer[std::min(k, int(quantizers.size()) - 1)] + nodeQp[idx]);
             auto quantizers = qpset.quantizers(qpLayer, nodeQp[idx]);
             auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
-            coeff = transformBuf[k][idx].round();
+            coeff = fpReduce<kFPFracBits>(transformBuf[8 * k + idx]);
             Dist2 += coeff * coeff;
 
             if (!haarFlag && rahtPredParams.cross_chroma_component_prediction_flag && !coder.isInterEnabled()) {
@@ -1585,7 +1572,7 @@ uraht_process_encoder(
                 transformRecBuf[k] = fpExpand<kFPFracBits>(
                   divExp2RoundHalfUp(q.scale(Qcoeff), kFixedPointAttributeShift));
               } else {
-                transformRecBuf[k] = transformBuf[k][idx].val - ((CccpCoeff * transformRecBuf[1]) >> 4);
+                transformRecBuf[k] = transformBuf[8 * k + idx] - ((CccpCoeff * transformRecBuf[1]) >> 4);
                 coeff = fpReduce<kFPFracBits>(transformRecBuf[k]);
                 Qcoeff = q.quantize((coeff) << kFixedPointAttributeShift);
               }
@@ -1696,7 +1683,7 @@ uraht_process_encoder(
 
         for (int k = 0; k < numAttrs; k++) {
           if (flagRDOQ) { // apply RDOQ
-            transformBuf[k][idx].val = 0;
+            transformBuf[8 * k + idx] = 0;
             transformRecBuf[k] = 0;
           }
 
@@ -1722,8 +1709,8 @@ uraht_process_encoder(
 
             CCRPPred = quantizedLuma * CCRPFilt >> kCCRPFiltPrecisionbits;
 
-            transformBuf[k][idx].val =
-              transformBuf[k][idx].val - fpExpand<kFPFracBits>(CCRPPred);
+            transformBuf[8 * k + idx] =
+              transformBuf[8 * k + idx] - fpExpand<kFPFracBits>(CCRPPred);
 
             if(enableACRDOInterPred){
               int64_t CCRPFiltIntra =
@@ -1752,7 +1739,7 @@ uraht_process_encoder(
             }
           }
 
-          auto coeff = transformBuf[k][idx].round();
+          auto coeff = fpReduce<kFPFracBits>(transformBuf[8 * k + idx]);
           assert(coeff <= INT_MAX && coeff >= INT_MIN);
           coeff =
             q.quantize(coeff << kFixedPointAttributeShift);
@@ -1885,7 +1872,7 @@ uraht_process_encoder(
                 - BestRecBufIntraLayer[k][idx]);
 
             int64_t iresidueMCPred = fpReduce<kFPFracBits>(
-              transformBuf[k][idx].val - BestRecBuf[k][idx]);
+              transformBuf[8 * k + idx] - BestRecBuf[k][idx]);
 
             int64_t idistinterLayer;
             if (!upperInferMode) {
@@ -1910,13 +1897,13 @@ uraht_process_encoder(
 
           if (haarFlag) {
             // Transform Domain Pred for Lossless case
-            BestRecBuf[k][idx] += attrBestPredTransformIt[k][idx].val;
+            BestRecBuf[k][idx] += attrBestPredTransformIt[8 * k + idx];
             if (enableACRDOInterPred) {
               if (!realInferInLowerLevel)
-                BestRecBufIntraLayer[k][idx] += attrPredIntraLayerTransformIt[k][idx].val;
+                BestRecBufIntraLayer[k][idx] += attrPredIntraLayerTransformIt[8 * k + idx];
 
               if (!upperInferMode)
-                BestRecBufInterLayer[k][idx] += attrPredInterLayerTransformIt[k][idx].val;
+                BestRecBufInterLayer[k][idx] += attrPredInterLayerTransformIt[8 * k + idx];
             }
           }
         }
@@ -2050,7 +2037,7 @@ uraht_process_encoder(
           if (haarFlag) {
             attrRecUs[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
           } else {
-            BestRecBuf[k][nodeIdx] += attrBestPredIt[k][nodeIdx].val; //Sample Domain Reconstruction
+            BestRecBuf[k][nodeIdx] += attrBestPredIt[8 * k + nodeIdx]; //Sample Domain Reconstruction
             attrRecUs[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
           }
 
@@ -2063,12 +2050,12 @@ uraht_process_encoder(
                 interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx];
             } else {
               if (!realInferInLowerLevel) {
-                BestRecBufIntraLayer[k][nodeIdx] += attrPredIntraLayer[k][nodeIdx].val;
+                BestRecBufIntraLayer[k][nodeIdx] += attrPredIntraLayer[8 * k + nodeIdx];
                 intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx];
               }
 
               if (!upperInferMode) {
-                BestRecBufInterLayer[k][nodeIdx] += attrPredInterLayer[k][nodeIdx].val;
+                BestRecBufInterLayer[k][nodeIdx] += attrPredInterLayer[8 * k + nodeIdx];
                 interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx];
               }
             }
@@ -2344,7 +2331,7 @@ regionAdaptiveHierarchicalTransform(
       bool enableIntraPred, bool enableInterPred, Mode parentMode,
       Mode neighborsMode, int numAttrs, int64_t weights[],
       std::vector<int64_t>::const_iterator attrRecParent,
-      VecAttr& transformBuf, std::vector<Mode> modes, const int qpLayer,
+      int64_t* transformBuf, std::vector<Mode> modes, const int qpLayer,
       const Qps* nodeQp, bool upperInferMode, bool inheritDC) {
       if (nodeCnt > 1) {
         if (upperInferMode) {

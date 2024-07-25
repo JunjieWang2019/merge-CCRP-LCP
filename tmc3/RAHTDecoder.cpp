@@ -320,7 +320,7 @@ intraDcPredDecoder(
   const auto& predWeightChild = rahtPredParams.predWeightChild;
   int weightSum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-  memset(predBuf, 0, 8 * numAttrs * sizeof(predBuf));
+  memset(predBuf, 0, 8 * numAttrs * sizeof(*predBuf));
 
   int64_t neighValue[3];
   int64_t childNeighValue[3];
@@ -538,6 +538,9 @@ uraht_process_decoder(
   int64_t SampleDomainBuff[2 * numAttrs * 8];
   int64_t transformBuf[2 * numAttrs * 8];
 
+  const size_t sizeofBuf = sizeof(int64_t) * numAttrs * 8
+    * (coder.isInterEnabled() ? 2 : 1);
+
   int64_t* attrPredIntra = SampleDomainBuff;
   int64_t* attrPredInter;
   int64_t* attrBestPred;
@@ -693,8 +696,8 @@ uraht_process_decoder(
       int64_t sumweights = weightsParentIt->weight;
 
       // Inter-level prediction:
-      memset(SampleDomainBuff, 0, sizeof(SampleDomainBuff));
-      memset(transformBuf, 0, sizeof(transformBuf));
+      memset(SampleDomainBuff, 0, sizeofBuf);
+      memset(transformBuf, 0, sizeofBuf);
 
       bool enableIntraPred = false;
       bool enableInterPred = false;
@@ -965,10 +968,10 @@ uraht_process_decoder(
       // per-coefficient operations:
       //  - read in quantised coefficients
       //  - inverse quantise + add transform domain prediction
-      int64_t BestRecBuf[3][8] = {0};
-      int64_t CoeffRecBuf[8][3] = {0};
+      int64_t BestRecBuf[numAttrs][8] = {0};
+      int64_t CoeffRecBuf[8][numAttrs] = {0};
       int nodelvlSum = 0;
-      int64_t transformRecBuf[3] = {0, 0, 0};
+      int64_t transformRecBuf[numAttrs] = {0};
       bool enableCCCP =
         !haarFlag && rahtPredParams.cross_chroma_component_prediction_flag
         && !coder.isInterEnabled();

@@ -41,7 +41,6 @@
 #include "io_hls.h"
 #include "quantization.h"
 #include "RAHT.h"
-#include "FixedPoint.h"
 
 #include <algorithm>
 

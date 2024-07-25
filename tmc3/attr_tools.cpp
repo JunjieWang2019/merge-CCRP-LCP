@@ -145,12 +145,13 @@ namespace attr {
     return bits;
   }
 
-  int rdoReconstruct(FixedPoint& val, FixedPoint& recons, Quantizer& q)
+  int rdoReconstruct(int64_t& val, int64_t& recons, Quantizer& q)
   {
-    auto coeff = q.quantize(val.round() << kFixedPointAttributeShift);
+    auto coeff = q.quantize(fpReduce<kFPFracBits>(val) << kFixedPointAttributeShift);
 
     if (coeff)
-      recons += divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+      recons += fpExpand<kFPFracBits>(
+        divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift));
     else
       return 0;
 
@@ -167,7 +168,7 @@ namespace attr {
   template<class Kernel>
   Mode choseMode(
     ModeEncoder& rdo,
-    const VecAttr& transformBuf,
+    const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
     const int numAttrs,
@@ -176,13 +177,13 @@ namespace attr {
     const Qps* nodeQp,
     const bool inheritDC)
   {
-    auto coefReal = transformBuf.begin();
-    auto coefPred = coefReal + numAttrs;
+    auto coefReal = transformBuf;
+    auto coefPred = coefReal + 8 * numAttrs;
     bool lossless = typeid(Kernel) == typeid(HaarKernel);
 
-    VecAttr reconsBuf(numAttrs * (modes.size() + 1));
-    auto recReal = reconsBuf.begin();
-    auto recPred = recReal + numAttrs;
+    int64_t reconsBuf[8 * numAttrs * (Mode::size + 1)];
+    auto recReal = reconsBuf;
+    auto recPred = recReal + 8 * numAttrs;
 
     // Estimate rate
     std::vector<int> rate;
@@ -190,10 +191,10 @@ namespace attr {
     std::vector<double> error;
     error.resize(modes.size(), 0.0);
 
+    std::copy_n(coefReal, 8 * numAttrs, recReal);
     for (int k = 0; k < numAttrs; k++) {
-      std::copy(coefReal[k].begin(), coefReal[k].end(), recReal[k].begin());
       for (int mode = !inheritDC; mode < modes.size(); mode++)
-        recPred[numAttrs * mode + k][0] = coefReal[k][0];
+        recPred[8 * numAttrs * mode + k] = coefReal[8 * k];
     }
 
     auto w = weights + 8 + 8 + 8;
@@ -207,12 +208,12 @@ namespace attr {
       for (int k = 0; k < numAttrs; k++) {
         auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
-        auto real = coefReal[k][i];
+        auto real = coefReal[8 * k + i];
         for (int mode = 0; mode < modes.size(); mode++) {
           auto attr = real;
-          auto& rec = recPred[numAttrs * mode + k][i];
+          auto& rec = recPred[8 * (numAttrs * mode + k) + i];
           if (mode) {
-            rec = coefPred[numAttrs * (mode - 1) + k][i];
+            rec = coefPred[8 * (numAttrs * (mode - 1) + k) + i];
             attr -= rec;
           }
           if(lossless){
@@ -221,7 +222,8 @@ namespace attr {
           else{
             rec = 0;
             rate[mode] += rdoReconstruct(attr, rec, q);
-            double diff = static_cast<double>(attr.round() - rec.round());
+            double diff = static_cast<double>(
+              fpReduce<kFPFracBits>(attr) - fpReduce<kFPFracBits>(rec));
             error[mode] += diff * diff;
           }
         }
@@ -276,7 +278,7 @@ namespace attr {
 
 template Mode choseMode<HaarKernel>(
     ModeEncoder& rdo,
-    const VecAttr& transformBuf,
+    const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
     const int numAttrs,
@@ -287,7 +289,7 @@ template Mode choseMode<HaarKernel>(
 
 template Mode choseMode<RahtKernel>(
     ModeEncoder& rdo,
-    const VecAttr& transformBuf,
+    const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
     const int numAttrs,

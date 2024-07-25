@@ -42,7 +42,6 @@
 #include "hls.h"
 #include "io_hls.h"
 #include "RAHT.h"
-#include "FixedPoint.h"
 
 namespace pcc {
 
