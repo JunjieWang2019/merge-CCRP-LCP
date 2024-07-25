@@ -968,7 +968,7 @@ uraht_process_decoder(
       // per-coefficient operations:
       //  - read in quantised coefficients
       //  - inverse quantise + add transform domain prediction
-      int64_t BestRecBuf[numAttrs][8] = {0};
+      int64_t BestRecBuf[8 * numAttrs] = {0};
       int64_t CoeffRecBuf[8][numAttrs] = {0};
       int nodelvlSum = 0;
       int64_t transformRecBuf[numAttrs] = {0};
@@ -998,11 +998,11 @@ uraht_process_decoder(
           int64_t quantizedValue = CoeffRecBuf[nodelvlSum][k];
           transformRecBuf[k] = fpExpand<kFPFracBits>(
             CoeffRecBuf[nodelvlSum][k]);
-          BestRecBuf[k][idx] = transformRecBuf[k];
+          BestRecBuf[8 * k + idx] = transformRecBuf[k];
 
           if (haarFlag) {
             // Transform Domain Pred for Lossless case
-            BestRecBuf[k][idx] += attrBestPredTransform[8 * k + idx];
+            BestRecBuf[8 * k + idx] += attrBestPredTransform[8 * k + idx];
           }
           if(CCRPFlag){
             if (k == 0) {
@@ -1017,7 +1017,7 @@ uraht_process_decoder(
 
               quantizedChroma = quantizedValue;
               quantizedChroma += CCRPPred;
-              BestRecBuf[k][idx] = fpExpand<kFPFracBits>(quantizedChroma);
+              BestRecBuf[8 * k + idx] = fpExpand<kFPFracBits>(quantizedChroma);
               skipinverse = skipinverse && (quantizedChroma == 0);
               if (k == 1)
                 curCorr.ycb += quantizedLuma * quantizedChroma;
@@ -1029,9 +1029,9 @@ uraht_process_decoder(
 
         // cross chroma
         if (enableCCCP && numAttrs == 3) {
-          BestRecBuf[2][idx] += (CccpCoeff * transformRecBuf[1]) >> 4;
+          BestRecBuf[8 * 2 + idx] += (CccpCoeff * transformRecBuf[1]) >> 4;
           CoeffRecBuf[nodelvlSum][2] = fpReduce<kFPFracBits>(
-            BestRecBuf[2][idx]);
+            BestRecBuf[8 * 2 + idx]);
         }
 
         nodelvlSum++;
@@ -1050,9 +1050,9 @@ uraht_process_decoder(
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {
           if (haarFlag)
-            BestRecBuf[k][0] = attrRecParentUsIt[k];
+            BestRecBuf[8 * k + 0] = attrRecParentUsIt[k];
           else
-            BestRecBuf[k][0] = attrRecParentUsIt[k] - PredDC[k];
+            BestRecBuf[8 * k + 0] = attrRecParentUsIt[k] - PredDC[k];
         }
       }
 
@@ -1064,13 +1064,13 @@ uraht_process_decoder(
         if (skipinverse) {
           int64_t DCerror[3];
           for (int k = 0; k < numAttrs; k++) {
-            DCerror[k] = BestRecBuf[k][0];
-            BestRecBuf[k][0] = 0;
+            DCerror[k] = BestRecBuf[8 * k + 0];
+            BestRecBuf[8 * k + 0] = 0;
           }
           for (int cidx = 0; cidx < 8; cidx++) {
             if (weights[cidx]) {
               for (int k = 0; k < numAttrs; k++)
-                BestRecBuf[k][cidx] = fpReduce<kFPFracBits>(
+                BestRecBuf[8 * k + cidx] = fpReduce<kFPFracBits>(
                   normsqrtsbuf[cidx] * DCerror[k]);
             }
           }
@@ -1088,8 +1088,8 @@ uraht_process_decoder(
         for (int k = 0; k < numAttrs; k++) {
           if (!haarFlag)
             //Sample Domain Reconstruction
-            BestRecBuf[k][nodeIdx] += attrBestPred[8 * k + nodeIdx];
-          attrRecUs[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
+            BestRecBuf[8 * k + nodeIdx] += attrBestPred[8 * k + nodeIdx];
+          attrRecUs[j * numAttrs + k] = BestRecBuf[8 * k + nodeIdx];
         }
 
         // scale values for next level
@@ -1099,13 +1099,13 @@ uraht_process_decoder(
             int shift = 5 * ((w > 1024) + (w > 1048576));
             uint64_t rsqrtWeight = fastIrsqrt(w) >> 40 - shift - kFPFracBits;
             for (int k = 0; k < numAttrs; k++)
-              BestRecBuf[k][nodeIdx] = fpReduce<kFPFracBits>(
-                (BestRecBuf[k][nodeIdx] >> shift) * rsqrtWeight);
+              BestRecBuf[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                (BestRecBuf[8 * k + nodeIdx] >> shift) * rsqrtWeight);
           }
         }
 
         for (int k = 0; k < numAttrs; k++)
-          attrRec[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
+          attrRec[j * numAttrs + k] = BestRecBuf[8* k + nodeIdx];
 
         j++;
       }

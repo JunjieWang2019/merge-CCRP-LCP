@@ -366,7 +366,7 @@ fwdTransformBlock222(int64_t* buf, const int64_t weights[])
 
 template<int numBufs, bool computekernel,  class Kernel>
 void
-invTransformBlock222(int64_t buf[3][8], const int64_t weights[])
+invTransformBlock222(int64_t* buf, const int64_t weights[])
 {
   static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
   static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
@@ -385,17 +385,16 @@ invTransformBlock222(int64_t buf[3][8], const int64_t weights[])
       if (!w0 || !w1) {
         if (!w0) {
           for (int k = 0; k < numBufs; k++)
-            buf[k][i1] = buf[k][i0];
+            buf[8 * k + i1] = buf[8 * k + i0];
         }
       }
       else {
         // actual transform
         Kernel kernel(w0, w1, !computekernel);
         for (int k = 0; k < numBufs; k++) {
-          kernel.invTransform(buf[k][i0], buf[k][i1]);
+          kernel.invTransform(buf[8 * k + i0], buf[8 * k + i1]);
         }
       }
-
     }
   }
 }

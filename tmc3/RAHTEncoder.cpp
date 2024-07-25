@@ -1078,8 +1078,8 @@ uraht_process_encoder(
         memset(transformLayerBuf, 0, sizeofLayerBuf);
       }
 
-      int64_t transformIntraLayerBuf[numAttrs][8] = {};
-      int64_t transformInterLayerBuf[numAttrs][8] = {};
+      int64_t transformIntraLayerBuf[8 * numAttrs] = {};
+      int64_t transformInterLayerBuf[8 * numAttrs] = {};
 
       int64_t weights[8 + 8 + 8 + 8 + 24] = {};
       int64_t sqrtweightsbuf[8] = {};
@@ -1319,8 +1319,8 @@ uraht_process_encoder(
       } //else normalize
 
       if (enableACRDOInterPred) {
-        std::copy_n(transformBuf, 8 * numAttrs, &transformIntraLayerBuf[0][0]);
-        std::copy_n(transformBuf, 8 * numAttrs, &transformInterLayerBuf[0][0]);
+        std::copy_n(transformBuf, 8 * numAttrs, transformIntraLayerBuf);
+        std::copy_n(transformBuf, 8 * numAttrs, transformInterLayerBuf);
       }
 
       const bool enableAveragePrediction =
@@ -1497,9 +1497,9 @@ uraht_process_encoder(
       //  - subtract transform domain prediction (encoder)
       //  - write out/read in quantised coefficients
       //  - inverse quantise + add transform domain prediction
-      int64_t BestRecBuf[numAttrs][8] = { 0 };
-      int64_t BestRecBufIntraLayer[numAttrs][8] = { 0 };
-      int64_t BestRecBufInterLayer[numAttrs][8] = { 0 };
+      int64_t BestRecBuf[8 * numAttrs] = { 0 };
+      int64_t BestRecBufIntraLayer[8 * numAttrs] = { 0 };
+      int64_t BestRecBufInterLayer[8 * numAttrs] = { 0 };
 
       int64_t CoeffRecBuf[8][numAttrs] = { 0 };
       int nodelvlSum = 0;
@@ -1524,10 +1524,10 @@ uraht_process_encoder(
         if (enableACRDOInterPred) {
           for (int k = 0; k < numAttrs; k++) {
             if (!realInferInLowerLevel)
-              transformIntraLayerBuf[k][idx] -= attrPredIntraLayerTransformIt[8 * k + idx];
+              transformIntraLayerBuf[8 * k + idx] -= attrPredIntraLayerTransformIt[8 * k + idx];
 
             if (!upperInferMode)
-              transformInterLayerBuf[k][idx] -= attrPredInterLayerTransformIt[8 * k + idx];
+              transformInterLayerBuf[8 * k + idx] -= attrPredInterLayerTransformIt[8 * k + idx];
           }
         }
 
@@ -1593,7 +1593,7 @@ uraht_process_encoder(
             if (enableACRDOInterPred) {
               if (!upperInferMode) {
                 auto interLayerCoeff = fpReduce<kFPFracBits>(
-                  transformInterLayerBuf[k][idx]);
+                  transformInterLayerBuf[8 * k + idx]);
                 interLayerDist2 += interLayerCoeff * interLayerCoeff;
                 auto interLayerQcoeff =
                   q.quantize(interLayerCoeff << kFixedPointAttributeShift);
@@ -1611,7 +1611,7 @@ uraht_process_encoder(
 
               if (!realInferInLowerLevel) {
                 auto intraLayerCoeff = fpReduce<kFPFracBits>(
-                  transformIntraLayerBuf[k][idx]);
+                  transformIntraLayerBuf[8 * k + idx]);
                 intraLayerDist2 += intraLayerCoeff * intraLayerCoeff;
                 auto intraLayerQcoeff =
                   q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
@@ -1690,12 +1690,12 @@ uraht_process_encoder(
           if (enableACRDOInterPred) {
             if (!realInferInLowerLevel) {
               if (intraLayerFlagRDOQ)
-                transformIntraLayerBuf[k][idx] = 0;
+                transformIntraLayerBuf[8 * k + idx] = 0;
             }
 
             if (!upperInferMode) {
               if (interLayerFlagRDOQ)
-                transformInterLayerBuf[k][idx] = 0;
+                transformInterLayerBuf[8 * k + idx] = 0;
             }
           }
 
@@ -1721,8 +1721,8 @@ uraht_process_encoder(
               CCRPPredIntra =
                 quantizedLumaIntra * CCRPFiltIntra >> kCCRPFiltPrecisionbits;
 
-              transformIntraLayerBuf[k][idx] =
-                transformIntraLayerBuf[k][idx]
+              transformIntraLayerBuf[8 * k + idx] =
+                transformIntraLayerBuf[8 * k + idx]
                 - fpExpand<kFPFracBits>(CCRPPredIntra);
 
               int64_t CCRPFiltInter =
@@ -1733,8 +1733,8 @@ uraht_process_encoder(
               CCRPPredInter =
                 quantizedLumaInter * CCRPFiltInter >> kCCRPFiltPrecisionbits;
 
-              transformInterLayerBuf[k][idx] =
-                transformInterLayerBuf[k][idx]
+              transformInterLayerBuf[8 * k + idx] =
+                transformInterLayerBuf[8 * k + idx]
                 - fpExpand<kFPFracBits>(CCRPPredInter);
             }
           }
@@ -1746,7 +1746,7 @@ uraht_process_encoder(
 
           if (!haarFlag && rahtPredParams.cross_chroma_component_prediction_flag && !coder.isInterEnabled()) {
             if (k != 2) {
-              BestRecBuf[k][idx] = transformRecBuf[k];
+              BestRecBuf[8 * k + idx] = transformRecBuf[k];
             } else {
               coeff = fpReduce<kFPFracBits>(transformRecBuf[k]);
               coeff = q.quantize(coeff << kFixedPointAttributeShift);
@@ -1754,14 +1754,14 @@ uraht_process_encoder(
                 divExp2RoundHalfUp(
                   q.scale(coeff), kFixedPointAttributeShift));
               transformRecBuf[k]+= CccpCoeff * transformRecBuf[1] >> 4;
-              BestRecBuf[k][idx] = transformRecBuf[k];
+              BestRecBuf[8 * k + idx] = transformRecBuf[k];
             }
             CoeffRecBuf[nodelvlSum][k] = fpReduce<kFPFracBits>(
               transformRecBuf[k]);
           } else {
             int64_t quantizedValue =
               divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
-            BestRecBuf[k][idx] = fpExpand<kFPFracBits>(quantizedValue);
+            BestRecBuf[8 * k + idx] = fpExpand<kFPFracBits>(quantizedValue);
 
             if(CCRPFlag){
               if (k == 0) {
@@ -1770,7 +1770,7 @@ uraht_process_encoder(
               } else {
                 quantizedChroma = quantizedValue;
                 quantizedChroma += CCRPPred;
-                BestRecBuf[k][idx] = fpExpand<kFPFracBits>(quantizedChroma);
+                BestRecBuf[8 * k + idx] = fpExpand<kFPFracBits>(quantizedChroma);
                 skipinverse = skipinverse && (quantizedChroma == 0);
                 if (k == 1)
                   curCorr.ycb += quantizedLuma * quantizedChroma;
@@ -1792,7 +1792,7 @@ uraht_process_encoder(
           if (enableACRDOInterPred) {
             if (!realInferInLowerLevel) {
               auto intraLayerCoeff = fpReduce<kFPFracBits>(
-                transformIntraLayerBuf[k][idx]);
+                transformIntraLayerBuf[8 * k + idx]);
               assert(intraLayerCoeff <= INT_MAX && intraLayerCoeff >= INT_MIN);
               intraLayerCoeff =
                 q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
@@ -1803,7 +1803,7 @@ uraht_process_encoder(
               skipinverseintralayer = skipinverseintralayer && (intraLayerCoeff == 0);
               int64_t quantizedValueIntra =
                 divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
-              BestRecBufIntraLayer[k][idx] = fpExpand<kFPFracBits>(quantizedValueIntra);
+              BestRecBufIntraLayer[8 * k + idx] = fpExpand<kFPFracBits>(quantizedValueIntra);
               intraLayerEstimate.resStatUpdate(intraLayerCoeff, k);
               if(CCRPFlag){
                 if (k == 0) {
@@ -1812,7 +1812,7 @@ uraht_process_encoder(
                 } else {
                   quantizedChromaIntra = quantizedValueIntra;
                   quantizedChromaIntra += CCRPPredIntra;
-                  BestRecBufIntraLayer[k][idx] = fpExpand<kFPFracBits>(quantizedChromaIntra);
+                  BestRecBufIntraLayer[8 * k + idx] = fpExpand<kFPFracBits>(quantizedChromaIntra);
                   skipinverseintralayer = skipinverseintralayer && (quantizedChromaIntra == 0);
                   if (k == 1)
                     curCorrIntra.ycb += quantizedLumaIntra * quantizedChromaIntra;
@@ -1824,7 +1824,7 @@ uraht_process_encoder(
 
             if (!upperInferMode) {
               auto interLayerCoeff = fpReduce<kFPFracBits>(
-                transformInterLayerBuf[k][idx]);
+                transformInterLayerBuf[8 * k + idx]);
               assert(interLayerCoeff <= INT_MAX && interLayerCoeff >= INT_MIN);
               interLayerCoeff =
                 q.quantize(interLayerCoeff << kFixedPointAttributeShift);
@@ -1836,7 +1836,7 @@ uraht_process_encoder(
               // still in RAHT domain
               int64_t quantizedValueInter =
                 divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift);
-              BestRecBufInterLayer[k][idx] = fpExpand<kFPFracBits>(quantizedValueInter);
+              BestRecBufInterLayer[8 * k + idx] = fpExpand<kFPFracBits>(quantizedValueInter);
 
               interLayerEstimate.resStatUpdate(interLayerCoeff, k);
 
@@ -1847,7 +1847,7 @@ uraht_process_encoder(
                 } else {
                   quantizedChromaInter = quantizedValueInter;
                   quantizedChromaInter += CCRPPredInter;
-                  BestRecBufInterLayer[k][idx] = fpExpand<kFPFracBits>(quantizedChromaInter);
+                  BestRecBufInterLayer[8 * k + idx] = fpExpand<kFPFracBits>(quantizedChromaInter);
                   skipinverseinterlayer = skipinverseinterlayer && (quantizedChromaInter == 0);
                   if (k == 1)
                     curCorrInter.ycb += quantizedLumaInter * quantizedChromaInter;
@@ -1861,18 +1861,18 @@ uraht_process_encoder(
             if (!upperInferMode)
               // quantization reconstruction error
               iresidueinterLayer = fpReduce<kFPFracBits>(
-                transformInterLayerBuf[k][idx]
-                - BestRecBufInterLayer[k][idx]);
+                transformInterLayerBuf[8 * k + idx]
+                - BestRecBufInterLayer[8 * k + idx]);
 
             int64_t iresidueintraLayer = 0;
             if (!realInferInLowerLevel)
               // quantization reconstruction error
               iresidueintraLayer = fpReduce<kFPFracBits>(
-                transformIntraLayerBuf[k][idx]
-                - BestRecBufIntraLayer[k][idx]);
+                transformIntraLayerBuf[8 * k + idx]
+                - BestRecBufIntraLayer[8 * k + idx]);
 
             int64_t iresidueMCPred = fpReduce<kFPFracBits>(
-              transformBuf[8 * k + idx] - BestRecBuf[k][idx]);
+              transformBuf[8 * k + idx] - BestRecBuf[8 * k + idx]);
 
             int64_t idistinterLayer;
             if (!upperInferMode) {
@@ -1897,13 +1897,13 @@ uraht_process_encoder(
 
           if (haarFlag) {
             // Transform Domain Pred for Lossless case
-            BestRecBuf[k][idx] += attrBestPredTransformIt[8 * k + idx];
+            BestRecBuf[8 * k + idx] += attrBestPredTransformIt[8 * k + idx];
             if (enableACRDOInterPred) {
               if (!realInferInLowerLevel)
-                BestRecBufIntraLayer[k][idx] += attrPredIntraLayerTransformIt[8 * k + idx];
+                BestRecBufIntraLayer[8 * k + idx] += attrPredIntraLayerTransformIt[8 * k + idx];
 
               if (!upperInferMode)
-                BestRecBufInterLayer[k][idx] += attrPredInterLayerTransformIt[8 * k + idx];
+                BestRecBufInterLayer[8 * k + idx] += attrPredInterLayerTransformIt[8 * k + idx];
             }
           }
         }
@@ -1928,24 +1928,24 @@ uraht_process_encoder(
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {
           if (haarFlag) {
-            BestRecBuf[k][0] = attrRecParentUsIt[k];
+            BestRecBuf[8 * k + 0] = attrRecParentUsIt[k];
           } else {
-            BestRecBuf[k][0] = attrRecParentUsIt[k] - PredDC[k];
+            BestRecBuf[8 * k + 0] = attrRecParentUsIt[k] - PredDC[k];
           }
 
           if (enableACRDOInterPred ) {
             if (haarFlag) {
               if (!realInferInLowerLevel)
-                BestRecBufIntraLayer[k][0] = attrRecParentUsIt[k];
+                BestRecBufIntraLayer[8 * k + 0] = attrRecParentUsIt[k];
 
               if (!upperInferMode)
-                BestRecBufInterLayer[k][0] = attrRecParentUsIt[k];
+                BestRecBufInterLayer[8 * k + 0] = attrRecParentUsIt[k];
             } else {
               if (!realInferInLowerLevel)
-                BestRecBufIntraLayer[k][0] = attrRecParentUsIt[k] - PredDCIntraLayer[k];
+                BestRecBufIntraLayer[8 * k + 0] = attrRecParentUsIt[k] - PredDCIntraLayer[k];
 
               if (!upperInferMode)
-                BestRecBufInterLayer[k][0] = attrRecParentUsIt[k] - PredDCInterLayer[k];
+                BestRecBufInterLayer[8 * k + 0] = attrRecParentUsIt[k] - PredDCInterLayer[k];
             }
           }
         }
@@ -1963,8 +1963,8 @@ uraht_process_encoder(
         if (skipinverse) {
           int64_t DCerror[3];
           for (int k = 0; k < numAttrs; k++) {
-            DCerror[k] = BestRecBuf[k][0];
-            BestRecBuf[k][0] = 0;
+            DCerror[k] = BestRecBuf[8 * k + 0];
+            BestRecBuf[8 * k + 0] = 0;
           }
           for (int cidx = 0; cidx < 8; cidx++) {
             if (!weights[cidx])
@@ -1973,7 +1973,7 @@ uraht_process_encoder(
             for (int k = 0; k < numAttrs; k++) {
               int64_t Correctionterm = fpReduce<kFPFracBits>(
                 normsqrtsbuf[cidx] * DCerror[k]);
-              BestRecBuf[k][cidx] = Correctionterm;
+              BestRecBuf[8 * k + cidx] = Correctionterm;
             }
           }
         } else {
@@ -1986,8 +1986,8 @@ uraht_process_encoder(
             if (skipinverseintralayer) {
               int64_t DCerror[3];
               for (int k = 0; k < numAttrs; k++) {
-                DCerror[k] = BestRecBufIntraLayer[k][0];
-                BestRecBufIntraLayer[k][0] = 0;
+                DCerror[k] = BestRecBufIntraLayer[8 * k + 0];
+                BestRecBufIntraLayer[8 * k + 0] = 0;
               }
               for (int cidx = 0; cidx < 8; cidx++) {
                 if (!weights[cidx])
@@ -1996,7 +1996,7 @@ uraht_process_encoder(
                 for (int k = 0; k < numAttrs; k++) {
                   int64_t Correctionterm = fpReduce<kFPFracBits>(
                     normsqrtsbuf[cidx] * DCerror[k]);
-                  BestRecBufIntraLayer[k][cidx] = Correctionterm;
+                  BestRecBufIntraLayer[8 * k + cidx] = Correctionterm;
                 }
               }
             } else {
@@ -2009,8 +2009,8 @@ uraht_process_encoder(
             if (skipinverseinterlayer) {
               int64_t DCerror[3];
               for (int k = 0; k < numAttrs; k++) {
-                DCerror[k] = BestRecBufInterLayer[k][0];
-                BestRecBufInterLayer[k][0] = 0;
+                DCerror[k] = BestRecBufInterLayer[8 * k + 0];
+                BestRecBufInterLayer[8 * k + 0] = 0;
               }
               for (int cidx = 0; cidx < 8; cidx++) {
                 if (!weights[cidx])
@@ -2019,7 +2019,7 @@ uraht_process_encoder(
                 for (int k = 0; k < numAttrs; k++) {
                   int64_t Correctionterm = fpReduce<kFPFracBits>(
                     normsqrtsbuf[cidx] * DCerror[k]);
-                  BestRecBufInterLayer[k][cidx] = Correctionterm;
+                  BestRecBufInterLayer[8 * k + cidx] = Correctionterm;
                 }
               }
             } else {
@@ -2035,28 +2035,28 @@ uraht_process_encoder(
 
         for (int k = 0; k < numAttrs; k++) {
           if (haarFlag) {
-            attrRecUs[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
+            attrRecUs[j * numAttrs + k] = BestRecBuf[8 * k + nodeIdx];
           } else {
-            BestRecBuf[k][nodeIdx] += attrBestPredIt[8 * k + nodeIdx]; //Sample Domain Reconstruction
-            attrRecUs[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
+            BestRecBuf[8 * k + nodeIdx] += attrBestPredIt[8 * k + nodeIdx]; //Sample Domain Reconstruction
+            attrRecUs[j * numAttrs + k] = BestRecBuf[8 * k + nodeIdx];
           }
 
           if (enableACRDOInterPred ) {
             if (haarFlag) {
               if (!realInferInLowerLevel)
-                intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx];
+                intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[8 * k + nodeIdx];
 
               if (!upperInferMode)
-                interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx];
+                interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[8 * k + nodeIdx];
             } else {
               if (!realInferInLowerLevel) {
-                BestRecBufIntraLayer[k][nodeIdx] += attrPredIntraLayer[8 * k + nodeIdx];
-                intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx];
+                BestRecBufIntraLayer[8 * k + nodeIdx] += attrPredIntraLayer[8 * k + nodeIdx];
+                intraLayerAttrRecUs[j * numAttrs + k] = BestRecBufIntraLayer[8 * k + nodeIdx];
               }
 
               if (!upperInferMode) {
-                BestRecBufInterLayer[k][nodeIdx] += attrPredInterLayer[8 * k + nodeIdx];
-                interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx];
+                BestRecBufInterLayer[8 * k + nodeIdx] += attrPredInterLayer[8 * k + nodeIdx];
+                interLayerAttrRecUs[j * numAttrs + k] = BestRecBufInterLayer[8 * k + nodeIdx];
               }
             }
           }
@@ -2069,28 +2069,28 @@ uraht_process_encoder(
             int shift = 5 * ((w > 1024) + (w > 1048576));
             uint64_t rsqrtWeight = fastIrsqrt(w) >> 40 - shift - kFPFracBits;
             for (int k = 0; k < numAttrs; k++) {
-              BestRecBuf[k][nodeIdx] = fpReduce<kFPFracBits>(
-                (BestRecBuf[k][nodeIdx] >> shift) * rsqrtWeight);
+              BestRecBuf[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                (BestRecBuf[8 * k + nodeIdx] >> shift) * rsqrtWeight);
               if (enableACRDOInterPred) {
                 if (!realInferInLowerLevel)
-                  BestRecBufIntraLayer[k][nodeIdx] = fpReduce<kFPFracBits>(
-                    (BestRecBufIntraLayer[k][nodeIdx] >> shift) * rsqrtWeight);
+                  BestRecBufIntraLayer[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                    (BestRecBufIntraLayer[8 * k + nodeIdx] >> shift) * rsqrtWeight);
                 if (!upperInferMode)
-                  BestRecBufInterLayer[k][nodeIdx] = fpReduce<kFPFracBits>(
-                    (BestRecBufInterLayer[k][nodeIdx] >> shift) * rsqrtWeight);
+                  BestRecBufInterLayer[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
+                    (BestRecBufInterLayer[8 * k + nodeIdx] >> shift) * rsqrtWeight);
               }
             }
           }
         }
 
         for (int k = 0; k < numAttrs; k++) {
-          attrRec[j * numAttrs + k] = BestRecBuf[k][nodeIdx];
+          attrRec[j * numAttrs + k] = BestRecBuf[8 * k + nodeIdx];
           if(enableACRDOInterPred) {
             if (!realInferInLowerLevel)
-              intraLayerAttrRec[j * numAttrs + k] = BestRecBufIntraLayer[k][nodeIdx];
+              intraLayerAttrRec[j * numAttrs + k] = BestRecBufIntraLayer[8 * k + nodeIdx];
 
             if (!upperInferMode)
-              interLayerAttrRec[j * numAttrs + k] = BestRecBufInterLayer[k][nodeIdx];
+              interLayerAttrRec[j * numAttrs + k] = BestRecBufInterLayer[8 * k + nodeIdx];
           }
         }
         j++;
