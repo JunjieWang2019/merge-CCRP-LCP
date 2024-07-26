@@ -1278,6 +1278,10 @@ sanitizeEncoderOpts(
       err.warn() << "Localized attributes slab thickness must be greater than 0\n";
       params.encoder.localized_attributes_slab_thickness = 1;
     }
+    for (auto trisoupNodeSize : params.encoder.trisoupNodeSizes)
+      if (params.encoder.localized_attributes_slab_thickness % trisoupNodeSize)
+        err.error() << "Localized attributes slab thickness must be multiple of"
+          " trisoup node size\n";
     params.encoder.sps.localized_attributes_slab_thickness_minus1
       = params.encoder.localized_attributes_slab_thickness - 1;
   }
