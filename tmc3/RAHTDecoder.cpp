@@ -379,8 +379,8 @@ uraht_process_decoder(
   const Qps* pointQpOffsets,
   const int numPoints,
   int64_t* positions,
-  int* attributes,
-  int* attributes_mc,
+  attr_t* attributes,
+  const attr_t* attributes_mc,
   int32_t* coeffBufIt,
   attr::ModeDecoder& coder)
 {
@@ -1078,8 +1078,10 @@ uraht_process_decoder(
   // -------------- process duplicate points at level 0 --------------
   if (flagNoDuplicate) { // write-back reconstructed attributes
     auto attrOut = attributes;
-    for (auto attr : attrRec)
-      *attrOut++ = attr + kFPOneHalf >> kFPFracBits;
+    for (auto attr : attrRec) {
+      auto v = attr + kFPOneHalf >> kFPFracBits;
+      *attrOut++ = PCCClip(v, 0, std::numeric_limits<attr_t>::max());
+    }
     return;
   }
 
@@ -1150,8 +1152,10 @@ uraht_process_decoder(
   // write-back reconstructed attributes
   assert(attrRec.size() == numAttrs * numPoints);
   auto attrOut = attributes;
-  for (auto attr : attrRec)
-    *attrOut++ = attr + kFPOneHalf >> kFPFracBits;
+  for (auto attr : attrRec) {
+    auto v = attr + kFPOneHalf >> kFPFracBits;
+    *attrOut++ = PCCClip(v, 0, std::numeric_limits<attr_t>::max());
+  }
 }
 
 //============================================================================
@@ -1180,8 +1184,8 @@ regionAdaptiveHierarchicalInverseTransform(
   const int attribCount,
   const int voxelCount,
   int64_t* mortonCode,
-  int* attributes,
-  int* attributes_mc,
+  attr_t* attributes,
+  const attr_t* attributes_mc,
   int* coefficients,
   attr::ModeDecoder& decoder)
 {

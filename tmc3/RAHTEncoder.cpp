@@ -614,8 +614,8 @@ uraht_process_encoder(
   const Qps* pointQpOffsets,
   int numPoints,
   int64_t* positions,
-  int* attributes,
-  int* attributes_mc,
+  attr_t* attributes,
+  const attr_t* attributes_mc,
   int32_t* coeffBufIt,
   attr::ModeEncoder& coder,
   GetMode getMode)
@@ -2183,8 +2183,10 @@ uraht_process_encoder(
   // write-back reconstructed attributes
   assert(attrRec.size() == numAttrs * numPoints);
   auto attrOut = attributes;
-  for (auto attr : attrRec)
-    *attrOut++ = attr + kFPOneHalf >> kFPFracBits;
+  for (auto attr : attrRec) {
+    auto v = attr + kFPOneHalf >> kFPFracBits;
+    *attrOut++ = PCCClip(v, 0, std::numeric_limits<attr_t>::max());
+  }
 }
 
 //============================================================================
@@ -2215,8 +2217,8 @@ regionAdaptiveHierarchicalTransform(
   const int attribCount,
   const int voxelCount,
   int64_t* mortonCode,
-  int* attributes,
-  int* attributes_mc,
+  attr_t* attributes,
+  const attr_t* attributes_mc,
   int* coefficients,
   attr::ModeEncoder& encoder)
 {

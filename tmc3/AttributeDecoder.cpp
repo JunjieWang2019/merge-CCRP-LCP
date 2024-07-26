@@ -497,7 +497,7 @@ decodeRaht(
 
   // Morton codes
   std::vector<int64_t> mortonCode;
-  std::vector<int> attributes;
+  std::vector<attr_t> attributes;
   auto indexOrd =
     sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
   attributes.resize(voxelCount * attribCount);
@@ -584,7 +584,7 @@ AttributeDecoder::decodeRAHTperBlock(
 
   // Morton codes
   std::vector<int64_t> mortonCode;
-  std::vector<int> attributes;
+  std::vector<attr_t> attributes;
   auto indexOrd =
     sortedPointCloud(attribCount, pointCloud, mortonCode, attributes);
   attributes.resize(voxelCount * attribCount);

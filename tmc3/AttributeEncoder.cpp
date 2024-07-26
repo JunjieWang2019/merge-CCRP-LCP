@@ -657,7 +657,7 @@ rahtEntropyEncoder(
   const int voxelCount,
   const int* coefficients,
   const int* indexOrd,
-  const int* attributes,
+  const attr_t* attributes,
   PCCResidualsEncoder& encoder,
   attr::ModeEncoder& predEncoder,
   PCCPointSet3& pointCloud)
@@ -741,7 +741,7 @@ encodeRaht(
 
   // Allocate arrays.
   std::vector<int64_t> mortonCode;
-  std::vector<int> attributes;
+  std::vector<attr_t> attributes;
   std::vector<Qps> pointQpOffsets;
   std::vector<int> coefficients(attribCount * voxelCount);
 
@@ -812,7 +812,7 @@ AttributeEncoder::encodeRAHTperBlock(
 
   // Allocate arrays.
   std::vector<int64_t> mortonCode;
-  std::vector<int> attributes;
+  std::vector<attr_t> attributes;
   std::vector<Qps> pointQpOffsets;
   std::vector<int> coefficients(attribCount * voxelCount);
 

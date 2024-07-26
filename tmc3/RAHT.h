@@ -56,8 +56,8 @@ void regionAdaptiveHierarchicalTransform(
   const int attribCount,
   const int voxelCount,
   int64_t* mortonCode,
-  int* attributes,
-  int* attributes_mc,
+  attr_t* attributes,
+  const attr_t* attributes_mc,
   int* coefficients,
   attr::ModeEncoder& encoder);
 
@@ -69,8 +69,8 @@ void regionAdaptiveHierarchicalInverseTransform(
   const int attribCount,
   const int voxelCount,
   int64_t* mortonCode,
-  int* attributes,
-  int* attributes_mc,
+  attr_t* attributes,
+  const attr_t* attributes_mc,
   int* coefficients,
   attr::ModeDecoder& decoder);
 
@@ -249,7 +249,7 @@ template<bool haarFlag, int numAttrs, typename UrahtNode>
 void
 translateLayer(
   std::vector<int64_t>& layerAttr,
-  int* attr_mc,
+  const attr_t* attr_mc,
   std::vector<UrahtNode>& weightsLf)
 {
   // associate mean attribute of MC PC to each unique node

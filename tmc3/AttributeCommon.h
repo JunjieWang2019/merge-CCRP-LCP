@@ -51,7 +51,7 @@ std::vector<int> sortedPointCloud(
   const int attribCount,
   const PCCPointSet3& pointCloud,
   std::vector<int64_t>& mortonCode,
-  std::vector<int>& attributes);
+  std::vector<attr_t>& attributes);
 
 //---------------------------------------------------------------------------
 
@@ -59,7 +59,7 @@ void sortedPointCloud(
   const int attribCount,
   const PCCPointSet3& pointCloud,
   const std::vector<int>& indexOrd,
-  std::vector<int>& attributes);
+  std::vector<attr_t>& attributes);
 
 //---------------------------------------------------------------------------
 

@@ -340,7 +340,7 @@ struct InterPredParams {
   // Motion
   MVField mvField;
   // TMP hack
-  mutable std::vector<int> attributes_mc;
+  mutable std::vector<attr_t> attributes_mc;
 };
 
 //============================================================================
