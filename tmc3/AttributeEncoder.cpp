@@ -776,8 +776,7 @@ encodeRaht(
     // Transform.
     regionAdaptiveHierarchicalTransform(
       aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
-      voxelCount, mortonCode.data(), attributes.data(), voxelCount_mc,
-      mortonCode.data(),
+      voxelCount, mortonCode.data(), attributes.data(),
       attributes_mc.data(), coefficients.data(), predEncoder);
   } else {
     predEncoder.reset();
@@ -786,7 +785,7 @@ encodeRaht(
     // Transform.
     regionAdaptiveHierarchicalTransform(
       aps.rahtPredParams, abh, qpSet, pointQpOffsets.data(), attribCount,
-      voxelCount, mortonCode.data(), attributes.data(), 0, nullptr, nullptr,
+      voxelCount, mortonCode.data(), attributes.data(), nullptr,
       coefficients.data(), predEncoder);
   }
 
@@ -858,8 +857,6 @@ AttributeEncoder::encodeRAHTperBlock(
         attribCount, block_pc_end - block_pc_begin,
         mortonCode.data() + block_pc_begin,
         attributes.data() + attribCount * block_pc_begin,
-        block_pc_end - block_pc_begin,
-        mortonCode.data() + block_pc_begin,
         attributes_mc.data() + attribCount * block_pc_begin,
         coefficients.data() + attribCount * block_pc_begin, predEncoder);
 
@@ -890,7 +887,7 @@ AttributeEncoder::encodeRAHTperBlock(
         aps.rahtPredParams, abh, qpSet, pointQpOffsets.data() + block_pc_begin,
         attribCount, block_pc_end - block_pc_begin,
         mortonCode.data() + block_pc_begin,
-        attributes.data() + attribCount * block_pc_begin, 0, nullptr, nullptr,
+        attributes.data() + attribCount * block_pc_begin, nullptr,
         coefficients.data() + attribCount * block_pc_begin, predEncoder);
 
       rahtEntropyEncoder<attribCount>(

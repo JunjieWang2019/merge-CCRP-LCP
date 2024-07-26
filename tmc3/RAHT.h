@@ -57,8 +57,6 @@ void regionAdaptiveHierarchicalTransform(
   const int voxelCount,
   int64_t* mortonCode,
   int* attributes,
-  const int voxelCount_mc,
-  int64_t* mortonCode_mc,
   int* attributes_mc,
   int* coefficients,
   attr::ModeEncoder& encoder);
@@ -241,6 +239,60 @@ scanBlock(int64_t weights[], T mapFn)
   for (int i = 1; i < 8; i++) {
     if (weights[24 + kRahtScanOrder[i]])
       mapFn(kRahtScanOrder[i]);
+  }
+}
+
+//============================================================================
+// translateLayer
+
+template<bool haarFlag, int numAttrs, typename UrahtNode>
+void
+translateLayer(
+  std::vector<int64_t>& layerAttr,
+  int* attr_mc,
+  std::vector<UrahtNode>& weightsLf)
+{
+  // associate mean attribute of MC PC to each unique node
+  layerAttr.resize(weightsLf.size() * numAttrs);
+  auto layer = layerAttr.begin();
+  for (int i = 0, j = 0;
+      i < weightsLf.size();
+      i++, layer += numAttrs) {
+
+    for (int k = 0; k < numAttrs; k++)
+      layer[k] = -1;
+
+    int weight = weightsLf[i].weight;
+    int jEnd = j + weight;
+
+    auto attr = &attr_mc[numAttrs * j];
+
+    std::array<int, numAttrs> sumAtt;
+    std::fill_n(sumAtt.begin(), numAttrs, 0);
+
+    for (; j < jEnd; ++j) {
+      for (int k = 0; k < numAttrs; k++)
+        sumAtt[k] += *attr++;
+    }
+
+    if (weight) {
+      if (haarFlag)
+        for (int k = 0; k < numAttrs; k++)
+          layer[k] = int64_t(sumAtt[k]);
+      else
+        for (int k = 0; k < numAttrs; k++)
+          layer[k] = int64_t(sumAtt[k]) << kFPFracBits;
+
+      if (weight != 1) {
+        for (int k = 0; k < numAttrs; k++) {
+          layer[k] /= weight;
+        }
+      }
+
+      if (haarFlag)
+        for (int k = 0; k < numAttrs; k++)
+          layer[k] <<= kFPFracBits;
+    }
   }
 }
 

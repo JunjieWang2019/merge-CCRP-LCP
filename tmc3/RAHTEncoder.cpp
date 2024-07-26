@@ -572,88 +572,6 @@ intraDcPred(
 }
 
 //============================================================================
-// translateLayer
-
-template<bool haarFlag, int numAttrs>
-void
-translateLayer(
-  std::vector<int64_t>& layerAttr,
-  size_t level,
-  size_t count_rf,
-  size_t count_mc,
-  int64_t* morton_rf,
-  int64_t* morton_mc,
-  int* attr_mc,
-  size_t layerSize=0)
-{
-  std::vector<int64_t> morton_layer;
-  if (layerSize)
-    morton_layer.reserve(layerSize / numAttrs);
-  else
-    morton_layer.reserve(count_rf);
-
-
-  // extract unique nodes in current frame at current depth
-  int64_t prev = -1;
-  size_t i = 0;
-  for (size_t n = 0; n < count_rf; n++) {
-    int64_t curr = morton_rf[n] >> level;
-    if (curr != prev) {
-      prev = curr;
-      morton_layer.push_back(curr);
-    }
-  }
-
-  count_rf = morton_layer.size();
-  layerAttr.resize(count_rf * numAttrs);
-
-
-  // associate mean attribute of MC PC to each unique node
-  i = 0;
-  size_t j = 0;
-  while (i < count_rf && j < count_mc) {
-    prev = morton_layer[i];
-
-    while (j < count_mc && prev >(morton_mc[j] >> level))
-      j++;
-
-    int64_t weight = 0;
-    auto layer = std::next(layerAttr.begin(), numAttrs * i);
-    for (size_t k = 0; k < numAttrs; k++)
-      layer[k] = 0;
-
-    while (j < count_mc && prev == (morton_mc[j] >> level)) {
-      weight++;
-      auto attr = &attr_mc[numAttrs * j];
-      for (size_t k = 0; k < numAttrs; k++)
-        layer[k] += static_cast<int64_t>(attr[k]) << kFPFracBits;
-      j++;
-    }
-
-    if (weight > 1) {
-      for (size_t k = 0; k < numAttrs; k++) {
-        layer[k] /= weight;
-        if (haarFlag)
-          layer[k] = (layer[k] >> kFPFracBits) << kFPFracBits;
-      }
-    }
-    else if (!weight) {
-      for (size_t k = 0; k < numAttrs; k++)
-        layer[k] = -1;
-    }
-
-    i++;
-    /*  // !!useles as there is no duplicate in morton_layer ?!
-    while (i < count_rf && prev == morton_layer[i]) {
-      std::copy(
-        layer, layer + numAttrs,
-        std::next(layerAttr.begin(), numAttrs * i));
-      i++;
-    }*/
-  }
-}
-
-//============================================================================
 // Tests if two positions are siblings at the given tree level
 
 inline static bool
@@ -697,8 +615,6 @@ uraht_process_encoder(
   int numPoints,
   int64_t* positions,
   int* attributes,
-  int numPoints_mc,
-  int64_t* positions_mc,
   int* attributes_mc,
   int32_t* coeffBufIt,
   attr::ModeEncoder& coder,
@@ -731,7 +647,7 @@ uraht_process_encoder(
   std::vector<int64_t> attrsLf, attrsHf;
 
   bool enableACInterPred =
-    rahtPredParams.enable_inter_prediction && (numPoints_mc > 0);
+    rahtPredParams.enable_inter_prediction && attributes_mc;
   bool enableACRDOInterPred =
     rahtPredParams.raht_enable_inter_intra_layer_RDO
     && enableACInterPred && rahtPredParams.prediction_enabled_flag;
@@ -959,8 +875,7 @@ uraht_process_encoder(
     // Motion compensation
     if (coder.isInterEnabled()) {
       translateLayer<haarFlag, numAttrs>(
-        interTree, level, numPoints, numPoints_mc, positions, positions_mc,
-        attributes_mc);
+        interTree, attributes_mc, weightsLf);
     }
 
     // initial scan position of the coefficient buffer
@@ -1003,7 +918,7 @@ uraht_process_encoder(
     std::swap(numParentNeigh, numGrandParentNeigh);
     auto numGrandParentNeighIt = numGrandParentNeigh.cbegin();
 
-    if (numPoints_mc) {
+    if (attributes_mc) {
       assert(interTree.size() <= attrRec.size());
       std::copy(interTree.begin(), interTree.end(), attrRec.begin());
     }
@@ -1164,36 +1079,19 @@ uraht_process_encoder(
       weightsParentIt->occupancy = occupancy;
       Mode neighborsMode = Mode::size;
       if (enableInterPred || enableInterLayerPred) {
-        bool notCalculatedParentDc = true;
+        enableInterPred = true;
+
         auto pred = attrPredInter;
         auto inter = std::next(
           interTree.begin(),
           std::distance(weightsLf.begin(), weightsParentIt->firstChild)
             * numAttrs);
 
-        uint8_t availablePrediction = 0;
-        int64_t parentDc[3];
         for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
-          if (!((occupancy >> nodeIdx) & 0x1))
-            continue;
-
-          if (*inter < 0) {
-            inter += numAttrs;
-            if (notCalculatedParentDc) {
-              computeParentDc<haarFlag, numAttrs>(
-                sumweights, attrRecParentUsIt, parentDc);
-              notCalculatedParentDc = false;
-            }
+          if ((occupancy >> nodeIdx) & 0x1)
             for (int k = 0; k < numAttrs; k++)
-              pred[8 * k + nodeIdx] = parentDc[k];
-          } else {
-            availablePrediction |= 0x1 << nodeIdx;
-            for (int k = 0; k < numAttrs; k++) {
               pred[8 * k + nodeIdx] = *(inter++);
-            }
-          }
         }
-        enableInterPred =  availablePrediction == weightsParentIt->occupancy;
       }
 
       int voteInterWeight = 1, voteIntraWeight = 1;
@@ -2318,8 +2216,6 @@ regionAdaptiveHierarchicalTransform(
   const int voxelCount,
   int64_t* mortonCode,
   int* attributes,
-  const int voxelCount_mc,
-  int64_t* mortonCode_mc,
   int* attributes_mc,
   int* coefficients,
   attr::ModeEncoder& encoder)
@@ -2383,13 +2279,11 @@ regionAdaptiveHierarchicalTransform(
     if (!rahtPredParams.integer_haar_enable_flag)
       uraht_process_encoder<false,3>(
         rahtPredParams, abh,qpset, pointQpOffsets, voxelCount, mortonCode,
-        attributes, voxelCount_mc, mortonCode_mc, attributes_mc, coefficients,
-        encoder, getMode);
+        attributes, attributes_mc, coefficients, encoder, getMode);
     else
       uraht_process_encoder<true, 3>(
         rahtPredParams, abh, qpset, pointQpOffsets, voxelCount, mortonCode,
-        attributes, voxelCount_mc, mortonCode_mc, attributes_mc, coefficients,
-        encoder, getMode);
+        attributes, attributes_mc, coefficients, encoder, getMode);
     break;
   default:
     throw std::runtime_error("attribCount != 3 not tested yet");

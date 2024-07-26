@@ -245,60 +245,6 @@ findNeighboursChildrenDecoder(
 }
 
 //============================================================================
-// translateLayer
-
-template<bool haarFlag, int numAttrs>
-void
-translateLayerDecoder(
-  std::vector<int64_t>& layerAttr,
-  int* attr_mc,
-  std::vector<UrahtNodeDecoder>& weightsLf)
-{
-  // associate mean attribute of MC PC to each unique node
-  layerAttr.resize(weightsLf.size() * numAttrs);
-  auto layer = layerAttr.begin();
-  for (int i = 0, j = 0;
-      i < weightsLf.size();
-      i++, layer += numAttrs) {
-
-   for (int k = 0; k < numAttrs; k++)
-      layer[k] = -1;
-
-    int weight = weightsLf[i].weight;
-    int jEnd = j + weight;
-
-    auto attr = &attr_mc[numAttrs * j];
-
-    std::array<int, numAttrs> sumAtt;
-    std::fill_n(sumAtt.begin(), numAttrs, 0);
-
-    for (; j < jEnd; ++j) {
-      for (int k = 0; k < numAttrs; k++)
-        sumAtt[k] += *attr++;
-    }
-
-    if (weight) {
-      if (haarFlag)
-        for (int k = 0; k < numAttrs; k++)
-          layer[k] = int64_t(sumAtt[k]);
-      else
-        for (int k = 0; k < numAttrs; k++)
-          layer[k] = int64_t(sumAtt[k]) << kFPFracBits;
-
-      if (weight != 1) {
-        for (int k = 0; k < numAttrs; k++) {
-          layer[k] /= weight;
-        }
-      }
-
-      if (haarFlag)
-        for (int k = 0; k < numAttrs; k++)
-          layer[k] <<= kFPFracBits;
-    }
-  }
-}
-
-//============================================================================
 // Generate the spatial prediction of a block.
 
 template<bool haarFlag, int numAttrs, typename It>
@@ -617,7 +563,7 @@ uraht_process_decoder(
 
     // Motion compensation
     if (coder.isInterEnabled()) {
-      translateLayerDecoder<haarFlag, numAttrs>(
+      translateLayer<haarFlag, numAttrs>(
         interTree, attributes_mc, weightsLf);
     }
 
