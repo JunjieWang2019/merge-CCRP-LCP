@@ -29,10 +29,134 @@ contents. The original implementation started from the experimental model
 being studied in EE13.60, and is based on the `release-v20.0-rc1` of G-PCC
 test model TMC13.
 
+### `ges-tm-v7.0`
+
+Tag `ges-tm-v7.0` will be released after reported issues are resolved,
+if any.
+
+### `ges-tm-v7.0-rc2`
+
+Tag `ges-tm-v7.0-rc2` will be released after further optimization and
+cleanups of RAHT encoder have been performed.
+
+### `ges-tm-v7.0-rc1`
+
+Tag `ges-tm-v7.0-rc1` includes adoptions made during the meeting #16 of the
+WG7 held in Sapporo (July 2024), and some additional fixes and cleanups.
+
+- `trisoup/tidy: refactor to use dedicated node structure`  
+    This commit replaces the use of "big" PCCOctree3Node structure within
+    trisoup by the use of two new node structures respectively dedicated to
+    the encoder and to the decoder. These structures only contains necessary
+    information. This is achieved through templatization.
+
+    This commit also includes minor cleanups.
+
+- `attr/tidy: build and encode dual motion field in raster scan order`  
+    makes dual motion MV field being encoded in same order as for geometry
+
+- `attr/tidy: avoid generating full depth MSOctree`  
+    In case octree geometry is used, it is not necessary to build a full
+    depth MSOctree. This commit limits the depth to reach only the
+    min_pu_size in case trisoup is not used.
+
+- `attr/tidy: replace PUTrees with MVField`  
+    Occupancy tree must be known to properly use PUTrees, this is not
+    convenient for reusing geometry motion field with attributes.
+
+    This commits replaces the PUTrees, used for motion field
+    representation, with a more versatile and ease to use MVField
+    representation.
+
+- `attr/tidy: clipping compensated point cloud to slab boundaries`  
+    This commit should slightly improve the prediction for localized
+    attributes and accelerate its use in inter RAHT by clipping the
+    compensated point cloud to fit within the slab boundaries.
+
+- `octree/tidy: refactor to use common raster scan`  
+    In this commit, Octree is refactored to use a common raster scan
+    framework with dual motion field which makes the code a bit cleaner.
+
+- `attr: m68327 - allow using mcap without using dual motion`  
+    In this commit, HLS and code structure is changed to allow using motion
+    compensated attributes projection even if dual motion is not enabled.
+
+    This commit also avoids unneeded sort for motion compensated
+    attributes.
+
+- `attr/tidy: do not copy current attributes for mcap`  
+    Attributes from reconstructed point cloud do not need to be copied with
+    geometry before performing motion compensated attributes projection.
+    This commit simplifies the code accordingly.
+
+- `attr: m68327 - always use mcap`  
+    As agreed during the meeting, motion compensated attributes projection
+    (mcap) will always be used to simplify the codec and keep best coding
+    performances. This commit enforce always using mcap and removes HLS
+    previously used to enable it.
+
+- `attr/tidy: remove not needed attributes compensation`  
+    Now that mcap is always used, it in not needed to compensate the
+    attributes when building compensated point cloud for geometry.
+
+- `raht/tidy: simplify decoder translate layer`  
+    Since mcap is now always used, num points, positions and weights are
+    now the same in the compensated frame and in current frame.
+
+    Decoder is simplified accordingly.
+
+- `raht: m68283 - cross component residual prediction`  
+    This commit uses buffer to dynamically maintain correlation information
+    between the RAHT luma and RAHT Cb/Cr residues in order to derive a
+    prediction of the chroma components residues with a linear model of the
+    luma residues.
+
+- `raht: m68397 - improve average prediction`  
+    This commit improves inter frame average prediction by also taking into
+    account the grand parent mode to determine average prediction weights.
+
+- `geom/trisoup: m68255 - local quality units`  
+    This commit introduces local quality units for trisoup.
+
+- `trisoup: m68285 - reduce OBUF memory usage`  
+    This commit reduces the memory usage when coding the Trisoup vertex
+    position bits using OBUF scheme.
+
+    This is scheme 1 of m68285.
+
+- `trisoup: m68350 - memory reduction over m68285`  
+    This commit further reduces memory usage and also takes care of memory
+    allocation to further improve runtimes.
+
+- `raht/tidy: remove FixedPoint and VecAttr`  
+    FixedPoint was hiding many conversion and shift operations.
+    These operations were progressively made visible again. Now, this
+    commit totally removes the use of FixedPoint type.
+
+    VecAttr is also removed, as the dynamic allocation nature of the vector
+    it uses is not really justified.
+
+- `raht/tidy: uniformization of buffers definition`  
+    Some local buffers in raht are still defined as double entry arrays.
+    Since single entry array convention is currently used for the main
+    buffers, this commit uses the same notations for intermediate buffers.
+
+- `raht/tidy: simplify encoder translate layer`  
+    This commit simplifies encoder side as previously made for the decoder,
+    since motion compensated projection is now always used.
+
+- `enc: restrict slab thickness`  
+    This commit restricts the slab thickness to be a multiple of any
+    trisoup node sizes. Other values may provide unexpected results.
+
+- `raht/tidy: use attr_t instead of int`  
+    This commit makes using vectors of attr_t (i.e. uint16_t) instead of int
+    as input/output of raht.
+
 ### `ges-tm-v6.0`
 
-Tag `ges-tm-v6.0` will be released after reported issues are resolved,
-if any.
+Tag `ges-tm-v6.0` has been released after some cleanups and a few minor bug
+fixes (outside of CTCs) have been integrated.
 
 ### `ges-tm-v6.0-rc2`
 
