@@ -206,13 +206,12 @@ namespace attr {
     Mode parent,
     Mode neighbors);
 
-  template<class Kernel>
+  template<class Kernel, int numAttrs>
   Mode choseMode(
     ModeEncoder& rdo,
     const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
-    const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
     const Qps* nodeQp,

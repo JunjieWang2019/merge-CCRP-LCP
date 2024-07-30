@@ -605,7 +605,7 @@ int getRate(int trainZeros)
 //============================================================================
 // Core transform process (for encoder)
 
-template<bool haarFlag, int numAttrs, class GetMode>
+template<bool haarFlag, int numAttrs>
 inline void
 uraht_process_encoder(
   const RahtPredictionParams& rahtPredParams,
@@ -617,8 +617,7 @@ uraht_process_encoder(
   attr_t* attributes,
   const attr_t* attributes_mc,
   int32_t* coeffBufIt,
-  attr::ModeEncoder& coder,
-  GetMode getMode)
+  attr::ModeEncoder& coder)
 {
   // coefficients are stored in three planar arrays.  coeffBufItK is a set
   // of iterators to each array.
@@ -1322,13 +1321,68 @@ uraht_process_encoder(
         }
       }
 
+      auto getMode =
+        [&qpset, &rahtPredParams](
+          attr::ModeEncoder& encoder,
+          int nodeCnt, int predCtxLevel,
+          bool enableIntraPred, bool enableInterPred, Mode parentMode,
+          Mode neighborsMode, int64_t weights[],
+          std::vector<int64_t>::const_iterator attrRecParent,
+          int64_t* transformBuf, std::vector<Mode> modes, const int qpLayer,
+          const Qps* nodeQp, bool upperInferMode, bool inheritDC) {
+          if (nodeCnt > 1) {
+            if (upperInferMode) {
+              if (enableInterPred)
+                return Mode::Inter;
+              else if (enableIntraPred)
+                return Mode::Intra;
+              else
+                return Mode::Null;
+            }
+
+            if (predCtxLevel < 0)
+              return enableIntraPred ? Mode::Intra : Mode::Null;
+
+            int predCtxMode = attr::getInferredMode(enableIntraPred,
+              enableInterPred, nodeCnt, parentMode, neighborsMode);
+
+            if (encoder.isInterEnabled()) {
+              if (!enableIntraPred && enableInterPred) {
+                modes.resize(2);
+              }
+              else if (!enableIntraPred && !enableInterPred)
+                return Mode::Null;
+            } else {
+              if (!enableIntraPred)
+                return Mode::Null;
+            }
+
+            encoder.getEntropy(predCtxMode, predCtxLevel);
+            Mode predMode;
+            if(rahtPredParams.integer_haar_enable_flag) {
+              predMode = attr::choseMode<HaarKernel, numAttrs>(
+                encoder, transformBuf, modes, weights, qpset, qpLayer, nodeQp,
+                inheritDC);
+            } else {
+              predMode = attr::choseMode<RahtKernel, numAttrs>(
+                encoder, transformBuf, modes, weights, qpset, qpLayer, nodeQp,
+                inheritDC);
+            }
+            encoder.encode(predCtxMode, predCtxLevel, predMode);
+            encoder.updateModeBits(predMode);
+            return predMode;
+          }
+          return Mode::Null;
+        };
+
+
       Mode predMode = Mode::Null;
       predMode =
         rahtPredParams.prediction_enabled_flag
         ? getMode(
           coder, nodeCnt, predCtxLevel, enableIntraPred,
-          enableInterPred, weightsParentIt->mode, neighborsMode, numAttrs,
-          weights, attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp,
+          enableInterPred, weightsParentIt->mode, neighborsMode, weights,
+          attrRecParentUsIt, transformBuf, modes, qpLayer, nodeQp,
           upperInferMode, inheritDc)
         : Mode::Null;
 
@@ -2222,70 +2276,16 @@ regionAdaptiveHierarchicalTransform(
   int* coefficients,
   attr::ModeEncoder& encoder)
 {
-  auto getMode =
-    [&qpset, &rahtPredParams](
-      attr::ModeEncoder& encoder,
-      int nodeCnt, int predCtxLevel,
-      bool enableIntraPred, bool enableInterPred, Mode parentMode,
-      Mode neighborsMode, int numAttrs, int64_t weights[],
-      std::vector<int64_t>::const_iterator attrRecParent,
-      int64_t* transformBuf, std::vector<Mode> modes, const int qpLayer,
-      const Qps* nodeQp, bool upperInferMode, bool inheritDC) {
-      if (nodeCnt > 1) {
-        if (upperInferMode) {
-          if (enableInterPred)
-            return Mode::Inter;
-          else if (enableIntraPred)
-            return Mode::Intra;
-          else
-            return Mode::Null;
-        }
-
-        if (predCtxLevel < 0)
-          return enableIntraPred ? Mode::Intra : Mode::Null;
-
-        int predCtxMode = attr::getInferredMode(enableIntraPred,
-          enableInterPred, nodeCnt, parentMode, neighborsMode);
-
-        if (encoder.isInterEnabled()) {
-          if (!enableIntraPred && enableInterPred) {
-            modes.resize(2);
-          }
-          else if (!enableIntraPred && !enableInterPred)
-            return Mode::Null;
-        } else {
-          if (!enableIntraPred)
-            return Mode::Null;
-        }
-
-        encoder.getEntropy(predCtxMode, predCtxLevel);
-        Mode predMode;
-        if(rahtPredParams.integer_haar_enable_flag) {
-          predMode = attr::choseMode<HaarKernel>(
-            encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
-            nodeQp, inheritDC);
-        } else {
-          predMode = attr::choseMode<RahtKernel>(
-            encoder, transformBuf, modes, weights, numAttrs, qpset, qpLayer,
-            nodeQp, inheritDC);
-        }
-        encoder.encode(predCtxMode, predCtxLevel, predMode);
-        encoder.updateModeBits(predMode);
-        return predMode;
-      }
-      return Mode::Null;
-    };
-
   switch (attribCount) {
   case 3:
     if (!rahtPredParams.integer_haar_enable_flag)
       uraht_process_encoder<false,3>(
         rahtPredParams, abh,qpset, pointQpOffsets, voxelCount, mortonCode,
-        attributes, attributes_mc, coefficients, encoder, getMode);
+        attributes, attributes_mc, coefficients, encoder);
     else
       uraht_process_encoder<true, 3>(
         rahtPredParams, abh, qpset, pointQpOffsets, voxelCount, mortonCode,
-        attributes, attributes_mc, coefficients, encoder, getMode);
+        attributes, attributes_mc, coefficients, encoder);
     break;
   default:
     throw std::runtime_error("attribCount != 3 not tested yet");

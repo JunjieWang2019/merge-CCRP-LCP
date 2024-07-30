@@ -165,13 +165,12 @@ namespace attr {
       return 2;
   }
 
-  template<class Kernel>
+  template<class Kernel, int numAttrs>
   Mode choseMode(
     ModeEncoder& rdo,
     const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
-    const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
     const Qps* nodeQp,
@@ -274,25 +273,23 @@ namespace attr {
   }
 
 //============================================================================
-// instanciate for Haar and Raht kernels
+// instanciate for Haar and Raht kernels with 3 attributes
 
-template Mode choseMode<HaarKernel>(
+template Mode choseMode<HaarKernel, 3>(
     ModeEncoder& rdo,
     const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
-    const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
     const Qps* nodeQp,
     const bool inheritDC);
 
-template Mode choseMode<RahtKernel>(
+template Mode choseMode<RahtKernel, 3>(
     ModeEncoder& rdo,
     const int64_t* transformBuf,
     const std::vector<Mode>& modes,
     const int64_t weights[],
-    const int numAttrs,
     const QpSet& qpset,
     const int qpLayer,
     const Qps* nodeQp,
