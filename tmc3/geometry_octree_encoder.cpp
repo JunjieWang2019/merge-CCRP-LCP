@@ -1361,7 +1361,7 @@ encodeGeometryOctree(
 
       // calculating the number of subnodes for determining eligibility
       // population count of occupancy for IDCM
-      int numOccupied = popcnt(node0.childOccupancy);
+      //int numOccupied = popcnt(node0.childOccupancy);
 
       // Leaf nodes are immediately coded.  No further splitting occurs.
       if (tubeIndex && nodeSliceIndex && isLeafNode(effectiveChildSizeLog2)) {

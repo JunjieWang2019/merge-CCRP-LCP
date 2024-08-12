@@ -1605,7 +1605,7 @@ SequenceDecoder::decompress(Stopwatch* clock)
 
     if (decoder.decompress(buf_ptr, this)) {
       cout << "Error: can't decompress point cloud!" << endl;
-      return -1;  
+      return -1;
     }
 
     if (!buf_ptr)

@@ -178,120 +178,145 @@ computeParentDc(
 //============================================================================
 // expand a set of eight weights into three levels
 
-template<bool skipkernel, class Kernel>
-void
-mkWeightTree(int64_t weights[8 + 8 + 8 + 8 + 24])
-{
-  auto in = &weights[0];
-  auto out = &weights[8];
+template <bool haarFlag>
+struct mkWeightTree {
+  template<bool skipkernel, class Kernel = RahtKernel>
+  static void
+  apply(int64_t weights[8 + 8 + 8 + 8 + 24])
+  {
+    auto in = &weights[0];
+    auto out = &weights[8];
 
-  for (int i = 0; i < 4; i++) {
-    out[0] = in[0] + in[1];
-    out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
-    in += 2;
-    out++;
-  }
-  out += 4;
-  for (int i = 0; i < 4; i++) {
-    out[0] = in[0] + in[1];
-    out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
-    in += 2;
-    out++;
-  }
-  out += 4;
-  for (int i = 0; i < 4; i++) {
-    out[0] = in[0] + in[1];
-    out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
-    in += 2;
-    out++;
-  }
-
-  for (int i = 0; i < 24; i += 2) {
-    weights[i + 32] = (!!weights[i]) << kFPFracBits;
-    weights[i + 33] = (!!weights[i + 1]) << kFPFracBits;
-
-    if (weights[i] && weights[i + 1]) {
-      if (skipkernel) {
-        weights[i + 32] = weights[i];
-        weights[i + 33] = weights[i + 1];
-      }
-      else {
-        Kernel w(weights[i], weights[i + 1]);
-        weights[i + 32] = w.getW0();
-        weights[i + 33] = w.getW1();
-      }
+    for (int i = 0; i < 4; i++) {
+      out[0] = in[0] + in[1];
+      out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
+      in += 2;
+      out++;
     }
-  }
-}
-
-//============================================================================
-// Invoke mapFn(coefIdx) for each present coefficient in the transform
-
-template<class T>
-void
-scanBlock(int64_t weights[], T mapFn)
-{
-  static const int8_t kRahtScanOrder[] = {0, 4, 2, 1, 6, 5, 3, 7};
-
-  // there is always the DC coefficient (empty blocks are not transformed)
-  mapFn(0);
-
-  for (int i = 1; i < 8; i++) {
-    if (weights[24 + kRahtScanOrder[i]])
-      mapFn(kRahtScanOrder[i]);
-  }
-}
-
-//============================================================================
-// translateLayer
-
-template<bool haarFlag, int numAttrs, typename UrahtNode>
-void
-translateLayer(
-  std::vector<int64_t>& layerAttr,
-  const attr_t* attr_mc,
-  std::vector<UrahtNode>& weightsLf)
-{
-  // associate mean attribute of MC PC to each unique node
-  layerAttr.resize(weightsLf.size() * numAttrs);
-  auto layer = layerAttr.begin();
-  for (int i = 0, j = 0;
-      i < weightsLf.size();
-      i++, layer += numAttrs) {
-
-    for (int k = 0; k < numAttrs; k++)
-      layer[k] = -1;
-
-    int weight = weightsLf[i].weight;
-    int jEnd = j + weight;
-
-    auto attr = &attr_mc[numAttrs * j];
-
-    std::array<int, numAttrs> sumAtt;
-    std::fill_n(sumAtt.begin(), numAttrs, 0);
-
-    for (; j < jEnd; ++j) {
-      for (int k = 0; k < numAttrs; k++)
-        sumAtt[k] += *attr++;
+    out += 4;
+    for (int i = 0; i < 4; i++) {
+      out[0] = in[0] + in[1];
+      out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
+      in += 2;
+      out++;
+    }
+    out += 4;
+    for (int i = 0; i < 4; i++) {
+      out[0] = in[0] + in[1];
+      out[4] = (in[0] && in[1]) * out[0];  // single node, no high frequencies
+      in += 2;
+      out++;
     }
 
-    if (weight) {
-      if (haarFlag)
-        for (int k = 0; k < numAttrs; k++)
-          layer[k] = int64_t(sumAtt[k]);
-      else
-        for (int k = 0; k < numAttrs; k++)
-          layer[k] = int64_t(sumAtt[k]) << kFPFracBits;
+    for (int i = 0; i < 24; i += 2) {
+      weights[i + 32] = (!!weights[i]) << kFPFracBits;
+      weights[i + 33] = (!!weights[i + 1]) << kFPFracBits;
 
-      if (weight != 1) {
-        for (int k = 0; k < numAttrs; k++) {
-          layer[k] /= weight;
+      if (weights[i] && weights[i + 1]) {
+        if (skipkernel) {
+          weights[i + 32] = weights[i];
+          weights[i + 33] = weights[i + 1];
+        }
+        else {
+          Kernel w(weights[i], weights[i + 1]);
+          weights[i + 32] = w.getW0();
+          weights[i + 33] = w.getW1();
         }
       }
+    }
+  }
+};
 
-      if (haarFlag)
-        for (int k = 0; k < numAttrs; k++)
-          layer[k] <<= kFPFracBits;
+//----------------------------------------------------------------------------
+
+template <>
+struct mkWeightTree<true> {
+  template<bool skipkernel, class Kernel = HaarKernel>
+  static void
+  apply(bool weights[8 + 8 + 8 + 8 + 24])
+  {
+    auto in = &weights[0];
+    auto out = &weights[8];
+
+    for (int i = 0; i < 4; i++) {
+      out[0] = in[0] || in[1];
+      out[4] = in[0] && in[1];  // single node, no high frequencies
+      in += 2;
+      out++;
+    }
+    out += 4;
+    for (int i = 0; i < 4; i++) {
+      out[0] = in[0] || in[1];
+      out[4] = in[0] && in[1];  // single node, no high frequencies
+      in += 2;
+      out++;
+    }
+    out += 4;
+    for (int i = 0; i < 4; i++) {
+      out[0] = in[0] || in[1];
+      out[4] = in[0] && in[1];  // single node, no high frequencies
+      in += 2;
+      out++;
+    }
+
+    for (int i = 0; i < 24; i++) {
+      weights[i + 32] = weights[i];
+    }
+  }
+};
+
+//============================================================================
+
+template<typename It, typename It2, typename T>
+void
+findNeighboursChildren(
+  It first,
+  It2 firstChild,
+  int level,
+  uint8_t occupancy,
+  const int parentNeighIdx[19],
+  int childNeighIdx[12][8],
+  std::vector<T>& weightsLf)
+{
+  memset(childNeighIdx, -1, 96 * sizeof(int));
+  static const uint8_t occuMasks[12] = { 3,  5,  15, 17, 51, 85,
+                                        10, 34, 12, 68, 48, 80 };
+  static const uint8_t occuShift[12] = { 6, 5, 4, 3, 2, 1, 3, 1, 2, 1, 2, 3 };
+
+  const int* pN = &parentNeighIdx[7];
+  for (int i = 0; i < 9; i++, pN++) {
+    if (*pN == -1)
+      continue;
+
+    auto neiIt = first + *pN;
+    uint8_t mask =
+      (neiIt->occupancy >> occuShift[i]) & occupancy & occuMasks[i];
+    if (mask) {
+      auto it = &weightsLf[neiIt->firstChildIdx];
+      for (int t = 0; t < neiIt->numChildren; t++, it++) {
+        int nodeIdx = ((it->pos >> level) & 0x7) - occuShift[i];
+        if ((nodeIdx >= 0) && ((mask >> nodeIdx) & 1)) {
+          childNeighIdx[i][nodeIdx] = t + neiIt->firstChildIdx;
+        }
+      }
+    }
+  }
+
+  for (int i = 9; i < 12; i++, pN++) {
+    if (*pN == -1)
+      continue;
+
+    auto neiIt = first + *pN;
+    uint8_t mask =
+      (neiIt->occupancy << occuShift[i]) & occupancy & occuMasks[i];
+    if (mask) {
+      auto it = &weightsLf[neiIt->firstChildIdx];
+      for (int t = 0; t < neiIt->numChildren; t++, it++) {
+        int nodeIdx = ((it->pos >> level) & 0x7) + occuShift[i];
+        if ((nodeIdx < 8) && ((mask >> nodeIdx) & 1)) {
+          childNeighIdx[i][nodeIdx] = t + neiIt->firstChildIdx;
+        }
+      }
     }
   }
 }

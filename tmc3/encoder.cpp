@@ -791,7 +791,6 @@ PCCTMC3Encoder3::compressPartition(
     const auto& attr_sps = _sps->attributeSets[attrIdx];
     const auto& attr_aps = *_aps[attrIdx];
     const auto& attr_enc = params->attr[attrIdx];
-    const auto& label = attr_sps.attributeLabel;
     // todo(df): move elsewhere?
     AttributeBrickHeader& abh = _abh[attrIdx];
     abh.attr_attr_parameter_set_id = attr_aps.aps_attr_parameter_set_id;
@@ -897,7 +896,6 @@ PCCTMC3Encoder3::compressPartition(
         const auto& attr_sps = _sps->attributeSets[attrIdx];
         const auto& attr_aps = *_aps[attrIdx];
         const auto& attr_enc = params->attr[attrIdx];
-        const auto& label = attr_sps.attributeLabel;
 
         PayloadBuffer& payload = payload_attr[attrIdx];
 
@@ -951,7 +949,6 @@ PCCTMC3Encoder3::compressPartition(
     int attrIdx = it.second;
     const auto& attr_sps = _sps->attributeSets[attrIdx];
     const auto& attr_aps = *_aps[attrIdx];
-    const auto& attr_enc = params->attr[attrIdx];
     const auto& label = attr_sps.attributeLabel;
 
     PayloadBuffer& payload = payload_attr[attrIdx];

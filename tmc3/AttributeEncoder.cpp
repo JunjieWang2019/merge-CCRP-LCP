@@ -81,8 +81,6 @@ public:
   static constexpr int windowLog2 = 6;
   int probResGt0[3];  //prob of residuals larger than 0: 1 for each component
   int probResGt1[3];  //prob of residuals larger than 1: 1 for each component
-  void resStatUpdateColor(Vec3<int32_t> values);
-  void resStatUpdateRefl(int32_t values);
   void resStatReset();
 };
 
@@ -126,33 +124,6 @@ PCCResidualsEncoder::resStatReset()
 {
   for (int k = 0; k < 3; k++)
     probResGt0[k] = probResGt1[k] = (scaleRes >> 1);
-}
-
-//----------------------------------------------------------------------------
-
-void
-PCCResidualsEncoder::resStatUpdateColor(Vec3<int32_t> value)
-{
-  for (int k = 0; k < 3; k++) {
-    probResGt0[k] += value[k] ? (scaleRes - probResGt0[k]) >> windowLog2
-                              : -((probResGt0[k]) >> windowLog2);
-    if (value[k])
-      probResGt1[k] += abs(value[k]) > 1
-        ? (scaleRes - probResGt1[k]) >> windowLog2
-        : -((probResGt1[k]) >> windowLog2);
-  }
-}
-
-//----------------------------------------------------------------------------
-
-void
-PCCResidualsEncoder::resStatUpdateRefl(int32_t value)
-{
-  probResGt0[0] += value ? (scaleRes - probResGt0[0]) >> windowLog2
-                         : -(probResGt0[0] >> windowLog2);
-  if (value)
-    probResGt1[0] += abs(value) > 1 ? (scaleRes - probResGt1[0]) >> windowLog2
-                                    : -(probResGt1[0] >> windowLog2);
 }
 
 //----------------------------------------------------------------------------
@@ -278,148 +249,6 @@ PCCResidualsEncoder::encode(int32_t value)
   int mag = abs(value) - 1;
   encodeSymbol(mag, 0, 0, 0);
   arithmeticEncoder.encode(value < 0);
-}
-
-//============================================================================
-// An encapsulation of the entropy coding methods used in attribute coding
-
-class PCCResidualsEntropyEstimator {
-  static constexpr int kFPP = 32;
-  size_t freq0[kAttributeResidualAlphabetSize + 1];
-  size_t freq1[kAttributeResidualAlphabetSize + 1];
-  size_t symbolCount0;
-  size_t symbolCount1;
-  size_t isZero0Count;
-  size_t isZero1Count;
-  PCCResidualsEntropyEstimator() { init(); }
-  void init();
-  // return fixed point with kFPP bits precision
-  int64_t bitsDetail(
-    const uint32_t detail,
-    const size_t symbolCount,
-    const size_t* const freq) const;
-  // return fixed point with kFPP bits precision
-  int64_t bits(const uint32_t value0) const;
-  void update(const uint32_t value0);
-  // return fixed point with kFPP bits precision
-  int64_t bits(
-    const uint32_t value0, const uint32_t value1, const uint32_t value2) const;
-  void
-  update(const uint32_t value0, const uint32_t value1, const uint32_t value2);
-};
-
-//----------------------------------------------------------------------------
-
-void
-PCCResidualsEntropyEstimator::init()
-{
-  for (size_t i = 0; i <= kAttributeResidualAlphabetSize; ++i) {
-    freq0[i] = 1;
-    freq1[i] = 1;
-  }
-  symbolCount0 = kAttributeResidualAlphabetSize + 1;
-  symbolCount1 = kAttributeResidualAlphabetSize + 1;
-  isZero1Count = isZero0Count = symbolCount0 / 2;
-}
-
-//----------------------------------------------------------------------------
-
-int64_t
-PCCResidualsEntropyEstimator::bitsDetail(
-  const uint32_t detail,
-  const size_t symbolCount,
-  const size_t* const freq) const
-{
-  const uint32_t detailClipped =
-    std::min(detail, uint32_t(kAttributeResidualAlphabetSize));
-  const uint64_t pDetail =
-    PCCClip((uint64_t(freq[detailClipped]) << kFPP) / symbolCount,
-      1ULL << kFPP - 10/*~0.001*/,
-      (1ULL << kFPP) - (1ULL << kFPP - 10) /*~0.999*/);
-  int64_t bits = -fpLog2<kFPP>(pDetail);
-  if (detail >= kAttributeResidualAlphabetSize) {
-    const uint32_t x = detail - kAttributeResidualAlphabetSize;
-    bits += uint64_t(2 * ilog2(x + 1) + 1) << kFPP;
-  }
-  return bits;
-}
-
-//----------------------------------------------------------------------------
-
-int64_t
-PCCResidualsEntropyEstimator::bits(const uint32_t value0) const
-{
-  const bool isZero0 = value0 == 0;
-  const int64_t pIsZero0 = PCCClip(
-    (uint64_t(isZero0 ? isZero0Count : symbolCount0 - isZero0Count) << kFPP)
-      / symbolCount0,
-      1ULL << kFPP - 10/*~0.001*/,
-      (1ULL << kFPP) - (1ULL << kFPP - 10) /*~0.999*/);
-  int64_t bits = -fpLog2<kFPP>(pIsZero0);
-  if (!isZero0) {
-    bits += bitsDetail(value0 - 1, symbolCount0, freq0);
-  }
-  return bits;
-}
-
-//----------------------------------------------------------------------------
-
-void
-PCCResidualsEntropyEstimator::update(const uint32_t value0)
-{
-  const bool isZero0 = value0 == 0;
-  ++symbolCount0;
-  if (!isZero0) {
-    ++freq0[std::min(value0 - 1, uint32_t(kAttributeResidualAlphabetSize))];
-  } else {
-    ++isZero0Count;
-  }
-}
-
-//----------------------------------------------------------------------------
-
-int64_t
-PCCResidualsEntropyEstimator::bits(
-  const uint32_t value0, const uint32_t value1, const uint32_t value2) const
-{
-  int64_t bits = this->bits(value0);
-
-  const bool isZero1 = value1 == 0 && value2 == 0;
-  const int64_t pIsZero1 = PCCClip(
-    (uint64_t(isZero1 ? isZero1Count : symbolCount0 - isZero1Count) << kFPP)
-      / symbolCount0,
-      1ULL << kFPP - 10/*~0.001*/,
-      (1ULL << kFPP) - (1ULL << kFPP - 10) /*~0.999*/);
-  bits -= fpLog2<kFPP>(pIsZero1);
-  if (!isZero1) {
-    bits += bitsDetail(value1, symbolCount1, freq1);
-    bits += bitsDetail(value2, symbolCount1, freq1);
-  }
-  return bits;
-}
-
-//----------------------------------------------------------------------------
-
-void
-PCCResidualsEntropyEstimator::update(
-  const uint32_t value0, const uint32_t value1, const uint32_t value2)
-{
-  const bool isZero0 = value0 == 0;
-  ++symbolCount0;
-  if (!isZero0) {
-    ++freq0[std::min(value0 - 1, uint32_t(kAttributeResidualAlphabetSize))];
-  } else {
-    ++isZero0Count;
-  }
-
-  const bool isZero1 = value1 == 0 && value2 == 0;
-  symbolCount1 += 2;
-  if (!isZero1) {
-    ++freq1[std::min(value1, uint32_t(kAttributeResidualAlphabetSize))];
-    ++freq1[std::min(value2, uint32_t(kAttributeResidualAlphabetSize))];
-  } else {
-    ++isZero1Count;
-  }
 }
 
 //============================================================================
@@ -756,8 +585,6 @@ encodeRaht(
   abh.attr_layer_code_mode.clear();
   if (attrInterPredParams.hasLocalMotion()) {
     predEncoder.set(&encoder.arithmeticEncoder);
-    const int voxelCount_mc =
-      int(attrInterPredParams.compensatedPointCloud.getPointCount());
 
     auto& attributes_mc = attrInterPredParams.attributes_mc;
     // Allocate arrays.
@@ -828,8 +655,6 @@ AttributeEncoder::encodeRAHTperBlock(
   abh.attr_layer_code_mode.clear();
   if (attrInterPredParams.hasLocalMotion()) {
     predEncoder.set(&encoder.arithmeticEncoder);
-    const int voxelCount_mc =
-      int(attrInterPredParams.compensatedPointCloud.getPointCount());
 
     auto& attributes_mc = attrInterPredParams.attributes_mc;
     // Allocate arrays.

@@ -546,7 +546,6 @@ PCCTMC3Decoder3::decodeCurrentBrick()
 
       assert(abh.attr_sps_attr_idx < _sps->attributeSets.size());
       const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
-      const auto& label = attr_sps.attributeLabel;
 
       // sanity check for loss detection
       if (_gbh.entropy_continuation_flag)
@@ -619,7 +618,6 @@ PCCTMC3Decoder3::decodeCurrentBrick()
       const auto it_attr_aps = _apss.find(abh.attr_attr_parameter_set_id);
       const auto& attr_aps = it_attr_aps->second;
       const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
-      const auto& label = attr_sps.attributeLabel;
 
       auto& clock_user = clock_user_attr[attrIdx];
       clock_user.start();
@@ -943,7 +941,6 @@ PCCTMC3Decoder3::processNextSlabAttributes(
     const auto it_attr_aps = _apss.find(abh.attr_attr_parameter_set_id);
     const auto& attr_aps = it_attr_aps->second;
     const auto& attr_sps = _sps->attributeSets[abh.attr_sps_attr_idx];
-    const auto& label = attr_sps.attributeLabel;
 
     auto& clock_user = clock_user_attr[attrIdx];
     clock_user.start();

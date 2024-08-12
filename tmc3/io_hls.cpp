@@ -833,8 +833,8 @@ write(const SequenceParameterSet& sps, const AttributeParameterSet& aps)
           bs.writeUe(aps.rahtPredParams.lower_mode_level_for_average_prediction);
         }
       }
-      if (aps.rahtPredParams.subnode_prediction_enabled_flag) 
-        for (int i = 0; i < 5; i++) 
+      if (aps.rahtPredParams.subnode_prediction_enabled_flag)
+        for (int i = 0; i < 5; i++)
           bs.writeUe(aps.rahtPredParams.prediction_weights[i]);
     }
   }

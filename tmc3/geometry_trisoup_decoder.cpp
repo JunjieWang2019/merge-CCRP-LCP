@@ -864,7 +864,7 @@ constructCtxPos4(
 // Project vertices along dominant axis (i.e., into YZ, XZ, or XY plane).
 // Sort projected vertices by decreasing angle in [-pi,+pi] around center
 // of block (i.e., clockwise) breaking ties in angle by
-// increasing distance along the dominant axis.   
+// increasing distance along the dominant axis.
 int findDominantAxis(
   std::vector<Vertex>& leafVertices,
   Vec3<uint32_t> blockWidth,

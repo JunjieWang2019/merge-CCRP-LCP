@@ -10,7 +10,7 @@
  * modification, are permitted provided that the following conditions are met:
  *
  * * Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.  
+ *   notice, this list of conditions and the following disclaimer.
  *
  * * Redistributions in binary form must reproduce the above copyright
  *   notice, this list of conditions and the following disclaimer in the
@@ -105,7 +105,8 @@ struct MotionEntropyEstimate {
   double estimateVector(const point_t& mv) const;
 
   double estimateSplit(bool splitFlag) const {
-    return fpToDouble<kFPP>(hSplitPu[splitFlag]);
+    const double inv2powkFPP = 1.525878906250000e-05;  // thuis 2^-kFPP ; kFPP =16
+    return double(hSplitPu[splitFlag])* inv2powkFPP;
   }
 
 private:
@@ -334,8 +335,10 @@ double
 MotionEntropyEstimate::estimateVector(
   const point_t& mv) const
 {
-  return fpToDouble<kFPP>(estimateComponent(std::abs(mv[0]))
-    + estimateComponent(std::abs(mv[1])) + estimateComponent(std::abs(mv[2])));
+  const double inv2powkFPP = 1.525878906250000e-05;  // thuis 2^-kFPP; kFPP =16
+  return double(estimateComponent(std::abs(mv[0]))
+    + estimateComponent(std::abs(mv[1]))
+    + estimateComponent(std::abs(mv[2]))) * inv2powkFPP;
 }
 
 //============================================================================
@@ -1419,7 +1422,6 @@ motionSearchForNode(
 
   // motion search
   Vec3<int32_t> pos = node0->pos * nodeSize;
-  int mSOctreeOrigNodeIdx = node0->mSOctreeNodeIdx;
 
   // TODO: scale point according to trisoup node size
   if (flagNonPow2) {

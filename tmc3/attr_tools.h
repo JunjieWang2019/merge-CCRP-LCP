@@ -48,17 +48,7 @@
 namespace pcc {
 
 //============================================================================
-
-struct UrahtNodeLight {
-  int64_t pos;
-  int weight;
-  std::array<int16_t, 2> qp;
-  attr::Mode mode = attr::Mode::size;
-  attr::Mode _mode = attr::Mode::size;
-  attr::Mode grand_mode = attr::Mode::size;
-};
-
-struct UrahtNode {
+struct UrahtNodeEncoder {
   int64_t pos;
   int weight;
   std::array<int16_t, 2> qp;
@@ -66,21 +56,12 @@ struct UrahtNode {
   attr::Mode mode = attr::Mode::size;
   attr::Mode _mode = attr::Mode::size;
   attr::Mode grand_mode = attr::Mode::size;
+  uint8_t occupancy = 0;
 
-  uint8_t occupancy;
-  std::vector<UrahtNodeLight>::iterator firstChild;
+  int firstChildIdx;
   uint8_t numChildren;
-
-  void operator=(const UrahtNodeLight& node) {
-    pos = node.pos;
-    weight = node.weight;
-    qp = node.qp;
-    mode = node.mode;
-    _mode = node._mode;
-    grand_mode = node.grand_mode;
-    occupancy = 0;
-    decoded = false;
-  }
+  int32_t sumAttr[3];
+  int32_t sumAttrInter[3];
 };
 
 struct UrahtNodeDecoder {
@@ -94,7 +75,27 @@ struct UrahtNodeDecoder {
 
   int firstChildIdx;
   uint8_t numChildren;
+  int32_t sumAttrInter[3] = { 0,0,0 };
 };
+
+struct UrahtNodeDecoderHaar {
+  int64_t pos;
+  bool decoded = false;
+  attr::Mode mode = attr::Mode::size;
+  attr::Mode grand_mode = attr::Mode::size;
+  uint8_t occupancy = 0;
+
+  int firstChildIdx;
+  uint8_t numChildren;
+  int16_t sumAttrInter[3] = { 0,0,0 };
+
+  // hack for template functions compatibility when non existing members are
+  // referred conditionally (if constexpr could be used instead, if C++17
+  // was allowed)
+  static int weight;
+  static std::array<int16_t, 2> qp;
+};
+
 
 //============================================================================
 
@@ -190,14 +191,14 @@ operator+(const ParentIndex& a, const T& b)
 
 namespace attr {
 
-  Mode getNeighborsMode(
-    const bool& isEncoder,
+  Mode getNeighborsModeEncoder(
     const int parentNeighIdx[19],
-    const std::vector<UrahtNode>& weightsParent,
+    const std::vector<UrahtNodeEncoder>& weightsParent,
     int& voteInterWeight,
     int& voteIntraWeight,
     int& voteInterLayerWeight,
-    int& voteIntraLayerWeight);
+    int& voteIntraLayerWeight,
+    std::vector<UrahtNodeEncoder>& weightsLf);
 
   int getInferredMode(
     bool enableIntraPred,
@@ -206,12 +207,12 @@ namespace attr {
     Mode parent,
     Mode neighbors);
 
-  template<class Kernel, int numAttrs>
+  template<class Kernel, int numAttrs, typename WeightsType>
   Mode choseMode(
     ModeEncoder& rdo,
     const int64_t* transformBuf,
     const std::vector<Mode>& modes,
-    const int64_t weights[],
+    const WeightsType weights[],
     const QpSet& qpset,
     const int qpLayer,
     const Qps* nodeQp,
@@ -298,105 +299,154 @@ public:
 //============================================================================
 // In-place transform a set of sparse 2x2x2 blocks each using the same weights
 
-template<class Kernel>
-void
-fwdTransformBlock222(
-  const int numBufs, int64_t* buf, const int64_t weights[])
-{
-  static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
-  static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
-  for (int i = 0, iw = 0; i < 12; i++, iw += 2) {
-    int i0 = a[i];
-    int i1 = b[i];
-    int64_t w0 = weights[iw + 32];
-    int64_t w1 = weights[iw + 33];
+template<bool haarFlag>
+struct FwdTransformBlock222 {
+  template<class Kernel = RahtKernel>
+  static inline void
+  apply(
+    const int numBufs, int64_t* buf, const int64_t weights[])
+  {
+    static const int a[4 + 4 + 4] = {0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3};
+    static const int b[4 + 4 + 4] = {1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7};
+    const int64_t* w = &weights[32];
+    for (int i = 0; i < 12; i++) {
+      int64_t w0 = *w++;
+      int64_t w1 = *w++;
 
-    if (!w0 && !w1)
-      continue;
+      if (w0 || w1) {
+        int i0 = a[i];
+        int i1 = b[i];
 
-    // only one occupied, propagate to next level
-    if (!w0 || !w1) {
-      if (!w0) {
-        for (int k = 0; k < numBufs; k++)
-          std::swap(buf[8 * k + i0], buf[8 * k + i1]);
+        if (!w0) {
+          for (int k = 0; k < numBufs; k++)
+            std::swap(buf[8 * k + i0], buf[8 * k + i1]);
+        }
+        else if (w1) { // only one occupied, propagate to next level
+          // actual transform
+          Kernel kernel(w0, w1, true);
+          for (int k = 0; k < numBufs; k++) {
+            kernel.fwdTransform(buf[8 * k + i0], buf[8 * k + i1]);
+          }
+        }
       }
-      continue;
-    }
-
-    // actual transform
-    Kernel kernel(w0, w1, true);
-    for (int k = 0; k < numBufs; k++) {
-      kernel.fwdTransform(buf[8 * k + i0], buf[8 * k + i1]);
     }
   }
-}
 
-template<int numBufs, class Kernel>
-void
-fwdTransformBlock222(int64_t* buf, const int64_t weights[])
-{
-  static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
-  static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
-  for (int i = 0, iw = 0; i < 12; i++, iw += 2) {
-    int i0 = a[i];
-    int i1 = b[i];
-    int64_t w0 = weights[iw + 32];
-    int64_t w1 = weights[iw + 33];
+  template<int numBufs, class Kernel = RahtKernel>
+  static void
+  apply(int64_t* buf, const int64_t weights[])
+  {
+    apply<Kernel>(numBufs, buf, weights);
+  }
+};
 
-    if (!w0 && !w1)
-      continue;
+template<>
+struct FwdTransformBlock222<true> {
+  template<class Kernel = HaarKernel>
+  static inline void
+  apply(const int numBufs, int64_t* buf, const bool weights[])
+  {
+    static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
+    static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
+    const bool* w = &weights[32];
+    for (int i = 0; i < 12; i++) {
+      bool w0 = *w++;
+      bool w1 = *w++;
 
-    // only one occupied, propagate to next level
-    if (!w0 || !w1) {
-      if (!w0) {
-        for (int k = 0; k < numBufs; k++)
-          std::swap(buf[8 * k + i0], buf[8 * k + i1]);
+      if (w0 || w1) {
+        int i0 = a[i];
+        int i1 = b[i];
+
+        if (!w0) {
+          for (int k = 0; k < numBufs; k++)
+            std::swap(buf[8 * k + i0], buf[8 * k + i1]);
+        }
+        else if (w1) { // only one occupied, propagate to next level
+          for (int k = 0; k < numBufs; k++) {
+            buf[8 * k + i1] -= buf[8 * k + i0];
+            buf[8 * k + i0] += (buf[8 * k + i1] >> 1 + kFPFracBits) << kFPFracBits;
+          }
+        }
       }
-      continue;
-    }
-
-    // actual transform
-    Kernel kernel(w0, w1, true);
-    for (int k = 0; k < numBufs; k++) {
-      kernel.fwdTransform(buf[8 * k + i0], buf[8 * k + i1]);
     }
   }
-}
 
-template<int numBufs, bool computekernel,  class Kernel>
-void
-invTransformBlock222(int64_t* buf, const int64_t weights[])
-{
-  static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
-  static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
-  const int64_t* w = &weights[33 + 22];
-  for (int i = 11; i >= 0; i--) {
+  template<int numBufs, class Kernel = HaarKernel>
+  static void
+  apply(int64_t* buf, const bool weights[])
+  {
+    apply<Kernel>(numBufs, buf, weights);
+  }
+};
 
-    int64_t w1 = *(w--);
-    int64_t w0 = *(w--);
 
-    if (w0 || w1) {
 
-      int i0 = a[i];
-      int i1 = b[i];
+template<bool haarFlag>
+struct InvTransformBlock222 {
+  template<int numBufs, bool computekernel = false, class Kernel = RahtKernel>
+  static void
+  apply(int64_t* buf, const int64_t weights[])
+  {
+    static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
+    static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
+    const int64_t* w = &weights[33 + 22];
+    for (int i = 11; i >= 0; i--) {
 
-      // only one occupied, propagate to next level
-      if (!w0 || !w1) {
+      int64_t w1 = *(w--);
+      int64_t w0 = *(w--);
+
+      if (w0 || w1) {
+        int i0 = a[i];
+        int i1 = b[i];
+
         if (!w0) {
           for (int k = 0; k < numBufs; k++)
             buf[8 * k + i1] = buf[8 * k + i0];
         }
-      }
-      else {
-        // actual transform
-        Kernel kernel(w0, w1, !computekernel);
-        for (int k = 0; k < numBufs; k++) {
-          kernel.invTransform(buf[8 * k + i0], buf[8 * k + i1]);
+        else if (w1) { // only one occupied, propagate to next level
+          // actual transform
+          Kernel kernel(w0, w1, !computekernel);
+          for (int k = 0; k < numBufs; k++) {
+            kernel.invTransform(buf[8 * k + i0], buf[8 * k + i1]);
+          }
         }
       }
     }
   }
-}
+};
+
+template<>
+struct InvTransformBlock222<true> {
+  template<int numBufs, bool computekernel = false, class Kernel = HaarKernel>
+  static void
+  apply(int64_t* buf, const bool weights[])
+  {
+    static const int a[4 + 4 + 4] = { 0, 2, 4, 6, 0, 4, 1, 5, 0, 1, 2, 3 };
+    static const int b[4 + 4 + 4] = { 1, 3, 5, 7, 2, 6, 3, 7, 4, 5, 6, 7 };
+    const bool* w = &weights[33 + 22];
+    for (int i = 11; i >= 0; i--) {
+
+      bool w1 = *(w--);
+      bool w0 = *(w--);
+
+      if (w0 || w1) {
+        int i0 = a[i];
+        int i1 = b[i];
+
+        if (!w0) {
+          for (int k = 0; k < numBufs; k++)
+            buf[8 * k + i1] = buf[8 * k + i0];
+        }
+        else if (w1) { // only one occupied, propagate to next level
+          for (int k = 0; k < numBufs; k++) {
+            buf[8 * k + i0] -= (buf[8 * k + i1] >> 1 + kFPFracBits) << kFPFracBits;
+            buf[8 * k + i1] += buf[8 * k + i0];
+          }
+        }
+      }
+    }
+  }
+};
 
 } /* namespace RAHT */
 

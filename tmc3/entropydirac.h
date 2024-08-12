@@ -92,8 +92,8 @@ namespace dirac {
     template <int FPP, unsigned K=2>
     void getEntropy(int64_t h[2]) const
     {
-       h[0] = -fpLog2<16,FPP,K>(probability);
-       h[1] = -fpLog2<16,FPP,K>((1ULL << 16) - probability);
+      h[0] = fpEntropyProbaLUT<16, 16>(probability);
+      h[1] = fpEntropyProbaLUT<16, 16>((1ULL << 16) - probability);
     }
 
   };

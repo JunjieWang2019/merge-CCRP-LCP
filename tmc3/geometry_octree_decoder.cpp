@@ -573,7 +573,7 @@ decodeGeometryOctree(
   // todo(df): derive buffer size from level limit
   int ringBufferSize = gbh.footer.geom_num_points_minus1 + 1;
   if (gps.trisoup_enabled_flag && gbh.trisoupNodeSize(gps) > 1)
-     ringBufferSize = std::max(1000,ringBufferSize  >> 2* gbh.trisoupNodeSizeLog2(gps) - 1);
+     ringBufferSize = std::max(1000,ringBufferSize  >> 2 * gbh.trisoupNodeSizeLog2(gps) - 2);
 
   std::vector<PCCOctree3Node> fifo;
   std::vector<PCCOctree3Node> fifoNext;
@@ -858,7 +858,6 @@ decodeGeometryOctree(
               uint32_t msoChildIdx = msoNode.child[i];
               if (msoChildIdx) {
                 const auto & msoChild = mSOctree.nodes[msoChildIdx];
-                int L = 1 << nodeSizeLog2[0];
                 predUnCompCounts[i] = msoChild.end - msoChild.start;
               }
             }

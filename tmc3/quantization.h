@@ -81,16 +81,14 @@ Quantizer::quantize(int64_t x) const
 {
   // Forward quantisation avoids division by using the multiplicative inverse
   // with 22 fractional bits.
-  int64_t fracBits = 22 + kFixedPointAttributeShift;
+  const int64_t fracBits = 22 + kFixedPointAttributeShift;
 
   // NB, the folowing offsets quantizes with a different deadzone to the
   // reconstruction function.
-  int64_t offset = (1ll << fracBits) / 3;
+  const int64_t offset = (1ll << fracBits) / 3;
 
-  if (x >= 0) {
-    return (x * _stepSizeRecip + offset) >> fracBits;
-  }
-  return -((offset - x * _stepSizeRecip) >> fracBits);
+  return (x >= 0) * ((x * _stepSizeRecip + offset) >> fracBits)
+    - (x < 0) * ((offset - x * _stepSizeRecip) >> fracBits);
 }
 
 //---------------------------------------------------------------------------

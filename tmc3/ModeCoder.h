@@ -213,20 +213,20 @@ public:
     }
 
     uint64_t PnotNull = fpExpand<kFPP - 16, uint64_t>(rdoModeIsNull[ctxMode]);
-    entropy[Mode::Null] = -fpLog2<kFPP>((1ULL << kFPP) - PnotNull);
+    entropy[Mode::Null] = fpEntropyProbaLUT<kFPP>((1ULL << kFPP) - PnotNull);
     if (!enableInter || !enableIntra) {
       if (enableInter) {
-        entropy[Mode::Inter] = -fpLog2<kFPP>(PnotNull);
+        entropy[Mode::Inter] = fpEntropyProbaLUT<kFPP>(PnotNull);
       } else {
-        entropy[Mode::Intra] = -fpLog2<kFPP>(PnotNull);
+        entropy[Mode::Intra] = fpEntropyProbaLUT<kFPP>(PnotNull);
       }
       return entropy;
     }
 
     uint64_t PnotIntra = fpExpand<kFPP - 16, uint64_t>(rdoModeIsIntra[ctxMode]);
-    entropy[Mode::Intra] = -fpLog2<2 * kFPP, kFPP>(
-      (PnotNull * ((1ULL << kFPP) - PnotIntra)));
-    entropy[Mode::Inter] = -fpLog2<2 * kFPP, kFPP>(PnotNull * PnotIntra);
+    entropy[Mode::Intra] = fpEntropyProbaLUT<2 * kFPP - 32, kFPP>(((PnotNull >> 16) * (((1ULL << kFPP) - PnotIntra)) >> 16));
+    entropy[Mode::Inter] = fpEntropyProbaLUT<2 * kFPP - 32, kFPP>((PnotNull >> 16) * (PnotIntra >> 16));
+
     return entropy;
   }
 

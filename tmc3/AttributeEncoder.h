@@ -50,9 +50,7 @@ namespace pcc {
 
 //============================================================================
 // Opaque definitions (Internal detail)
-
 class PCCResidualsEncoder;
-struct PCCResidualsEntropyEstimator;
 
 //============================================================================
 

@@ -40,14 +40,22 @@ using namespace pcc::RAHT;
 
 namespace pcc {
 
+#if defined _MSC_VER && defined _DEBUG
+// These variables are not used but must be instanciated for MSVC in debug mode
+int UrahtNodeDecoderHaar::weight;
+std::array<int16_t, 2> UrahtNodeDecoderHaar::qp;
+#endif
+
 //============================================================================
 // remove any non-unique leaves from a level in the uraht tree
 
+template<int numAttrs, typename Node>
 int
 reduceUniqueDecoder(
+  const bool isInter,
   int numNodes,
-  std::vector<UrahtNodeDecoder>* weightsIn,
-  std::vector<UrahtNodeDecoder>* weightsOut)
+  std::vector<Node>* weightsIn,
+  std::vector<Node>* weightsOut)
 {
   // process a single level of the tree
   int64_t posPrev = -1;
@@ -66,6 +74,10 @@ reduceUniqueDecoder(
 
     // duplicate node
     (weightsInWrIt - 1)->weight += node.weight;
+    if (isInter)
+      for (int k = 0; k < numAttrs; k++)
+        (weightsInWrIt - 1)->sumAttrInter[k] += node.sumAttrInter[k];
+
     weightsOut->push_back(node);
   }
 
@@ -74,66 +86,148 @@ reduceUniqueDecoder(
 }
 
 //============================================================================
-// Split a level of values into sum and difference pairs.
 
-int
-reduceLevelDecoder(
-  int level,
-  int numNodes,
-  std::vector<UrahtNodeLight>* weightsIn,
-  std::vector<UrahtNodeLight>* weightsOut)
-{
-  // process a single level of the tree
-  int64_t posPrev = -1;
-  auto weightsInWrIt = weightsIn->begin();
-  auto weightsInRdIt = weightsIn->cbegin();
-  for (int i = 0; i < numNodes; i++) {
-    auto& node = *weightsInRdIt++;
-    bool newPair = (posPrev ^ node.pos) >> level;
-    posPrev = node.pos;
-    if (newPair) {
-      *weightsInWrIt++ = node;
-    }
-    else {
-      auto& left = *(weightsInWrIt - 1);
-      left.weight += node.weight;
-      left.qp[0] = (left.qp[0] + node.qp[0]) >> 1;
-      left.qp[1] = (left.qp[1] + node.qp[1]) >> 1;
-      weightsOut->push_back(node);
+template <int numAttrs, typename Node>
+struct reduceDepthDecoder_ {
+  template <typename It>
+  static inline void process(
+    const bool isInter, const int level, const int i, const int i2,
+    It& weightsInRdIt, Node& last)
+  {
+    throw std::runtime_error("Not implemented");
+  }
+};
+
+
+template <int numAttrs>
+struct reduceDepthDecoder_<numAttrs, UrahtNodeDecoder> {
+  template <typename It>
+  static inline void process(
+    const bool isInter, const int level, const int i, const int i2,
+    It& weightsInRdIt, UrahtNodeDecoder& last)
+  {
+    for (int j = i + 1; j < i2; j++) {
+      const auto node = weightsInRdIt[j];
+      last.weight += node.weight;
+      // TODO: fix local qp to be same in encoder and decoder
+      last.qp[0] = (last.qp[0] + node.qp[0]) >> 1;
+      last.qp[1] = (last.qp[1] + node.qp[1]) >> 1;
+
+      if (isInter)
+        for (int k = 0; k < numAttrs; k++)
+          last.sumAttrInter[k] += node.sumAttrInter[k];
     }
   }
+};
 
-  // number of nodes in next level
-  return std::distance(weightsIn->begin(), weightsInWrIt);
-}
+template <int numAttrs>
+struct reduceDepthDecoder_<numAttrs, UrahtNodeDecoderHaar> {
+  template <typename It>
+  static inline void process(
+    const bool isInter, const int level, const int i, const int i2,
+    It& weightsInRdIt, UrahtNodeDecoderHaar& last)
+  {
+    if (!isInter)
+      return;
 
+    //attribute processign for Haar per direction in the interval [i, i2[
+    struct {
+      int64_t pos;
+      int32_t attrInter[3];
+    } haarNode[4];
+
+    // first direction (at most 8 nodes)
+    int numNode = 0;
+    int64_t posPrevH = -1;
+    for (int j = i; j < i2; j++) {
+      const auto node = weightsInRdIt[j];
+      bool newPair = (posPrevH ^ node.pos) >> (level - 2) != 0;
+      posPrevH = node.pos;
+
+      if (newPair) {
+        haarNode[numNode].pos = node.pos;
+        for (int k = 0; k < numAttrs; k++)
+          haarNode[numNode].attrInter[k] = node.sumAttrInter[k];
+        numNode++;
+      } else {
+        auto& lastH = haarNode[numNode - 1];
+        for (int k = 0; k < numAttrs; k++) {
+          auto temp = node.sumAttrInter[k] - lastH.attrInter[k];
+          lastH.attrInter[k] += temp >> 1;
+        }
+      }
+    }
+
+    // second direction (at most 4 nodes)
+    int numNode2 = 0;
+    posPrevH = -1;
+    for (int j = 0; j < numNode; j++) {
+      const auto node = haarNode[j];
+      bool newPair = (posPrevH ^ node.pos) >> (level - 1) != 0;
+      posPrevH = node.pos;
+
+      if (newPair) {
+        haarNode[numNode2].pos = node.pos;
+        for (int k = 0; k < numAttrs; k++)
+          haarNode[numNode2].attrInter[k] = node.attrInter[k];
+        numNode2++;
+      } else {
+        auto& lastH = haarNode[numNode2 - 1];
+        for (int k = 0; k < numAttrs; k++) {
+          auto temp = node.attrInter[k] - lastH.attrInter[k];
+          lastH.attrInter[k] += temp >> 1;
+        }
+      }
+    }
+
+    // third direction (at most 2 nodes).
+    auto& lastH = haarNode[0];
+    for (int k = 0; k < numAttrs; k++)
+      last.sumAttrInter[k] = lastH.attrInter[k];
+
+    if (numNode2 == 2) {
+      lastH = haarNode[1];
+      for (int k = 0; k < numAttrs; k++) {
+        auto temp = lastH.attrInter[k] - last.sumAttrInter[k];
+        last.sumAttrInter[k] += temp >> 1;
+      }
+    }
+  }
+};
+
+template<typename TreeNode, bool haarFlag, int numAttrs>
 int
 reduceDepthDecoder(
   int level,
   int numNodes,
-  std::vector<UrahtNodeDecoder>* weightsIn,
-  std::vector<UrahtNodeDecoder>* weightsOut)
+  std::vector<TreeNode>* weightsIn,
+  std::vector<TreeNode>* weightsOut,
+  const bool isInter)
 {
   // process a single level of the tree
   int64_t posPrev = -1;
   auto weightsInRdIt = weightsIn->begin();
-  for (int i = 0; i < weightsIn->size(); i++) {
-    auto& node = *weightsInRdIt++;
-    bool newNode = (posPrev ^ node.pos) >> level;
-    posPrev = node.pos;
-    if (newNode) {
-      weightsOut->push_back(node);
-      weightsOut->back().numChildren = 1;
-      weightsOut->back().firstChildIdx = i;
-    }
-    else {
-      auto& last = weightsOut->back();
-      last.weight += node.weight;
-      last.numChildren++;
-      // TODO: fix local qp to be same in encoder and decoder
-      last.qp[0] = (last.qp[0] + node.qp[0]) >> 1;
-      last.qp[1] = (last.qp[1] + node.qp[1]) >> 1;
-    }
+  for (int i = 0; i < weightsIn->size(); ) {
+
+    // this is a new node
+    TreeNode last = weightsInRdIt[i];
+    posPrev = last.pos;
+    last.firstChildIdx = i;
+
+    // look for same node
+    int i2 = i + 1;
+    for (; i2 < weightsIn->size(); i2++)
+      if ((posPrev ^ weightsInRdIt[i2].pos) >> level)
+        break;
+
+    // process same nodes
+    last.numChildren = i2 - i;
+
+    reduceDepthDecoder_<numAttrs, TreeNode>::process(
+      isInter, level, i, i2, weightsInRdIt, last);
+
+    weightsOut->push_back(last);
+    i = i2;
   }
 
   // number of nodes in next level
@@ -148,7 +242,7 @@ Mode getNeighborsModeDecoder(
   const std::vector<T>& weightsParent,
   int& voteInterWeight,
   int& voteIntraWeight,
-  std::vector<UrahtNodeDecoder>& weightsLf,
+  std::vector<T>& weightsLf,
   pcc::attr::Mode modeParents)
 {
   int vote[4] = { 0, 0, 0, 0 }; // Null, intra, inter, size;
@@ -186,62 +280,6 @@ Mode getNeighborsModeDecoder(
   if (vote[1] > vote[2])
     return Mode::Intra;
   return Mode::Inter;
-}
-
-//============================================================================
-
-template<typename It, typename It2>
-void
-findNeighboursChildrenDecoder(
-  It first,
-  It2 firstChild,
-  int level,
-  uint8_t occupancy,
-  const int parentNeighIdx[19],
-  int childNeighIdx[12][8],
-  std::vector<UrahtNodeDecoder>& weightsLf)
-{
-  memset(childNeighIdx, -1, 96 * sizeof(int));
-  static const uint8_t occuMasks[12] = {3,  5,  15, 17, 51, 85,
-                                        10, 34, 12, 68, 48, 80};
-  static const uint8_t occuShift[12] = {6, 5, 4, 3, 2, 1, 3, 1, 2, 1, 2, 3};
-
-  const int* pN = &parentNeighIdx[7];
-  for (int i = 0; i < 9; i++, pN++) {
-    if (*pN == -1)
-      continue;
-
-    auto neiIt = first + *pN;
-    uint8_t mask =
-      (neiIt->occupancy >> occuShift[i]) & occupancy & occuMasks[i];
-    if (mask) {
-      auto it = &weightsLf[neiIt->firstChildIdx];
-      for (int t = 0; t < neiIt->numChildren; t++, it++) {
-        int nodeIdx = ((it->pos >> level) & 0x7) - occuShift[i];
-        if ((nodeIdx >= 0) && ((mask >> nodeIdx) & 1)) {
-          childNeighIdx[i][nodeIdx] = t + neiIt->firstChildIdx;
-        }
-      }
-    }
-  }
-
-  for (int i = 9; i < 12; i++, pN++) {
-    if (*pN == -1)
-      continue;
-
-    auto neiIt = first + *pN;
-    uint8_t mask =
-      (neiIt->occupancy << occuShift[i]) & occupancy & occuMasks[i];
-    if (mask) {
-      auto it = &weightsLf[neiIt->firstChildIdx];;
-      for (int t = 0; t < neiIt->numChildren; t++, it++) {
-        int nodeIdx = ((it->pos >> level) & 0x7) + occuShift[i];
-        if ((nodeIdx < 8) && ((mask >> nodeIdx) & 1)) {
-          childNeighIdx[i][nodeIdx] = t + neiIt->firstChildIdx;
-        }
-      }
-    }
-  }
 }
 
 //============================================================================
@@ -370,7 +408,7 @@ intraDcPredDecoder(
 //============================================================================
 // Core transform process (for decoder)
 
-template<bool haarFlag, int numAttrs>
+template<bool haarFlag, int numAttrs, typename Node>
 inline void
 uraht_process_decoder(
   const RahtPredictionParams& rahtPredParams,
@@ -391,41 +429,59 @@ uraht_process_decoder(
 
   // early termination only one point
   if (numPoints == 1) {
-    auto quantizers = qpset.quantizers(0, pointQpOffsets[0]);
-    for (int k = 0; k < numAttrs; k++) {
-      auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
-      int64_t coeff = *coeffBufItK[k]++;
-      attributes[k] = divExp2RoundHalfUp(
-        q.scale(coeff), kFixedPointAttributeShift);
+    if (haarFlag) {
+      for (int k = 0; k < numAttrs; k++) {
+        attributes[k] = *coeffBufItK[k]++;
+      }
+    } else {
+      auto quantizers = qpset.quantizers(0, pointQpOffsets[0]);
+      for (int k = 0; k < numAttrs; k++) {
+        auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
+        int64_t coeff = *coeffBufItK[k]++;
+        attributes[k] = divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+      }
     }
     return;
   }
 
+  const bool isInter = attributes_mc;
 
   // --------- ascend tree per depth  -----------------
   // create leaf nodes
   int regionQpShift = 4;
-  std::vector<UrahtNodeDecoder>  weightsHf;
-  std::vector < std::vector<UrahtNodeDecoder>> weightsLfStack;
+  std::vector<Node> weightsHf;
+  std::vector<std::vector<Node>> weightsLfStack;
 
   weightsLfStack.emplace_back();
   weightsLfStack.back().reserve(numPoints);
   auto weightsLfRef = &weightsLfStack.back();
+  auto attrPredictor = attributes_mc;
 
   for (int i = 0; i < numPoints; i++) {
-    UrahtNodeDecoder node;
+    Node node;
     node.pos = positions[i];
-    node.weight = 1;
-    node.qp = {
-      int16_t(pointQpOffsets[i][0] << regionQpShift),
-      int16_t(pointQpOffsets[i][1] << regionQpShift)};
+    if (!haarFlag) {
+      node.weight = 1;
+      node.qp = {
+        int16_t(pointQpOffsets[i][0] << regionQpShift),
+        int16_t(pointQpOffsets[i][1] << regionQpShift)};
+    }
+    if (isInter)
+      for (int k = 0; k < numAttrs; k++)
+        node.sumAttrInter[k] = *attrPredictor++;
     weightsLfRef->emplace_back(node);
   }
 
   // -----------  bottom up per depth  --------------------
   int numNodes = weightsLfRef->size();
+#if 0 // duplicates won't work anymore with haar Nodes
+      // Do we still need that with GeS-TM, if yes,
+      // TODO: fix duplicates
   // for duplicates, skipable if it is known there is no duplicate
-  numNodes = reduceUniqueDecoder(numNodes, weightsLfRef, &weightsHf);
+  numNodes =
+    reduceUniqueDecoder<numAttrs>(isInter, numNodes, weightsLfRef, &weightsHf);
+#endif
+
   const bool flagNoDuplicate = weightsHf.size() == 0;
   int numDepth = 0;
   for (int levelD = 3; numNodes > 1; levelD += 3) {
@@ -435,8 +491,8 @@ uraht_process_decoder(
     weightsLfRef = &weightsLfStack.back();
 
     auto weightsLfRefold = &weightsLfStack[weightsLfStack.size() - 2];
-    numNodes = reduceDepthDecoder(
-      levelD, numNodes, weightsLfRefold, weightsLfRef);
+    numNodes = reduceDepthDecoder<Node, haarFlag, numAttrs>(
+      levelD, numNodes, weightsLfRefold, weightsLfRef, isInter);
     numDepth++;
   }
 
@@ -445,11 +501,12 @@ uraht_process_decoder(
   auto& rootNode = weightsLfStack.back()[0];
   rootNode.mode = Mode::Null;
   rootNode.firstChildIdx = 0;
-  assert(rootNode.weight == numPoints);
+  if (!haarFlag)
+    assert(rootNode.weight == numPoints);
 
   const int RDOCodingDepth = abh.attr_layer_code_mode.size();
   const bool enableACInterPred =
-    rahtPredParams.enable_inter_prediction && attributes_mc;
+    rahtPredParams.enable_inter_prediction && isInter;
 
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag && enableACInterPred);
@@ -469,12 +526,16 @@ uraht_process_decoder(
   attrRecParent.resize(numPoints * numAttrs);
 
   std::vector<int64_t> attrRecUs, attrRecParentUs;
-  attrRecUs.resize(numPoints * numAttrs);
-  attrRecParentUs.resize(numPoints * numAttrs);
+  if (!haarFlag) {
+    attrRecUs.resize(numPoints * numAttrs);
+    attrRecParentUs.resize(numPoints * numAttrs);
+  }
 
   std::vector<int8_t> numParentNeigh, numGrandParentNeigh;
-  numParentNeigh.resize(numPoints);
-  numGrandParentNeigh.resize(numPoints);
+  if (!rahtPredParams.enable_inter_prediction) {
+    numParentNeigh.resize(numPoints);
+    numGrandParentNeigh.resize(numPoints);
+  }
 
   // indexes of the neighbouring parents
   int parentNeighIdx[19];
@@ -482,29 +543,20 @@ uraht_process_decoder(
 
   // Prediction buffers
   int64_t SampleDomainBuff[2 * numAttrs * 8];
-  int64_t transformBuf[2 * numAttrs * 8];
 
-  const size_t sizeofBuf = sizeof(int64_t) * numAttrs * 8
-    * (coder.isInterEnabled() ? 2 : 1);
+  const size_t sizeofBuf = sizeof(int64_t) * numAttrs * 8 * (coder.isInterEnabled() ? 2 : 1);
 
   int64_t* attrPredIntra = SampleDomainBuff;
   int64_t* attrPredInter;
   int64_t* attrBestPred;
-  int64_t* attrPredIntraTransform = transformBuf;
-  int64_t* attrPredInterTransform;
-  int64_t* attrBestPredTransform;
 
   // modes, inter
   std::vector<Mode> modes;
   modes.push_back(Mode::Null);
-  std::vector<int64_t> interTree;
   if (coder.isInterEnabled()) {
     attrPredInter = attrPredIntra;
-    attrPredInterTransform = attrPredIntraTransform;
     modes.push_back(Mode::Inter);
     attrPredIntra += 8 * numAttrs;
-    attrPredIntraTransform += 8 * numAttrs;
-    interTree.reserve(numPoints * numAttrs);
   }
   modes.push_back(Mode::Intra);
 
@@ -523,8 +575,8 @@ uraht_process_decoder(
   pcc::attr::Mode modeParents = pcc::attr::Mode::size;
   for (int levelD = numDepth, isFirst = 1; levelD > 0; /*nop*/) {
     // references
-    std::vector<UrahtNodeDecoder>& weightsParent = weightsLfStack[levelD];
-    std::vector<UrahtNodeDecoder>& weightsLf = weightsLfStack[levelD - 1];
+    std::vector<Node>& weightsParent = weightsLfStack[levelD];
+    std::vector<Node>& weightsLf = weightsLfStack[levelD - 1];
 
     levelD--;
     int level = 3 * levelD;
@@ -561,12 +613,6 @@ uraht_process_decoder(
         + rahtPredParams.lower_mode_level_for_average_prediction + 1)
       && !upperInferMode && coder.isInterEnabled();
 
-    // Motion compensation
-    if (coder.isInterEnabled()) {
-      translateLayer<haarFlag, numAttrs>(
-        interTree, attributes_mc, weightsLf);
-    }
-
     // initial scan position of the coefficient buffer
     //  -> first level = all coeffs
     //  -> otherwise = ac coeffs only
@@ -584,7 +630,8 @@ uraht_process_decoder(
     // prepare reconstruction buffers
     //  previous reconstruction -> attrRecParent
     std::swap(attrRec, attrRecParent);
-    std::swap(attrRecUs, attrRecParentUs);
+    if (!haarFlag)
+      std::swap(attrRecUs, attrRecParentUs);
     std::swap(numParentNeigh, numGrandParentNeigh);
     auto numGrandParentNeighIt = numGrandParentNeigh.cbegin();
 
@@ -601,12 +648,12 @@ uraht_process_decoder(
     //CCRP parameters
     const bool CCRPFlag =
       !haarFlag && CCRPEnabled && level <= maxlevelCCPenabled && !CbCrEnabled;
-
     CCRPFilter ccrpFilter;
 
     // -------------- loop on nodes of the depth --------------
     int i = 0;
-    auto attrRecParentUsIt = attrRecParentUs.begin();
+    auto attrRecParentUsIt = conditional_value<haarFlag>
+      ::from(attrRecParent.begin(), attrRecParentUs.begin());
     for (auto weightsParentIt = weightsParent.begin();
         weightsParentIt < weightsParent.end();
         weightsParentIt++, attrRecParentUsIt += numAttrs) {
@@ -616,7 +663,10 @@ uraht_process_decoder(
         // done also in function getNeighborsModeDecoder
         weightsParentIt->mode = modeParents;
 
-      int64_t weights[8 + 8 + 8 + 8 + 24] = {};
+      typename std::conditional<haarFlag, bool, int64_t>::type
+        weights[8 + 8 + 8 + 8 + 24] = {};
+      int64_t interPredictor[8 * 3] = { 0 };
+      int childTable[8] = { };
       bool skipinverse = !haarFlag;
 
       // generate weights, occupancy mask, and fwd transform
@@ -626,24 +676,45 @@ uraht_process_decoder(
       const int nodeCnt = weightsParentIt->numChildren;
       for (int t = 0, j0 = i; t < nodeCnt; t++, j0++) {
         int nodeIdx = (weightsLf[j0].pos >> level) & 0x7;
-        weights[nodeIdx] = weightsLf[j0].weight;
-        nodeQp[nodeIdx][0] = weightsLf[j0].qp[0] >> regionQpShift;
-        nodeQp[nodeIdx][1] = weightsLf[j0].qp[1] >> regionQpShift;
+        childTable[t] = nodeIdx;
+        if (haarFlag) {
+          weights[nodeIdx] = true;
+        } else {
+          weights[nodeIdx] = weightsLf[j0].weight;
+          nodeQp[nodeIdx][0] = weightsLf[j0].qp[0] >> regionQpShift;
+          nodeQp[nodeIdx][1] = weightsLf[j0].qp[1] >> regionQpShift;
+        }
+
+        // inter predictor
+        if (isInter) {
+          auto pred = &interPredictor[nodeIdx];
+          if (haarFlag) {
+            for (int k = 0; k < numAttrs; k++)
+              pred[8 * k] = int64_t(weightsLf[j0].sumAttrInter[k]) << kFPFracBits;
+          }
+          else {
+            //int64_t divisor = (int64_t(1) << 30) / weights[nodeIdx];
+            int64_t w = weights[nodeIdx];
+            int shift = 5 * (1 + (w > 1024) + (w > 1048576));
+            int64_t rsqrtWeight = fastIrsqrt(w) >> 40 - shift - kFPFracBits;
+            int64_t divisor = fpReduce<kFPFracBits>(((int64_t(1) << 30) >> shift) * rsqrtWeight);
+            divisor = fpReduce<kFPFracBits>((divisor >> shift) * rsqrtWeight);
+
+            for (int k = 0; k < numAttrs; k++)
+              pred[8 * k] = (int64_t(weightsLf[j0].sumAttrInter[k]) * divisor) >> (30 - kFPFracBits);
+          }
+        }
+
         occupancy |= 1 << nodeIdx;
 
         //store grandmode
-        if (depth >= 1) {
-          weightsLf[j0].grand_mode = weightsParentIt->mode;
-        } else {
-          weightsLf[j0].grand_mode = Mode::Null;
-        }
+        weightsLf[j0].grand_mode = depth >= 1 ? weightsParentIt->mode : Mode::Null;
       }
       weightsParentIt->occupancy = occupancy;
-      int64_t sumweights = weightsParentIt->weight;
+      int64_t sumweights = haarFlag ? 0 : weightsParentIt->weight;
 
       // Inter-level prediction:
       memset(SampleDomainBuff, 0, sizeofBuf);
-      memset(transformBuf, 0, sizeofBuf);
 
       bool enableIntraPred = false;
       bool enableInterPred = false;
@@ -659,14 +730,8 @@ uraht_process_decoder(
           rahtPredParams.enable_inter_prediction
           ? enableIntraPredInLvl && nodeCnt > 1 && distanceToRoot > 2
           : enableIntraPredInLvl;
-
       }
-
-      // inter prediction
-      if (enableInterLayerPred) {
-        enableInterPred = true;
-      }
-
+      enableInterPred = enableInterPred || enableInterLayerPred; // inter prediction
 
       // ------- compute enable intra/iter and neighbor counts ----------
       int parentNeighCount = 19;
@@ -696,8 +761,9 @@ uraht_process_decoder(
       }
 
       // store number of neighbors
-      for (int t = 0; t < nodeCnt; t++) {
-        numParentNeigh[i + t] = parentNeighCount;
+      if (!rahtPredParams.enable_inter_prediction) {
+        for (int t = 0; t < nodeCnt; t++)
+          numParentNeigh[i + t] = parentNeighCount;
       }
 
       if (inheritDc) {
@@ -749,7 +815,7 @@ uraht_process_decoder(
       // store pred mode in child nodes, to determine best mode at next depth
       auto predMode2 = int(predMode) >= Mode::Inter ? Mode::Inter : predMode;
       auto ChildPt = &weightsLf[weightsParentIt->firstChildIdx];
-      for (int t = 0; t < weightsParentIt->numChildren; t++, ChildPt++) {
+      for (int t = 0; t < nodeCnt; t++, ChildPt++) {
         ChildPt->mode = predMode2;
       }
 
@@ -766,46 +832,29 @@ uraht_process_decoder(
           || enableAverageLayerPrediction);
 
 
-      // ---------- prepare best predictor attrBestPred attrBestPredTransform -------------
+      // ---------- prepare best predictor attrBestPred  -------------
       if (attr::isNull(predMode)) { // null mode
         skipinverse = false;
-        if (haarFlag) {
-          attrBestPredTransform = transformBuf;
-          memset(attrBestPredTransform, 0, numAttrs * 8 * sizeof(int64_t));
-        }
-        else {
-          attrBestPred = SampleDomainBuff;
-          memset(attrBestPred, 0, 8 * numAttrs * sizeof(int64_t));
-        }
+        attrBestPred = SampleDomainBuff;
+        memset(attrBestPred, 0, numAttrs * 8 * sizeof(int64_t));
       }
       else if (attr::isIntra(predMode) || isAveragePred) { // intra or average mode
         if (rahtPredParams.subnode_prediction_enabled_flag)
-          findNeighboursChildrenDecoder(
-            weightsParent.begin(), weightsLf.begin(), level, occupancy,
+          findNeighboursChildren(weightsParent.begin(), weightsLf.begin(), level, occupancy,
             parentNeighIdx, childNeighIdx, weightsLf);
 
         intraDcPredDecoder<haarFlag, numAttrs>(
           parentNeighIdx, childNeighIdx, occupancy, attrRecParent.begin(),
           attrRec.begin(), attrPredIntra, rahtPredParams);
         attrBestPred = attrPredIntra;
-        attrBestPredTransform = attrPredIntraTransform;
       }
       else { // inter mode
         attrBestPred = attrPredInter;
-        attrBestPredTransform = attrPredInterTransform;
       }
 
       // prepare inter and average mode
       if (attr::isInter(predMode) || isAveragePred) {
-        auto pred = attrPredInter;
-        auto inter = std::next(
-          interTree.begin(), weightsParentIt->firstChildIdx * numAttrs);
-
-        for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
-          if ((occupancy >> nodeIdx) & 0x1)
-            for (int k = 0; k < numAttrs; k++)
-              pred[8 * k + nodeIdx] = *(inter++);
-        }
+        memcpy(attrPredInter, interPredictor, 8 * numAttrs * sizeof(int64_t));
       }
 
 
@@ -813,39 +862,36 @@ uraht_process_decoder(
       int64_t PredDC[3] = {0, 0, 0};
       int64_t sqrtweightsbuf[8] = {};
       int64_t normsqrtsbuf[8] = {};
-      mkWeightTree<true, RahtKernel>(weights);
+      using Kernel =
+        typename std::conditional<haarFlag, HaarKernel, RahtKernel>::type;
+      mkWeightTree<haarFlag>::template apply<true, Kernel>(weights);
 
       if (!attr::isNull(predMode)) { // only if not NULL
         if (haarFlag) {
-          memcpy(
-            attrBestPredTransform, attrBestPred,
-            8 * numAttrs * sizeof(int64_t));
-          fwdTransformBlock222<numAttrs, HaarKernel>(
-            attrBestPredTransform, weights);
+          FwdTransformBlock222<haarFlag>
+          ::template apply<numAttrs>(attrBestPred, weights);
           if (isAveragePred) {
-            memcpy(
-              attrPredInterTransform, attrPredInter,
-              8 * numAttrs * sizeof(int64_t));
-            fwdTransformBlock222<numAttrs, HaarKernel>(
-              attrPredInterTransform, weights);
+            FwdTransformBlock222<haarFlag>
+            ::template apply<numAttrs>(attrPredInter, weights);
           }
         }
         else {
           // normalise predicted attribute values
-          for (int childIdx = 0; childIdx < 8; childIdx++) {
-            if (weights[childIdx] <= 1) {
+          for (int n = 0; n < nodeCnt; n++) {
+            const int childIdx = childTable[n];
+            int64_t w = weights[childIdx];
+            if (w <= 1) {
               sqrtweightsbuf[childIdx] = 32768;
               continue;
             }
 
-            int64_t sqrtWeight = fastIsqrt(uint64_t(weights[childIdx]));
+            int64_t sqrtWeight = fastIsqrt(uint64_t(w));
             sqrtweightsbuf[childIdx] = sqrtWeight;
             for (int k = 0; k < numAttrs; k++) {
-              attrBestPred[8 * k + childIdx] = fpReduce<kFPFracBits>(
-                attrBestPred[8 * k + childIdx] * sqrtWeight);
+              const int k8idx = 8 * k + childIdx;
+              attrBestPred[k8idx] = fpReduce<kFPFracBits>(attrBestPred[k8idx] * sqrtWeight);
               if (isAveragePred)
-                attrPredInter[8 * k + childIdx] = fpReduce<kFPFracBits>(
-                  attrPredInter[8 * k + childIdx] * sqrtWeight);
+                attrPredInter[k8idx] = fpReduce<kFPFracBits>(attrPredInter[k8idx] * sqrtWeight);
             }
           }
         }
@@ -856,56 +902,36 @@ uraht_process_decoder(
               parentNeighIdx, weightsParent, voteInterWeight, voteIntraWeight,
               weightsLf, modeParents);
 
-          bool flag =
-            !isInter(weightsParentIt->mode)
-            && !isIntra(weightsParentIt->mode);
+          bool flag = !attr::isInter(weightsParentIt->mode) && !attr::isIntra(weightsParentIt->mode);
+          voteInterWeight += 12 * attr::isInter(weightsParentIt->mode) + 6 * flag;
+          voteIntraWeight += 12 * attr::isIntra(weightsParentIt->mode) + 6 * flag;
 
-          voteInterWeight += 12 * isInter(weightsParentIt->mode) + 6 * flag;
-          voteIntraWeight += 12 * isIntra(weightsParentIt->mode) + 6 * flag;
-
-           if (depth > 1) {
-            bool flag_grand = !isInter(weightsParentIt->grand_mode)
-              && !isIntra(weightsParentIt->grand_mode);
-            voteInterWeight +=
-              28 * isInter(weightsParentIt->grand_mode) + 14 * flag_grand;
-            voteIntraWeight +=
-              28 * isIntra(weightsParentIt->grand_mode) + 14 * flag_grand;
+          if (depth > 1) {
+            bool flag_grand = !attr::isInter(weightsParentIt->grand_mode) && !attr::isIntra(weightsParentIt->grand_mode);
+            voteInterWeight += 28 * attr::isInter(weightsParentIt->grand_mode) + 14 * flag_grand;
+            voteIntraWeight += 28 * attr::isIntra(weightsParentIt->grand_mode) + 14 * flag_grand;
           }
 
-          int64_t weightIntra = divApprox(
-            voteIntraWeight << kFPFracBits,
-            voteInterWeight + voteIntraWeight, 0);
+          int64_t weightIntra = divApprox(voteIntraWeight << kFPFracBits, voteInterWeight + voteIntraWeight, 0);
           int64_t weightInter = (1 << kFPFracBits) - weightIntra;
 
-          for (int nodeIdx = 0; nodeIdx < 8; nodeIdx++)
-            for (int k = 0; k < numAttrs; k++) {
-              if (haarFlag) {
-                attrBestPredTransform[8 * k + nodeIdx] =
-                  fpReduce<kFPFracBits>(
-                    attrPredInterTransform[8 * k + nodeIdx] * weightInter
-                    + attrBestPredTransform[8 * k + nodeIdx] * weightIntra);
-                attrBestPredTransform[8 * k + nodeIdx] &= kFPIntMask;
-              }
-              else {
-                attrBestPred[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
-                  attrPredInter[8 * k + nodeIdx] * weightInter
-                  + attrBestPred[8 * k + nodeIdx] * weightIntra);
-              }
-            }
+          for (int t = 0; t < 8 * numAttrs; t++) {
+            attrBestPred[t] = fpReduce<kFPFracBits>(attrPredInter[t] * weightInter + attrBestPred[t] * weightIntra);
+            if (haarFlag)
+              attrBestPred[t] &= kFPIntMask;
+          }
         }
 
         // Compute DC of best pred
         if (!haarFlag) {
           int64_t rsqrtweightsum = fastIrsqrt(sumweights);
-          for (int childIdx = 0; childIdx < 8; childIdx++) {
-            if (weights[childIdx]) {
-              int64_t normalizedsqrtweight =
-                sqrtweightsbuf[childIdx] * rsqrtweightsum >> 40;
-              normsqrtsbuf[childIdx] = normalizedsqrtweight;
-              for (int k = 0; k < numAttrs; k++)
-                PredDC[k] += fpReduce<kFPFracBits>(
-                  normalizedsqrtweight * attrBestPred[8 * k + childIdx]);
-            }
+          for (int n = 0; n < nodeCnt; n++) {
+            int childIdx = childTable[n];
+            int64_t normalizedsqrtweight = sqrtweightsbuf[childIdx] * rsqrtweightsum >> 40;
+            normsqrtsbuf[childIdx] = normalizedsqrtweight;
+            for (int k = 0; k < numAttrs; k++)
+              PredDC[k] += fpReduce<kFPFracBits>(normalizedsqrtweight * attrBestPred[8 * k + childIdx]);
+
           }
         }
       }
@@ -924,64 +950,60 @@ uraht_process_decoder(
 
       CCRPFilter::Corr curCorr = { 0, 0, 0 };
 
-      scanBlock(weights, [&](int idx) {
-        // skip the DC coefficient unless at the root of the tree
-        if (inheritDc && !idx)
-          return;
+      // ----------scan blocks -------
+      for (int idxB = 0; idxB < 8; idxB++) {
+        if ((idxB == 0 || weights[24 + idxB]) // there is always the DC coefficient (empty blocks are not transformed)
+             && !(inheritDc && !idxB)) {  // skip the DC coefficient unless at the root of the tree
+          // The RAHT transform
+          auto quantizers = qpset.quantizers(qpLayer, nodeQp[idxB]);
+          int64_t quantizedLuma = 0, quantizedChroma = 0;
 
-        // The RAHT transform
-        auto quantizers = qpset.quantizers(qpLayer, nodeQp[idx]);
+          for (int k = 0; k < numAttrs; k++) {
+            auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
-        int64_t quantizedLuma = 0, quantizedChroma = 0;
+            int64_t coeff = *coeffBufItK[k]++;
+            skipinverse = skipinverse && (coeff == 0);
+            CoeffRecBuf[nodelvlSum][k] = divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift); //div and scale do nothing for Haar
+            int64_t quantizedValue = CoeffRecBuf[nodelvlSum][k];
+            transformRecBuf[k] = fpExpand<kFPFracBits>(CoeffRecBuf[nodelvlSum][k]);
 
-        for (int k = 0; k < numAttrs; k++) {
-          auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
+            const int k8idx = 8 * k + idxB;
+            BestRecBuf[k8idx] = transformRecBuf[k];
 
-          int64_t coeff = *coeffBufItK[k]++;
-          skipinverse = skipinverse && (coeff == 0);
-          CoeffRecBuf[nodelvlSum][k] = divExp2RoundHalfUp(
-            q.scale(coeff), kFixedPointAttributeShift);
-          int64_t quantizedValue = CoeffRecBuf[nodelvlSum][k];
-          transformRecBuf[k] = fpExpand<kFPFracBits>(
-            CoeffRecBuf[nodelvlSum][k]);
-          BestRecBuf[8 * k + idx] = transformRecBuf[k];
-
-          if (haarFlag) {
-            // Transform Domain Pred for Lossless case
-            BestRecBuf[8 * k + idx] += attrBestPredTransform[8 * k + idx];
-          }
-          if(CCRPFlag){
-            if (k == 0) {
-              quantizedLuma = quantizedValue;
-              curCorr.yy += quantizedLuma * quantizedLuma;
-            } else {
-              int64_t CCRPFilt =
-                (k == 1) ? ccrpFilter.getYCbFilt() : ccrpFilter.getYCrFilt();
-
-              int64_t CCRPPred =
-                quantizedLuma * CCRPFilt >> kCCRPFiltPrecisionbits;
-
-              quantizedChroma = quantizedValue;
-              quantizedChroma += CCRPPred;
-              BestRecBuf[8 * k + idx] = fpExpand<kFPFracBits>(quantizedChroma);
-              skipinverse = skipinverse && (quantizedChroma == 0);
-              if (k == 1)
+            if (haarFlag) {
+              // Transform Domain Pred for Lossless case
+              BestRecBuf[k8idx] += attrBestPred[k8idx];
+            }
+            if (CCRPFlag) {
+              if (k == 0) {
+                quantizedLuma = quantizedValue;
+                curCorr.yy += quantizedLuma * quantizedLuma;
+              }
+              if (k == 1) {
+                int64_t CCRPPred = quantizedLuma * ccrpFilter.getYCbFilt() >> kCCRPFiltPrecisionbits;
+                quantizedChroma = quantizedValue + CCRPPred;
+                BestRecBuf[k8idx] = fpExpand<kFPFracBits>(quantizedChroma);
+                skipinverse = skipinverse && (quantizedChroma == 0);
                 curCorr.ycb += quantizedLuma * quantizedChroma;
-              else
+              }
+              if (k == 2) {
+                int64_t CCRPPred = quantizedLuma * ccrpFilter.getYCrFilt() >> kCCRPFiltPrecisionbits;
+                quantizedChroma = quantizedValue + CCRPPred;
+                BestRecBuf[k8idx] = fpExpand<kFPFracBits>(quantizedChroma);
+                skipinverse = skipinverse && (quantizedChroma == 0);
                 curCorr.ycr += quantizedLuma * quantizedChroma;
+              }
             }
           }
-        }
 
-        // cross chroma
-        if (enableCCCP && numAttrs == 3) {
-          BestRecBuf[8 * 2 + idx] += (CccpCoeff * transformRecBuf[1]) >> 4;
-          CoeffRecBuf[nodelvlSum][2] = fpReduce<kFPFracBits>(
-            BestRecBuf[8 * 2 + idx]);
+          // cross chroma
+          if (enableCCCP && numAttrs == 3) {
+            BestRecBuf[16 + idxB] += (CccpCoeff * transformRecBuf[1]) >> 4;
+            CoeffRecBuf[nodelvlSum][2] = fpReduce<kFPFracBits>(BestRecBuf[16 + idxB]);
+          }
+          nodelvlSum++;
         }
-
-        nodelvlSum++;
-        });
+      } // end scan
 
       if (CCRPFlag) {
         ccrpFilter.update(curCorr);
@@ -996,64 +1018,61 @@ uraht_process_decoder(
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {
           if (haarFlag)
-            BestRecBuf[8 * k + 0] = attrRecParentUsIt[k];
+            BestRecBuf[8 * k] = attrRecParentUsIt[k];
           else
-            BestRecBuf[8 * k + 0] = attrRecParentUsIt[k] - PredDC[k];
+            BestRecBuf[8 * k] = attrRecParentUsIt[k] - PredDC[k];
         }
       }
 
       if (haarFlag) {
-        invTransformBlock222<numAttrs, false, HaarKernel>(
-          BestRecBuf, weights);
+        InvTransformBlock222<haarFlag>
+        ::template apply<numAttrs>(BestRecBuf, weights);
       }
       else {
         if (skipinverse) {
-          int64_t DCerror[3];
+          int64_t DCerror[numAttrs];
           for (int k = 0; k < numAttrs; k++) {
-            DCerror[k] = BestRecBuf[8 * k + 0];
-            BestRecBuf[8 * k + 0] = 0;
+            DCerror[k] = BestRecBuf[8 * k];
           }
-          for (int cidx = 0; cidx < 8; cidx++) {
-            if (weights[cidx]) {
-              for (int k = 0; k < numAttrs; k++)
-                BestRecBuf[8 * k + cidx] = fpReduce<kFPFracBits>(
-                  normsqrtsbuf[cidx] * DCerror[k]);
-            }
+          for (int n = 0; n < nodeCnt; n++) {
+            int childIdx = childTable[n];
+            for (int k = 0; k < numAttrs; k++)
+              BestRecBuf[8 * k + childIdx] = fpReduce<kFPFracBits>(normsqrtsbuf[childIdx] * DCerror[k]);
           }
         }
         else {
-          invTransformBlock222<numAttrs, true, RahtKernel>(
-            BestRecBuf, weights);
+          InvTransformBlock222<haarFlag>
+          ::template apply<numAttrs, true>(BestRecBuf, weights);
         }
       }
 
-      for (int j = i, nodeIdx = 0; nodeIdx < 8; nodeIdx++) {
-        if (!weights[nodeIdx])
-          continue;
-
-        for (int k = 0; k < numAttrs; k++) {
-          if (!haarFlag)
-            //Sample Domain Reconstruction
-            BestRecBuf[8 * k + nodeIdx] += attrBestPred[8 * k + nodeIdx];
-          attrRecUs[j * numAttrs + k] = BestRecBuf[8 * k + nodeIdx];
-        }
+      for (int j = i, n = 0; n < nodeCnt; j++, n++) {
+        const int childIdx = childTable[n];
 
         // scale values for next level
         if (!haarFlag) {
-          if (weights[nodeIdx] > 1) {
-            uint64_t w = weights[nodeIdx];
+          for (int k = 0; k < numAttrs; k++) {
+            const int k8idx = 8 * k + childIdx;
+            //Sample Domain Reconstruction
+            BestRecBuf[k8idx] += attrBestPred[k8idx];
+            attrRecUs[j * numAttrs + k] = BestRecBuf[k8idx];
+          }
+
+          uint64_t w = weights[childIdx];
+          if (w> 1) {
             int shift = 5 * ((w > 1024) + (w > 1048576));
             uint64_t rsqrtWeight = fastIrsqrt(w) >> 40 - shift - kFPFracBits;
-            for (int k = 0; k < numAttrs; k++)
-              BestRecBuf[8 * k + nodeIdx] = fpReduce<kFPFracBits>(
-                (BestRecBuf[8 * k + nodeIdx] >> shift) * rsqrtWeight);
+            for (int k = 0; k < numAttrs; k++) {
+              const int k8idx = 8 * k + childIdx;
+              BestRecBuf[k8idx] = fpReduce<kFPFracBits>((BestRecBuf[k8idx] >> shift) * rsqrtWeight);
+            }
           }
         }
 
-        for (int k = 0; k < numAttrs; k++)
-          attrRec[j * numAttrs + k] = BestRecBuf[8* k + nodeIdx];
-
-        j++;
+        for (int k = 0; k < numAttrs; k++) {
+          const int k8idx = 8 * k + childIdx;
+          attrRec[j * numAttrs + k] = BestRecBuf[k8idx];
+        }
       }
 
       i += nodeCnt;
@@ -1072,6 +1091,7 @@ uraht_process_decoder(
       modeParents = attr::Mode::size;
 
     ++depth;
+    weightsParent.clear();
   } // end loop on depth
 
 
@@ -1085,6 +1105,12 @@ uraht_process_decoder(
     return;
   }
 
+#if 0 // This code won't work with haar Nodes
+      // Do we still need that with GeS-TM, if yes,
+      // TODO: fix duplicates
+      // One way to fix it would be to keep the duplicates count in a sevarate
+      // buffer instead of using weight (which is not required for the rest of
+      // haar)
   // case there are duplicates
   std::swap(attrRec, attrRecParent);
   auto attrRecParentIt = attrRecParent.cbegin();
@@ -1093,7 +1119,7 @@ uraht_process_decoder(
   attrsHf.resize(weightsHf.size()* numAttrs);
   auto attrsHfIt = attrsHf.cbegin();
 
-  std::vector<UrahtNodeDecoder>& weightsLf = weightsLfStack[0];
+  std::vector<Node>& weightsLf = weightsLfStack[0];
   for (int i = 0, out = 0, iEnd = weightsLf.size(); i < iEnd; i++) {
     // unique points have weight = 1
     int weight = weightsLf[i].weight;
@@ -1119,30 +1145,46 @@ uraht_process_decoder(
       }
     }
 
-    for (int w = weight - 1; w > 0; w--) {
-      RahtKernel kernel(w, 1);
-      HaarKernel haarkernel(w, 1);
+    if (haarFlag) {
+      for (int w = weight - 1; w > 0; w--) {
+        HaarKernel haarkernel(w, 1);
 
-      auto quantizers = qpset.quantizers(qpLayer, nodeQp);
-      for (int k = 0; k < numAttrs; k++) {
-        auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
+        for (int k = 0; k < numAttrs; k++) {
 
-        int64_t transformBuf[2];
-        int64_t coeff = *coeffBufItK[k]++;
-        transformBuf[1] = fpExpand<kFPFracBits>(
-          divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift));
-        transformBuf[0] = attrRecDc[k]; // inherit the DC value
+          int64_t transformBuf[2];
+          transformBuf[1] = *coeffBufItK[k]++;
+          transformBuf[0] = attrRecDc[k]; // inherit the DC value
 
-        if (haarFlag)
           haarkernel.invTransform(transformBuf[0], transformBuf[1]);
-        else
+
+          attrRecDc[k] = transformBuf[0];
+          attrRec[out + w * numAttrs + k] = transformBuf[1];
+          if (w == 1)
+            attrRec[out + k] = transformBuf[0];
+        }
+      }
+    } else {
+      for (int w = weight - 1; w > 0; w--) {
+        RahtKernel kernel(w, 1);
+
+        auto quantizers = qpset.quantizers(qpLayer, nodeQp);
+        for (int k = 0; k < numAttrs; k++) {
+          auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
+
+          int64_t transformBuf[2];
+          int64_t coeff = *coeffBufItK[k]++;
+          transformBuf[1] = fpExpand<kFPFracBits>(divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift));
+          transformBuf[0] = attrRecDc[k]; // inherit the DC value
+
           kernel.invTransform(transformBuf[0], transformBuf[1]);
 
-        attrRecDc[k] = transformBuf[0];
-        attrRec[out + w * numAttrs + k] = transformBuf[1];
-        if (w == 1)
-          attrRec[out + k] = transformBuf[0];
+          attrRecDc[k] = transformBuf[0];
+          attrRec[out + w * numAttrs + k] = transformBuf[1];
+          if (w == 1)
+            attrRec[out + k] = transformBuf[0];
+        }
       }
+
     }
 
     attrsHfIt += (weight - 1) * numAttrs;
@@ -1156,6 +1198,7 @@ uraht_process_decoder(
     auto v = attr + kFPOneHalf >> kFPFracBits;
     *attrOut++ = PCCClip(v, 0, std::numeric_limits<attr_t>::max());
   }
+#endif
 }
 
 //============================================================================
@@ -1192,12 +1235,12 @@ regionAdaptiveHierarchicalInverseTransform(
   switch (attribCount) {
   case 3:
     if (!rahtPredParams.integer_haar_enable_flag)
-      uraht_process_decoder<false, 3>(
+      uraht_process_decoder<false, 3, UrahtNodeDecoder>(
         rahtPredParams, abh,qpset, pointQpOffsets, voxelCount, mortonCode,
         attributes, attributes_mc, coefficients,
         decoder);
     else
-      uraht_process_decoder<true, 3>(
+      uraht_process_decoder<true, 3, UrahtNodeDecoderHaar>(
         rahtPredParams, abh, qpset, pointQpOffsets, voxelCount, mortonCode,
         attributes, attributes_mc, coefficients,
         decoder);

@@ -277,10 +277,8 @@ int iatan2(int y, int x);
 template <int N, typename T>
 inline T fpReduce(T val)
 {
-  if (val < 0)
-    return  -(((1 << N - 1) - val) >> N);
-  else
-    return +(((1 << N - 1) + val) >> N);
+  return (val >= 0) * (((1 << N - 1) + val) >> N)
+    - (val < 0) * (((1 << N - 1) - val) >> N);
 }
 
 //---------------------------------------------------------------------------
@@ -291,9 +289,10 @@ inline T fpReduce(T val)
 template <int N, typename T>
 inline T fpExpand(T val)
 {
-  return val >= 0 ? val << N : -((-val) << N);
+  return (val >= 0) * (val << N) - (val < 0) * ((-val) << N);
 }
 
+#if 0 // Not used currently
 //---------------------------------------------------------------------------
 // Estimate log2 function (with decimal part) for fixed points numbers
 //
@@ -309,9 +308,11 @@ inline T fpExpand(T val)
 // Method found in a discussion on StackExchange
 //   https://math.stackexchange.com/questions/1706939/approximation-log-2x
 //
-template <int InFPP, int OutFPP=InFPP, unsigned K=2>
+template <int InFPP, int OutFPP=InFPP, unsigned K=2, bool Faster=true>
 int64_t fpLog2(uint64_t x) {
   if (!x) return std::numeric_limits<int64_t>::min();
+
+  static_assert(!Faster || K < 5, "invk[] does not support K >= 5 currently");
 
   const int64_t log2 = ilog2(x);
   const int64_t shift = log2 - InFPP;
@@ -334,13 +335,23 @@ int64_t fpLog2(uint64_t x) {
     // Note: accum could get more precision than 32 bits if needed
     uint64_t accum = t;
     uint64_t tPowered = t;
+
+    static constexpr uint64_t invk[10] = {
+      0, 0, 0, 341, 0, 205, 0, 146, 0, 114 };
+
     for (unsigned k = 3; k < 2*K+1; k+=2) {
       // Note: we could also increase tPowered precision along iterations
       tPowered *= t;
       tPowered >>= 32;
       tPowered *= t;
-      accum += tPowered / k >> 32;
-      tPowered >>= 32;
+      if (Faster) {
+        tPowered >>= 10;
+        accum += tPowered * invk[k] >> 32;
+        tPowered >>= 22;
+      } else {
+        accum += tPowered / k >> 32;
+        tPowered >>= 32;
+      }
     }
     // 2 / log(2) ~= 2.88539 @ 32 fpp bits
     constexpr uint64_t twoOverLogTwo = 0x2e2a8eca5ULL;
@@ -350,7 +361,11 @@ int64_t fpLog2(uint64_t x) {
   }
   return res;
 }
+#endif
 
+//---------------------------------------------------------------------------
+
+#if 0 // Not used currently
 template <unsigned FPP, typename T>
 double fpToDouble(T x)
 {
@@ -359,7 +374,9 @@ double fpToDouble(T x)
   else
     return double(x) / std::pow(2., FPP);
 }
+#endif
 
+#if 0 // Not used currently
 template <unsigned FPP, typename T>
 T fpFromDouble(double x)
 {
@@ -367,6 +384,44 @@ T fpFromDouble(double x)
     return T(x * double(T(1) << FPP) + 0.5);
   else
     return T(x * std::pow(2., FPP) + 0.5);
+}
+#endif
+
+//---------------------------------------------------------------------------
+// Luted log2
+static const int64_t log2P_LUT[130] = {
+  917504, 458752, 393216, 354880, 327680, 306582, 289344, 274769, 262144,
+  251008, 241046, 232035, 223808, 216240, 209233, 202710, 196608, 190876,
+  185472, 180360, 175510, 170897, 166499, 162296, 158272, 154412, 150704,
+  147136, 143697, 140379, 137174, 134074, 131072, 128163, 125340, 122599,
+  119936, 117345, 114824, 112368, 109974, 107639, 105361, 103136, 100963,
+  98838,  96760,  94726,  92736,  90786,  88876,  87004,  85168,  83367,
+  81600,  79865,  78161,  76488,  74843,  73227,  71638,  70075,  68538,
+  67025,  65536,  64070,  62627,  61205,  59804,  58424,  57063,  55722,
+  54400,  53096,  51809,  50540,  49288,  48052,  46832,  45627,  44438,
+  43264,  42103,  40957,  39825,  38706,  37600,  36507,  35427,  34358,
+  33302,  32257,  31224,  30202,  29190,  28190,  27200,  26220,  25250,
+  24290,  23340,  22399,  21468,  20546,  19632,  18727,  17831,  16943,
+  16064,  15192,  14329,  13473,  12625,  11785,  10952,  10126,  9307,
+  8496,   7691,   6893,   6102,   5317,   4539,   3767,   3002,   2242,
+  1489,   742,    0,      0};
+
+
+// entry one is 1 << InFPP; output log(0.5) is 1 << OutFPP
+template <int InFPP = 16, int OutFPP = InFPP>
+int64_t fpEntropyProbaLUT(int64_t x) {
+  constexpr int shiftIn = 9 + InFPP - 16;
+
+  constexpr int64_t one = 1 << shiftIn;
+  int64_t idx = x >> shiftIn;
+  int64_t lambda = x - (idx << shiftIn);
+  int64_t out = (one - lambda) * log2P_LUT[idx] + lambda * log2P_LUT[idx + 1];
+
+  constexpr int shiftOut = OutFPP - 16 - shiftIn;
+  if (shiftOut >= 0)
+    return out << shiftOut;
+  else
+    return out + (1 << -shiftOut - 1) >> -shiftOut;
 }
 
 //---------------------------------------------------------------------------
@@ -436,6 +491,7 @@ countingSort(
   }
 }
 
+#if 0 // Currently unused
 //---------------------------------------------------------------------------
 
 struct NoOp {
@@ -444,6 +500,8 @@ struct NoOp {
   {}
 };
 
+#endif
+#if 0 // Currently unused
 //---------------------------------------------------------------------------
 
 template<typename It, typename ValueOp, typename AccumOp>
@@ -479,6 +537,7 @@ radixSort8(int maxValLog2, It begin, It end, ValueOp op)
   radixSort8WithAccum(maxValLog2, begin, end, op, NoOp());
 }
 
+#endif
 //============================================================================
 // A wrapper to reverse the iteration order of a range based for loop
 
@@ -551,6 +610,79 @@ lcm_all(Iterator it, Iterator it_end)
   return res;
 }
 
+//----------------------------------------------------------------------------
+
+// apply value of differently typed parameters depending on a condition
+
+template<bool cond>
+struct conditional_value {};
+
+template<>
+struct conditional_value<true> {
+  template<typename TA, typename TB>
+  static const TA& from(const TA& a, const TB& b)
+  { return a; }
+
+  template<typename TA, typename TB>
+  static TA& from(TA& a, TB& b)
+  { return a; }
+
+  template<typename TA, typename TB>
+  static TA from(TA&& a, TB&& b)
+  { return a; }
+};
+
+template<>
+struct conditional_value<false> {
+  template<typename TA, typename TB>
+  static const TB& from(const TA& a, const TB& b)
+  { return b; }
+
+  template<typename TA, typename TB>
+  static TB& from(TA& a, TB& b)
+  { return b; }
+
+  template<typename TA, typename TB>
+  static TB from(TA&& a, TB&& b)
+  { return b; }
+};
+
+//----------------------------------------------------------------------------
+
+// conditional_value may require to compute both typed alternative values to
+// pass them as arguments of conditional_value::value() function.
+// conditional_call relies on INVOKE expression (e.g. lambda) to only compute
+// the required value by conditionally selecting the INVOKE expression
+// and using it.
+
+template<bool cond>
+struct conditional_call {
+  /*
+  template<typename A, typename B>
+  static typename std::conditional<
+    cond,
+    typename std::result_of<A()>::type,
+    typename std::result_of<B()>::type
+  >::type from(A,B);
+  */
+};
+
+template<>
+struct conditional_call<true> {
+  template<typename A, typename B>
+  static typename std::result_of<A()>::type
+  from(const A& a, const B& b)
+  { return a(); }
+};
+
+
+template<>
+struct conditional_call<false> {
+  template<typename A, typename B>
+  static typename std::result_of<B()>::type
+  from(const A& a, const B& b)
+  { return b(); }
+};
 
 //----------------------------------------------------------------------------
 
