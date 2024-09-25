@@ -511,12 +511,9 @@ uraht_process_decoder(
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag && enableACInterPred);
 
-  const bool CbCrEnabled =
-    !coder.isInterEnabled()
-    && rahtPredParams.cross_chroma_component_prediction_flag;
+  const bool CbCrEnabled = rahtPredParams.cross_chroma_component_prediction_flag;
 
-  const bool CCRPEnabled =
-    rahtPredParams.cross_component_residual_prediction_flag;
+  const bool CCRPEnabled = rahtPredParams.cross_component_residual_prediction_flag;
 
   const int maxlevelCCPenabled = (rahtPredParams.numlayer_CCRP_enabled - 1) * 3;
 
@@ -645,9 +642,14 @@ uraht_process_decoder(
       curLevelEnableLayerModeCoding = abh.attr_layer_code_mode[depth];
       curLevelEnableACInterPred = abh.attr_layer_code_mode[depth] == 1;
     }
-    //CCRP parameters
-    const bool CCRPFlag =
-      !haarFlag && CCRPEnabled && level <= maxlevelCCPenabled && !CbCrEnabled;
+
+    //CCRP and CCP parameters
+    const bool CCRPFlag = CCRPEnabled && !haarFlag && 
+	  (coder.isInterEnabled() ? (level <= maxlevelCCPenabled) : true); 
+
+	const bool CbCrFlag = CbCrEnabled && !haarFlag && 
+      (coder.isInterEnabled() ? (level <= maxlevelCCPenabled) : true); 
+
     CCRPFilter ccrpFilter;
 
     // -------------- loop on nodes of the depth --------------
@@ -944,9 +946,6 @@ uraht_process_decoder(
       int64_t CoeffRecBuf[8][numAttrs] = {0};
       int nodelvlSum = 0;
       int64_t transformRecBuf[numAttrs] = {0};
-      bool enableCCCP =
-        !haarFlag && rahtPredParams.cross_chroma_component_prediction_flag
-        && !coder.isInterEnabled();
 
       CCRPFilter::Corr curCorr = { 0, 0, 0 };
 
@@ -974,6 +973,14 @@ uraht_process_decoder(
               // Transform Domain Pred for Lossless case
               BestRecBuf[k8idx] += attrBestPred[k8idx];
             }
+
+            // cross chroma
+            if (CbCrFlag && numAttrs == 3 && k == 2) {
+              BestRecBuf[k8idx] += (CccpCoeff * transformRecBuf[1]) >> 4;
+              CoeffRecBuf[nodelvlSum][2] = fpReduce<kFPFracBits>(BestRecBuf[k8idx]);
+              quantizedValue = CoeffRecBuf[nodelvlSum][2];
+            }
+
             if (CCRPFlag) {
               if (k == 0) {
                 quantizedLuma = quantizedValue;
@@ -995,12 +1002,6 @@ uraht_process_decoder(
               }
             }
           }
-
-          // cross chroma
-          if (enableCCCP && numAttrs == 3) {
-            BestRecBuf[16 + idxB] += (CccpCoeff * transformRecBuf[1]) >> 4;
-            CoeffRecBuf[nodelvlSum][2] = fpReduce<kFPFracBits>(BestRecBuf[16 + idxB]);
-          }
           nodelvlSum++;
         }
       } // end scan
@@ -1010,10 +1011,10 @@ uraht_process_decoder(
       }
 
       // compute last component coefficient
-      if (numAttrs == 3 && nodeCnt > 1 && enableCCCP) {
-        CccpCoeff = curlevelCccp.computeCrossChromaComponentPredictionCoeff(
-          nodelvlSum, CoeffRecBuf);
+      if (numAttrs == 3 && nodeCnt > 1 && CbCrFlag) {
+        CccpCoeff = curlevelCccp.computeCrossChromaComponentPredictionCoeff(nodelvlSum, CoeffRecBuf);
       }
+
       // replace DC coefficient with parent if inheritable
       if (inheritDc) {
         for (int k = 0; k < numAttrs; k++) {

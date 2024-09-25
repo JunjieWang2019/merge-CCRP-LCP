@@ -628,12 +628,9 @@ uraht_process_encoder(
   coder.setInterEnabled(
     rahtPredParams.prediction_enabled_flag && enableACInterPred);
 
-  const bool CbCrEnabled =
-    !coder.isInterEnabled()
-    && rahtPredParams.cross_chroma_component_prediction_flag;
+  const bool CbCrEnabled = rahtPredParams.cross_chroma_component_prediction_flag;
 
-  const bool CCRPEnabled =
-    rahtPredParams.cross_component_residual_prediction_flag;
+  const bool CCRPEnabled = rahtPredParams.cross_component_residual_prediction_flag;
 
   const int maxlevelCCPenabled = (rahtPredParams.numlayer_CCRP_enabled - 1) * 3;
 
@@ -718,10 +715,16 @@ uraht_process_encoder(
 
   // descend tree
   int trainZeros = 0;
-  int CccpCoeff = 0;
-  PCCRAHTComputeCCCP curlevelCccp;
   int intraLayerTrainZeros = 0;
   int interLayerTrainZeros = 0;
+
+  int CccpCoeff = 0;
+  int CccpCoeffIntraLayer = 0;
+  int CccpCoeffInterLayer = 0;
+  PCCRAHTComputeCCCP curlevelCccp;
+  PCCRAHTComputeCCCP curlevelCccpIntraLayer;
+  PCCRAHTComputeCCCP curlevelCccpInterLayer;
+
   PCCRAHTACCoefficientEntropyEstimate intraLayerEstimate;
   PCCRAHTACCoefficientEntropyEstimate interLayerEstimate;
   PCCRAHTACCoefficientEntropyEstimate curEstimate;
@@ -747,6 +750,12 @@ uraht_process_encoder(
 
     CccpCoeff = 0;
     curlevelCccp.reset();
+
+    CccpCoeffIntraLayer = 0;
+    curlevelCccpIntraLayer.reset();
+
+    CccpCoeffInterLayer = 0;
+    curlevelCccpInterLayer.reset();
 
     int distanceToRoot = rootLayer - levelD;
     int layerD = RDOCodingDepth - distanceToRoot;
@@ -854,8 +863,12 @@ uraht_process_encoder(
     int64_t distMCPredLayer = 0;
     double dlambda = 1.;
 
-    //CCRP Parameters
-    const bool CCRPFlag = !haarFlag && CCRPEnabled && level <= maxlevelCCPenabled && !CbCrEnabled;
+    //CCRP and CCP parameters
+    const bool CCRPFlag = CCRPEnabled && !haarFlag
+      && (coder.isInterEnabled() ? (level <= maxlevelCCPenabled) : true);
+
+    const bool CbCrFlag = CbCrEnabled && !haarFlag
+      && (coder.isInterEnabled() ? (level <= maxlevelCCPenabled) : true); 
 
     CCRPFilter ccrpFilter;
     CCRPFilter ccrpFilterIntra;
@@ -1246,13 +1259,18 @@ uraht_process_encoder(
       int64_t BestRecBufInterLayer[8 * numAttrs] = { 0 };
 
       int64_t CoeffRecBuf[8][numAttrs] = { 0 };
+      int64_t CoeffRecBufIntra[8][numAttrs] = {0};
+      int64_t CoeffRecBufInter[8][numAttrs] = {0};
+
       int nodelvlSum = 0;
+
       int64_t transformRecBuf[numAttrs] = { 0 };
+      int64_t transformRecBufIntra[numAttrs] = {0};
+      int64_t transformRecBufInter[numAttrs] = {0};
 
       CCRPFilter::Corr curCorr = { 0, 0, 0 };
       CCRPFilter::Corr curCorrIntra = { 0, 0, 0 };
       CCRPFilter::Corr curCorrInter = { 0, 0, 0 };
-
 
       // subtract transformed prediction (should skipping DC, but ok)
       if (!attr::isNull(predMode)) {
@@ -1278,10 +1296,14 @@ uraht_process_encoder(
           const int LUTlog[16] = { 0,   256, 406, 512, 594, 662, 719,  768, 812, 850, 886, 918, 947, 975, 1000, 1024 };
           bool flagRDOQ = false;
           int64_t Qcoeff;
+
           int64_t intraLayerSumCoeff = 0;
           bool intraLayerFlagRDOQ = false;
+          int64_t intraLayerQcoeff;
+
           int64_t interLayerSumCoeff = 0;
           bool interLayerFlagRDOQ = false;
+          int64_t interLayerQcoeff;
 
           auto quantizers = qpset.quantizers(qpLayer, nodeQp[idxB]);
           if (!haarFlag) {
@@ -1300,14 +1322,52 @@ uraht_process_encoder(
             int64_t interLayerDist2 = 0;
             int interLayerRatecoeff = 0;
 
+            int64_t CCRPPred = 0, CCRPPredIntra = 0, CCRPPredInter = 0;
+            int64_t quantizedLuma = 0;
+            int64_t quantizedLumaIntra = 0;
+            int64_t quantizedLumaInter = 0;
+
             for (int k = 0; k < numAttrs; k++) {
               auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
 
               const int k8idx = 8 * k + idxB;
+
+  			  if (k && CCRPFlag) {
+                int64_t CCRPFilt =
+                  (k == 1) ? ccrpFilter.getYCbFilt() : ccrpFilter.getYCrFilt();
+
+                CCRPPred = quantizedLuma * CCRPFilt >> kCCRPFiltPrecisionbits;
+
+                transformBuf[k8idx] =
+                  transformBuf[k8idx] - fpExpand<kFPFracBits>(CCRPPred);
+
+                if (enableACRDOInterPred) {
+                  int64_t CCRPFiltIntra = (k == 1)
+                    ? ccrpFilterIntra.getYCbFilt()
+                    : ccrpFilterIntra.getYCrFilt();
+
+                  CCRPPredIntra = quantizedLumaIntra * CCRPFiltIntra
+                    >> kCCRPFiltPrecisionbits;
+
+                  transformIntraLayerBuf[k8idx] = transformIntraLayerBuf[k8idx]
+                    - fpExpand<kFPFracBits>(CCRPPredIntra);
+
+                  int64_t CCRPFiltInter = (k == 1)
+                    ? ccrpFilterInter.getYCbFilt()
+                    : ccrpFilterInter.getYCrFilt();
+
+                  CCRPPredInter = quantizedLumaInter * CCRPFiltInter
+                    >> kCCRPFiltPrecisionbits;
+
+                  transformInterLayerBuf[k8idx] = transformInterLayerBuf[k8idx]
+                    - fpExpand<kFPFracBits>(CCRPPredInter);
+                }
+              }
+
               coeff = fpReduce<kFPFracBits>(transformBuf[k8idx]);
               Dist2 += coeff * coeff;
 
-              if (rahtPredParams.cross_chroma_component_prediction_flag && !coder.isInterEnabled()) {
+              if (CbCrFlag) {
                 if (k != 2) {
                   Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
                   transformRecBuf[k] = fpExpand<kFPFracBits>(divExp2RoundHalfUp(q.scale(Qcoeff), kFixedPointAttributeShift));
@@ -1322,6 +1382,9 @@ uraht_process_encoder(
                 Qcoeff = q.quantize(coeff << kFixedPointAttributeShift);
 
               auto recCoeff = divExp2RoundHalfUp(q.scale(Qcoeff), kFixedPointAttributeShift);
+
+              if (k == 0) quantizedLuma = recCoeff;
+
               recDist2 += (coeff - recCoeff) * (coeff - recCoeff);
 
               sumCoeff += std::abs(Qcoeff);
@@ -1334,9 +1397,25 @@ uraht_process_encoder(
                 if (!upperInferMode) {
                   auto interLayerCoeff = fpReduce<kFPFracBits>(transformInterLayerBuf[k8idx]);
                   interLayerDist2 += interLayerCoeff * interLayerCoeff;
-                  auto interLayerQcoeff = q.quantize(interLayerCoeff << kFixedPointAttributeShift);
+
+                  if (CbCrFlag) {
+                    if (k != 2) {
+                      interLayerQcoeff = q.quantize(interLayerCoeff << kFixedPointAttributeShift);
+                      transformRecBufInter[k] = fpExpand<kFPFracBits>(
+                        divExp2RoundHalfUp(q.scale(interLayerQcoeff), kFixedPointAttributeShift));
+                    } else {
+                      transformRecBufInter[k] = transformInterLayerBuf[k8idx] - ((CccpCoeffInterLayer * transformRecBufInter[1]) >> 4);
+                      interLayerCoeff = fpReduce<kFPFracBits>(transformRecBufInter[k]);
+                      interLayerQcoeff =
+                        q.quantize((interLayerCoeff) << kFixedPointAttributeShift);
+                    }
+                  } else
+                    interLayerQcoeff = q.quantize(interLayerCoeff << kFixedPointAttributeShift); 
 
                   auto recInterCoeff = divExp2RoundHalfUp(q.scale(interLayerQcoeff), kFixedPointAttributeShift);
+
+			      if (k == 0) quantizedLumaInter = recInterCoeff;
+
                   interLayerRecDist2 += (interLayerCoeff - recInterCoeff) * (interLayerCoeff - recInterCoeff);
 
                   interLayerSumCoeff += std::abs(interLayerQcoeff);
@@ -1346,9 +1425,25 @@ uraht_process_encoder(
                 if (!realInferInLowerLevel) {
                   auto intraLayerCoeff = fpReduce<kFPFracBits>(transformIntraLayerBuf[k8idx]);
                   intraLayerDist2 += intraLayerCoeff * intraLayerCoeff;
-                  auto intraLayerQcoeff = q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
 
+				  if (CbCrFlag) {
+                    if (k != 2) {
+                      intraLayerQcoeff = q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
+                      transformRecBufIntra[k] = fpExpand<kFPFracBits>(
+                        divExp2RoundHalfUp(q.scale(intraLayerQcoeff), kFixedPointAttributeShift));
+                    } else {
+                      transformRecBufIntra[k] = transformIntraLayerBuf[k8idx] - ((CccpCoeffIntraLayer * transformRecBufIntra[1]) >> 4);
+                      intraLayerCoeff = fpReduce<kFPFracBits>(transformRecBufIntra[k]);
+                      intraLayerQcoeff =
+                        q.quantize((intraLayerCoeff) << kFixedPointAttributeShift);
+                    }
+                  } else
+                    intraLayerQcoeff = q.quantize(intraLayerCoeff << kFixedPointAttributeShift); 
+  
                   auto recIntraCoeff = divExp2RoundHalfUp(q.scale(intraLayerQcoeff), kFixedPointAttributeShift);
+                 
+				  if (k == 0) quantizedLumaIntra = recIntraCoeff;
+
                   intraLayerRecDist2 += (intraLayerCoeff - recIntraCoeff) * (intraLayerCoeff - recIntraCoeff);
 
                   intraLayerSumCoeff += std::abs(intraLayerQcoeff);
@@ -1409,29 +1504,27 @@ uraht_process_encoder(
             // apply RDOQ
             transformBuf[k8idx] *= flagRDOnot;
             transformRecBuf[k] *= flagRDOnot;
+
             transformIntraLayerBuf[k8idx] *= flagRDOintra;
+            transformRecBufIntra[k] *= flagRDOintra;
+
             transformInterLayerBuf[k8idx] *= flagRDOinter;
+            transformRecBufInter[k] *= flagRDOinter;
 
             int64_t CCRPPred = 0, CCRPPredIntra = 0, CCRPPredInter = 0;
             if (k && CCRPFlag) {
               if (k == 1) {
                 CCRPPred = quantizedLuma * ccrpFilter.getYCbFilt() >> kCCRPFiltPrecisionbits;
-                transformBuf[k8idx] -= fpExpand<kFPFracBits>(CCRPPred);
                 if (enableACRDOInterPred) {
                   CCRPPredIntra = quantizedLumaIntra * ccrpFilterIntra.getYCbFilt() >> kCCRPFiltPrecisionbits;
-                  transformIntraLayerBuf[k8idx] -= fpExpand<kFPFracBits>(CCRPPredIntra);
                   CCRPPredInter = quantizedLumaInter * ccrpFilterInter.getYCbFilt() >> kCCRPFiltPrecisionbits;
-                  transformInterLayerBuf[k8idx] -= fpExpand<kFPFracBits>(CCRPPredInter);
                 }
               }
               if (k == 2) {
                 CCRPPred = quantizedLuma * ccrpFilter.getYCrFilt() >> kCCRPFiltPrecisionbits;
-                transformBuf[k8idx] -= fpExpand<kFPFracBits>(CCRPPred);
                 if (enableACRDOInterPred) {
                   CCRPPredIntra = quantizedLumaIntra * ccrpFilterIntra.getYCrFilt() >> kCCRPFiltPrecisionbits;
-                  transformIntraLayerBuf[k8idx] -= fpExpand<kFPFracBits>(CCRPPredIntra);
                   CCRPPredInter = quantizedLumaInter * ccrpFilterInter.getYCrFilt() >> kCCRPFiltPrecisionbits;
-                  transformInterLayerBuf[k8idx] -= fpExpand<kFPFracBits>(CCRPPredInter);
                 }
               }
             }
@@ -1441,21 +1534,30 @@ uraht_process_encoder(
             auto& q = quantizers[std::min(k, int(quantizers.size()) - 1)];
             coeff = q.quantize(coeff << kFixedPointAttributeShift); // does nothing for Haar
 
-            if (!haarFlag && rahtPredParams.cross_chroma_component_prediction_flag && !coder.isInterEnabled()) {
-              if (k == 2) {
-                coeff = fpReduce<kFPFracBits>(transformRecBuf[k]);
-                coeff = q.quantize(coeff << kFixedPointAttributeShift);
-                transformRecBuf[k] = fpExpand<kFPFracBits>(divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift));
-                transformRecBuf[k] += CccpCoeff * transformRecBuf[1] >> 4;
+            if (CbCrFlag || CCRPFlag) {
+
+			  if (CbCrFlag) {
+                if (k == 2) {
+                  coeff = fpReduce<kFPFracBits>(transformRecBuf[k]);
+                  coeff = q.quantize(coeff << kFixedPointAttributeShift);
+                  transformRecBuf[k] = fpExpand<kFPFracBits>(divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift));
+                  transformRecBuf[k] += CccpCoeff * transformRecBuf[1] >> 4;
+                  BestRecBuf[k8idx] = transformRecBuf[k];
+                }
                 BestRecBuf[k8idx] = transformRecBuf[k];
+                CoeffRecBuf[nodelvlSum][k] = fpReduce<kFPFracBits>(transformRecBuf[k]);
               }
-              BestRecBuf[k8idx] = transformRecBuf[k];
-              CoeffRecBuf[nodelvlSum][k] = fpReduce<kFPFracBits>(transformRecBuf[k]);
-            }
-            else {
+
               int64_t quantizedValue = divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
               BestRecBuf[k8idx] = fpExpand<kFPFracBits>(quantizedValue);
 
+			  if (CbCrFlag) {
+                if (k == 2) {
+			  	  quantizedValue = CoeffRecBuf[nodelvlSum][2];
+                  BestRecBuf[k8idx] = transformRecBuf[2];			  	
+			    }
+		   	  }
+  
               if (CCRPFlag) {
                 if (k == 0) {
                   quantizedLuma = quantizedValue;
@@ -1470,7 +1572,10 @@ uraht_process_encoder(
                   else
                     curCorr.ycr += quantizedLuma * quantizedChroma;
                 }
-              }
+              }            
+			} else {
+              int64_t quantizedValue = divExp2RoundHalfUp(q.scale(coeff), kFixedPointAttributeShift);
+              BestRecBuf[k8idx] = fpExpand<kFPFracBits>(quantizedValue);
             }
 
             *coeffBufItK[k]++ = coeff;
@@ -1484,29 +1589,54 @@ uraht_process_encoder(
                 assert(intraLayerCoeff <= INT_MAX && intraLayerCoeff >= INT_MIN);
                 intraLayerCoeff = q.quantize(intraLayerCoeff << kFixedPointAttributeShift); // does nothing for Haar
 
+				if (CbCrFlag || CCRPFlag) {
+                  if (CbCrFlag) {
+                    if (k == 2) {
+					  intraLayerCoeff = fpReduce<kFPFracBits>(transformRecBufIntra[k]);
+                      intraLayerCoeff = q.quantize(intraLayerCoeff << kFixedPointAttributeShift);
+                      transformRecBufIntra[k] = fpExpand<kFPFracBits>(divExp2RoundHalfUp(
+                        q.scale(intraLayerCoeff), kFixedPointAttributeShift));
+                      transformRecBufIntra[k]+= CccpCoeffIntraLayer * transformRecBufIntra[1] >> 4;
+                      BestRecBufIntraLayer[k8idx] = transformRecBufIntra[k];                   
+                    } 
+                    BestRecBufIntraLayer[k8idx] = transformRecBufIntra[k];
+					CoeffRecBufIntra[nodelvlSum][k] = fpReduce<kFPFracBits>(transformRecBufIntra[k]);               
+                  }
+
+				  int64_t quantizedValueIntra = divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
+                  BestRecBufIntraLayer[k8idx] = fpExpand<kFPFracBits>(quantizedValueIntra);
+
+			      if (CbCrFlag) {
+                    if (k == 2) {
+			          quantizedValueIntra = CoeffRecBufIntra[nodelvlSum][2];
+                      BestRecBufIntraLayer[k8idx] = transformRecBufIntra[2];
+		    	    }
+		    	  }
+
+                  if (CCRPFlag) {
+                    if (k == 0) {
+                      quantizedLumaIntra = quantizedValueIntra;
+                      curCorrIntra.yy += quantizedLumaIntra * quantizedLumaIntra;
+                    }
+                    else {
+                      quantizedChromaIntra = quantizedValueIntra + CCRPPredIntra;
+                      BestRecBufIntraLayer[k8idx] = fpExpand<kFPFracBits>(quantizedChromaIntra);
+                      skipinverseintralayer = skipinverseintralayer && (quantizedChromaIntra == 0);
+                      if (k == 1)
+                        curCorrIntra.ycb += quantizedLumaIntra * quantizedChromaIntra;
+                      else
+                        curCorrIntra.ycr += quantizedLumaIntra * quantizedChromaIntra;
+                    }
+                  }
+				}
+				else {
+				  int64_t quantizedValueIntra = divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
+                  BestRecBufIntraLayer[k8idx] = fpExpand<kFPFracBits>(quantizedValueIntra);
+				}
+
                 intraLayerEstimate.updateCostBits(intraLayerCoeff, k);
-
                 *intraLayerCoeffBufItK[k]++ = intraLayerCoeff;
-                skipinverseintralayer = skipinverseintralayer && (intraLayerCoeff == 0);
-
-                int64_t quantizedValueIntra = divExp2RoundHalfUp(q.scale(intraLayerCoeff), kFixedPointAttributeShift);
-                BestRecBufIntraLayer[k8idx] = fpExpand<kFPFracBits>(quantizedValueIntra);
-
-                if (CCRPFlag) {
-                  if (k == 0) {
-                    quantizedLumaIntra = quantizedValueIntra;
-                    curCorrIntra.yy += quantizedLumaIntra * quantizedLumaIntra;
-                  }
-                  else {
-                    quantizedChromaIntra = quantizedValueIntra + CCRPPredIntra;
-                    BestRecBufIntraLayer[k8idx] = fpExpand<kFPFracBits>(quantizedChromaIntra);
-                    skipinverseintralayer = skipinverseintralayer && (quantizedChromaIntra == 0);
-                    if (k == 1)
-                      curCorrIntra.ycb += quantizedLumaIntra * quantizedChromaIntra;
-                    else
-                      curCorrIntra.ycr += quantizedLumaIntra * quantizedChromaIntra;
-                  }
-                }
+                skipinverseintralayer = skipinverseintralayer && (intraLayerCoeff == 0);               
               }
 
               if (!upperInferMode) {
@@ -1514,30 +1644,55 @@ uraht_process_encoder(
                 assert(interLayerCoeff <= INT_MAX && interLayerCoeff >= INT_MIN);
                 interLayerCoeff = q.quantize(interLayerCoeff << kFixedPointAttributeShift); // does nothing for Haar
 
-                interLayerEstimate.updateCostBits(interLayerCoeff, k);
+				if (CbCrFlag || CCRPFlag) {
+                  if (CbCrFlag) {
+                    if (k == 2) {
+                      interLayerCoeff = fpReduce<kFPFracBits>(transformRecBufInter[k]);
+                      interLayerCoeff = q.quantize(interLayerCoeff << kFixedPointAttributeShift);
+                      transformRecBufInter[k] = fpExpand<kFPFracBits>(
+                        divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift));
+                      transformRecBufInter[k]+= CccpCoeffInterLayer * transformRecBufInter[1] >> 4;
+                      BestRecBufInterLayer[k8idx] = transformRecBufInter[k];
+                    }
+                    BestRecBufInterLayer[k8idx] = transformRecBufInter[k];
+                    CoeffRecBufInter[nodelvlSum][k] = fpReduce<kFPFracBits>(transformRecBufInter[k]);
+                  }
 
+                  int64_t quantizedValueInter = divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift);
+                  BestRecBufInterLayer[k8idx] = fpExpand<kFPFracBits>(quantizedValueInter);
+
+			      if (CbCrFlag) {
+                    if (k == 2) {
+			       	  quantizedValueInter = CoeffRecBufInter[nodelvlSum][2];
+                      BestRecBufInterLayer[k8idx] = transformRecBufInter[2];
+		    	    }
+		    	  }
+
+                  if (CCRPFlag) {
+                    if (k == 0) {
+                      quantizedLumaInter = quantizedValueInter;
+                      curCorrInter.yy += quantizedLumaInter * quantizedLumaInter;
+                    }
+                    else {
+                      quantizedChromaInter = quantizedValueInter + CCRPPredInter;
+                      BestRecBufInterLayer[k8idx] = fpExpand<kFPFracBits>(quantizedChromaInter);
+                      skipinverseinterlayer = skipinverseinterlayer && (quantizedChromaInter == 0);
+                      if (k == 1)
+                        curCorrInter.ycb += quantizedLumaInter * quantizedChromaInter;
+                      else
+                        curCorrInter.ycr += quantizedLumaInter * quantizedChromaInter;
+                    }
+                  }
+				}
+				else {
+			      int64_t quantizedValueInter = divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift);
+                  BestRecBufInterLayer[k8idx] = fpExpand<kFPFracBits>(quantizedValueInter);
+				}
+
+                interLayerEstimate.updateCostBits(interLayerCoeff, k);
                 skipinverseinterlayer = skipinverseinterlayer && (interLayerCoeff == 0);
                 *interLayerCoeffBufItK[k]++ = interLayerCoeff;
-                // still in RAHT domain
-                int64_t quantizedValueInter =
-                  divExp2RoundHalfUp(q.scale(interLayerCoeff), kFixedPointAttributeShift);
-                BestRecBufInterLayer[k8idx] = fpExpand<kFPFracBits>(quantizedValueInter);
-
-                if (CCRPFlag) {
-                  if (k == 0) {
-                    quantizedLumaInter = quantizedValueInter;
-                    curCorrInter.yy += quantizedLumaInter * quantizedLumaInter;
-                  }
-                  else {
-                    quantizedChromaInter = quantizedValueInter + CCRPPredInter;
-                    BestRecBufInterLayer[k8idx] = fpExpand<kFPFracBits>(quantizedChromaInter);
-                    skipinverseinterlayer = skipinverseinterlayer && (quantizedChromaInter == 0);
-                    if (k == 1)
-                      curCorrInter.ycb += quantizedLumaInter * quantizedChromaInter;
-                    else
-                      curCorrInter.ycr += quantizedLumaInter * quantizedChromaInter;
-                  }
-                }
+                
               }
 
               // quantization reconstruction error
@@ -1583,12 +1738,14 @@ uraht_process_encoder(
       }
 
        // compute last component coefficient
-      if (numAttrs == 3 && nodeCnt > 1 && !haarFlag
-          && rahtPredParams.cross_chroma_component_prediction_flag
-          && !coder.isInterEnabled()) {
+      if (numAttrs == 3 && nodeCnt > 1 && CbCrFlag) {
         CccpCoeff = curlevelCccp.computeCrossChromaComponentPredictionCoeff(nodelvlSum, CoeffRecBuf);
-      }
 
+		if (enableACRDOInterPred) {
+          CccpCoeffIntraLayer = curlevelCccpIntraLayer.computeCrossChromaComponentPredictionCoeff(nodelvlSum, CoeffRecBufIntra);
+          CccpCoeffInterLayer = curlevelCccpInterLayer.computeCrossChromaComponentPredictionCoeff(nodelvlSum, CoeffRecBufInter);
+        }
+      }
 
       //compute DC of prediction signals
       int64_t PredDC[3] = { 0,0,0 };
